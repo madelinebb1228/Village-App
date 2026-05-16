@@ -655,7 +655,7 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
 
       const { data: pumps, error } = await supabase
         .from('pumping_sessions')
-        .select('left_ml, right_ml, total_ml, logged_at')
+        .select('left_breast, right_breast, total_ml, logged_at')
         .eq('user_id', userId)
         .gte('logged_at', start.toISOString())
         .order('logged_at', { ascending: true });
@@ -683,8 +683,8 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
         setData({
           labels,
           datasets: [
-            { data: sessions.map(p => p.left_ml  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: sessions.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: sessions.map(p => p.left_breast  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: sessions.map(p => p.right_breast || 0), color: () => '#B8A9C9', strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
@@ -693,8 +693,8 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
         pumps.forEach(p => {
           const day = p.logged_at.split('T')[0];
           if (!buckets[day]) buckets[day] = { left: 0, right: 0 };
-          buckets[day].left  += p.left_ml  || 0;
-          buckets[day].right += p.right_ml || 0;
+          buckets[day].left  += p.left_breast  || 0;
+          buckets[day].right += p.right_breast || 0;
         });
         let days = Object.keys(buckets).sort();
         if (days.length < 2) days = [days[0], days[0]]; // pad to ≥ 2
@@ -968,10 +968,10 @@ export default function Track() {
 
       const payload = {
         user_id:          user.id,
-        left_ml:          left,
-        right_ml:         right,
+        left_breast:      left,
+        right_breast:     right,
         total_ml,
-        suction_level:    suctionLevel,
+        cycle_speed:      suctionLevel,
         how_feel:         howFeel,
         storage_location: storageLocation,
         milk_color:       milkColor,
