@@ -301,6 +301,12 @@ export default function HomeTab() {
           </View>
         )}
 
+        {posts.length === 0 && (
+          <View style={styles.emptyFeed}>
+            <Text style={styles.emptyFeedText}>No posts yet. Be the first to share!</Text>
+          </View>
+        )}
+
         {posts.map((post) => (
           <View key={post.id} style={styles.postCard}>
             <View style={styles.postHeader}>
@@ -630,5 +636,17 @@ const styles = StyleSheet.create({
   postActionText: {
     fontSize: 13,
     color: '#B0A89E',
+  },
+  emptyFeed: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  emptyFeedText: {
+    fontSize: 15,
+    color: '#B0A89E',
+    textAlign: 'center',
   },
 });
