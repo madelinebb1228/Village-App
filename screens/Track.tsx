@@ -999,47 +999,37 @@ export default function Track() {
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
+  async function doDelete(entry: TimelineEntry) {
+    try {
+      const { data, error } = await supabase
+        .from(entry.table as any)
+        .delete()
+        .eq('id', entry.rawId)
+        .select('id');
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Row not deleted — RLS policy may be blocking it.');
+      }
+      setEntries(prev => prev.filter(e => e.id !== entry.id));
+    } catch (err: any) {
+      console.error('[Delete] error:', err);
+      Alert.alert('Delete Failed', err.message);
+    }
+  }
+
   function handleDeleteEntry(entry: TimelineEntry) {
-    Alert.alert(
-      'Delete Entry',
-      `Remove this ${entry.label.toLowerCase()} from today's timeline?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log(`[Delete] table=${entry.table} id=${entry.rawId}`);
-
-              // .select('id') forces Supabase to return deleted rows.
-              // Without it, RLS blocks silently return { error: null, data: null }
-              // and the row survives in the DB despite the local state removing it.
-              const { data, error } = await supabase
-                .from(entry.table as any)
-                .delete()
-                .eq('id', entry.rawId)
-                .select('id');
-
-              console.log(`[Delete] result:`, { data, error });
-
-              if (error) throw error;
-
-              if (!data || data.length === 0) {
-                throw new Error(
-                  'Row not deleted — an RLS policy is likely blocking it.\n\n' +
-                  'Run the DELETE policies SQL in your Supabase SQL editor to fix this.'
-                );
-              }
-
-              setEntries(prev => prev.filter(e => e.id !== entry.id));
-            } catch (err: any) {
-              console.error('[Delete] error:', err);
-              Alert.alert('Delete Failed', err.message);
-            }
-          },
-        },
-      ]
-    );
+    const message = `Remove this ${entry.label.toLowerCase()} from today's timeline?`;
+    // On web, RN's multi-button Alert doesn't fire onPress callbacks —
+    // the browser confirm() dialog is the reliable alternative.
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) doDelete(entry);
+      return;
+    }
+    Alert.alert('Delete Entry', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => doDelete(entry) },
+    ]);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

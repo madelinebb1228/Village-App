@@ -20,6 +20,7 @@ import { supabase } from '../lib/supabase';
 
 interface Post {
   id: string;
+  user_id: string;
   author: string;
   content: string;
   post_type: 'text' | 'milestone' | 'question';
@@ -83,10 +84,14 @@ export default function HomeTab() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPosts();
     fetchLikedPosts();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
   }, []);
 
   async function fetchPosts() {
@@ -166,6 +171,29 @@ export default function HomeTab() {
 
   async function handleShare(post: Post) {
     await Share.share({ message: post.content });
+  }
+
+  async function doDeletePost(postId: string) {
+    const { data, error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .select('id');
+    if (error) { Alert.alert('Delete Failed', error.message); return; }
+    if (!data || data.length === 0) { Alert.alert('Delete Failed', 'Post not deleted — check RLS policies.'); return; }
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  }
+
+  function handleDeletePost(post: Post) {
+    const message = 'Delete this post? This cannot be undone.';
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) doDeletePost(post.id);
+      return;
+    }
+    Alert.alert('Delete Post', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => doDeletePost(post.id) },
+    ]);
   }
 
   async function handleCreatePost() {
@@ -365,14 +393,21 @@ export default function HomeTab() {
                   <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
                 </View>
               </View>
-              {post.post_type !== 'text' && (
-                <View style={[
-                  styles.postBadge,
-                  post.post_type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
-                ]}>
-                  <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
-                </View>
-              )}
+              <View style={styles.postHeaderRight}>
+                {post.post_type !== 'text' && (
+                  <View style={[
+                    styles.postBadge,
+                    post.post_type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
+                  ]}>
+                    <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
+                  </View>
+                )}
+                {post.user_id === currentUserId && (
+                  <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}>
+                    <Text style={styles.postDeleteText}>🗑</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
             <Text style={styles.postContent}>{post.content}</Text>
             <View style={styles.postFooter}>
@@ -642,10 +677,21 @@ const styles = StyleSheet.create({
     color: '#B0A89E',
     marginTop: 1,
   },
+  postHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   postBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  postDeleteBtn: {
+    padding: 4,
+  },
+  postDeleteText: {
+    fontSize: 15,
   },
   postContent: {
     fontSize: 15,
