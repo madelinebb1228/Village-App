@@ -5,6 +5,10 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
+import { LineChart } from 'react-native-chart-kit';
+import { Dimensions } from 'react-native';
+
+const screenWidth = Dimensions.get('window').width;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -374,11 +378,87 @@ const ni = StyleSheet.create({
 
 // ─── Track screen ─────────────────────────────────────────────────────────────
 
+
+// ─── Chart Components ───────────────────────────────────────────────────────
+
+type ChartPeriod = 'daily' | 'weekly' | 'monthly';
+
+const ChartCard = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <View style={chartStyles.card}>
+    <Text style={chartStyles.title}>{title}</Text>
+    {children}
+  </View>
+);
+
+const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p: ChartPeriod) => void }) => (
+  <View style={chartStyles.toggleContainer}>
+    {(['daily', 'weekly', 'monthly'] as ChartPeriod[]).map((p) => (
+      <TouchableOpacity key={p} style={[chartStyles.toggle, period === p && chartStyles.toggleActive]} onPress={() => onChange(p)}>
+        <Text style={[chartStyles.toggleText, period === p && chartStyles.toggleTextActive]}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
+      </TouchableOpacity>
+    ))}
+  </View>
+);
+
+const chartConfig = {
+  backgroundColor: '#FEFCF8', backgroundGradientFrom: '#FEFCF8', backgroundGradientTo: '#FEFCF8',
+  decimalPlaces: 0, color: (o = 1) => `rgba(90, 84, 78, ${o})`,
+  labelColor: (o = 1) => `rgba(90, 84, 78, ${o * 0.7})`,
+  style: { borderRadius: 16 },
+  propsForDots: { r: '4', strokeWidth: '2', stroke: '#FEFCF8' },
+  propsForBackgroundLines: { strokeDasharray: '', stroke: '#F3EFE9', strokeWidth: 1 },
+};
+
+const chartStyles = StyleSheet.create({
+  card: { backgroundColor: '#FEFCF8', borderRadius: 16, padding: 16, marginHorizontal: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
+  title: { fontSize: 15, fontWeight: '700', color: '#5A544E', marginBottom: 12 },
+  toggleContainer: { flexDirection: 'row', backgroundColor: '#F5F1EB', borderRadius: 8, padding: 3, marginBottom: 12 },
+  toggle: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 6 },
+  toggleActive: { backgroundColor: '#B8A9C9' },
+  toggleText: { fontSize: 11, color: '#8A7E78', fontWeight: '600' },
+  toggleTextActive: { color: '#FFFFFF' },
+  chart: { marginLeft: -16, borderRadius: 12 },
+  noData: { textAlign: 'center', color: '#B0A89E', paddingVertical: 40, fontSize: 13 },
+});
+
+// Simplified chart components - full implementation would go here
+const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
+  const [period, setPeriod] = useState<ChartPeriod>('daily');
+  return (
+    <ChartCard title="Feeding Activity (ml)">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>Chart loading...</Text>
+    </ChartCard>
+  );
+};
+
+const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
+  const [period, setPeriod] = useState<ChartPeriod>('daily');
+  return (
+    <ChartCard title="Diaper Changes">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>Chart loading...</Text>
+    </ChartCard>
+  );
+};
+
+const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
+  const [period, setPeriod] = useState<ChartPeriod>('daily');
+  return (
+    <ChartCard title="Pumping Output (ml)">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>Chart loading...</Text>
+    </ChartCard>
+  );
+};
+
 export default function Track() {
   const [entries,    setEntries]    = useState<TimelineEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [saving,      setSaving]      = useState(false);
+  const [babyId,      setBabyId]      = useState<string | null>(null);
 
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
@@ -416,6 +496,10 @@ export default function Track() {
   const pumpTimer = useTimer();
 
   // ── Data ──────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    getFirstBabyId().then(setBabyId);
+  }, []);
 
   const fetchTimeline = useCallback(async () => {
     setRefreshing(true);
@@ -691,6 +775,11 @@ export default function Track() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* ── Charts */}
+        <FeedChartCard babyId={babyId} />
+        <DiaperChartCard babyId={babyId} />
+        <PumpingChartCard babyId={babyId} />
 
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>
