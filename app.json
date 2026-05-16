@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Village",
+    "slug": "village-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#6366f1"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
