@@ -266,6 +266,24 @@ export default function SuppliesSection({ userId, refreshKey }: { userId: string
 
 // ─── Exported helpers (called from Track.tsx save handlers) ───────────────────
 
+export async function addToSupply(userId: string, type: string, qty: number) {
+  const { data: existing } = await supabase
+    .from('supply_items')
+    .select('quantity_remaining, unit, low_threshold')
+    .eq('user_id', userId)
+    .eq('supply_type', type)
+    .maybeSingle();
+  const defaultUnit = type === 'diapers' ? 'count' : type === 'breastmilk' ? 'ml' : 'oz';
+  await supabase.from('supply_items').upsert({
+    user_id:            userId,
+    supply_type:        type,
+    quantity_remaining: (existing?.quantity_remaining ?? 0) + qty,
+    unit:               existing?.unit ?? defaultUnit,
+    low_threshold:      existing?.low_threshold ?? 0,
+    updated_at:         new Date().toISOString(),
+  }, { onConflict: 'user_id,supply_type' });
+}
+
 export async function addToMilkStash(userId: string, ml: number) {
   const { data: existing } = await supabase
     .from('supply_items')

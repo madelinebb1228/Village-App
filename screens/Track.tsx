@@ -7,7 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
-import SuppliesSection, { addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
+import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -749,6 +749,7 @@ export default function Track() {
   const [babyId,      setBabyId]      = useState<string | null>(null);
   const [userId,      setUserId]      = useState<string | null>(null);
   const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
+  const [pumpChartKey,      setPumpChartKey]       = useState(0);
 
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
@@ -896,17 +897,19 @@ export default function Track() {
 
       const payload = {
         baby_id,
-        feed_type:        feedType,
-        mood:             feedMood,
-        latch_quality:    feedType === 'breast' ? latchQuality : null,
-        position:         feedType === 'breast' ? resolvedPosition : null,
-        breast_side:      breastSide,
-        caregiver:        feedType !== 'breast' ? feedCaregiver : null,
-        spit_up:          spitUp,
-        burps:            feedBurps,
-        duration_seconds: durationSeconds > 0 ? durationSeconds : null,
-        notes:            feedNotes.trim() || null,
-        logged_at:        new Date().toISOString(),
+        feed_type:          feedType,
+        mood:               feedMood,
+        latch_quality:      feedType === 'breast' ? latchQuality : null,
+        position:           feedType === 'breast' ? resolvedPosition : null,
+        breast_side:        breastSide,
+        caregiver:          feedType !== 'breast' ? feedCaregiver : null,
+        spit_up:            spitUp,
+        burps:              feedBurps,
+        duration_seconds:   durationSeconds > 0 ? durationSeconds : null,
+        notes:              feedNotes.trim() || null,
+        logged_at:          new Date().toISOString(),
+        bottle_source:      feedType === 'bottle' ? bottleSource : null,
+        bottle_amount_oz:   feedType === 'bottle' && feedAmount ? (parseFloat(feedAmount) || null) : null,
       };
       console.log('[Feed] Attempting to save:', payload);
 
@@ -916,18 +919,21 @@ export default function Track() {
       setActiveModal(null);
       await fetchTimeline();
 
-      // Deduct from supplies after successful save
-      if (feedType === 'bottle' && feedAmount && userId) {
-        const oz = parseFloat(feedAmount) || 0;
-        if (oz > 0) {
-          if (bottleSource === 'breastmilk') {
-            const ml = oz * 29.5735;
-            await deductFromSupply(userId, 'breastmilk', ml);
-          } else {
-            await deductFromSupply(userId, 'formula', oz);
+      // Supply helpers run independently — failures don't block the save success
+      try {
+        if (feedType === 'bottle' && feedAmount && userId) {
+          const oz = parseFloat(feedAmount) || 0;
+          if (oz > 0) {
+            if (bottleSource === 'breastmilk') {
+              await deductFromSupply(userId, 'breastmilk', oz * 29.5735);
+            } else {
+              await deductFromSupply(userId, 'formula', oz);
+            }
+            setSuppliesRefreshKey(k => k + 1);
           }
-          setSuppliesRefreshKey(k => k + 1);
         }
+      } catch (supplyErr: any) {
+        console.warn('[Feed] Supply update failed (feed still saved):', supplyErr?.message);
       }
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
@@ -963,10 +969,14 @@ export default function Track() {
       setActiveModal(null);
       await fetchTimeline();
 
-      // Deduct one diaper from supplies
-      if (userId) {
-        await deductFromSupply(userId, 'diapers', 1);
-        setSuppliesRefreshKey(k => k + 1);
+      // Supply helpers run independently — failures don't block the save success
+      try {
+        if (userId) {
+          await deductFromSupply(userId, 'diapers', 1);
+          setSuppliesRefreshKey(k => k + 1);
+        }
+      } catch (supplyErr: any) {
+        console.warn('[Diaper] Supply update failed (diaper still saved):', supplyErr?.message);
       }
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
@@ -1014,13 +1024,18 @@ export default function Track() {
       pumpTimer.stop();
       setActiveModal(null);
       await fetchTimeline();
+      setPumpChartKey(k => k + 1);
 
-      // Update supplies after successful save
-      if (storageLocation !== 'used_immediately') {
-        await addToMilkStash(user.id, total_ml);
+      // Supply helpers run independently — failures don't block the save success
+      try {
+        if (storageLocation !== 'used_immediately') {
+          await addToMilkStash(user.id, total_ml);
+        }
+        await incrementPumpPartSessions(user.id);
+        setSuppliesRefreshKey(k => k + 1);
+      } catch (supplyErr: any) {
+        console.warn('[Pump] Supply update failed (session still saved):', supplyErr?.message);
       }
-      await incrementPumpPartSessions(user.id);
-      setSuppliesRefreshKey(k => k + 1);
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
       console.error('[Pump] Save failed:', info);
@@ -1034,6 +1049,19 @@ export default function Track() {
 
   async function doDelete(entry: TimelineEntry) {
     try {
+      // For feeds, read supply info before deleting so we can restore it
+      let bottleSourceToRestore: string | null = null;
+      let bottleOzToRestore: number | null = null;
+      if (entry.type === 'feed') {
+        const { data: feedRow } = await supabase
+          .from('feeds')
+          .select('bottle_source, bottle_amount_oz')
+          .eq('id', entry.rawId)
+          .maybeSingle();
+        bottleSourceToRestore = feedRow?.bottle_source ?? null;
+        bottleOzToRestore     = feedRow?.bottle_amount_oz ?? null;
+      }
+
       const { data, error } = await supabase
         .from(entry.table as any)
         .delete()
@@ -1045,6 +1073,24 @@ export default function Track() {
         throw new Error('Row not deleted — RLS policy may be blocking it.');
       }
       setEntries(prev => prev.filter(e => e.id !== entry.id));
+
+      // Restore supplies after successful delete
+      try {
+        if (entry.type === 'feed' && bottleSourceToRestore && bottleOzToRestore && userId) {
+          if (bottleSourceToRestore === 'breastmilk') {
+            await addToSupply(userId, 'breastmilk', bottleOzToRestore * 29.5735);
+          } else {
+            await addToSupply(userId, 'formula', bottleOzToRestore);
+          }
+          setSuppliesRefreshKey(k => k + 1);
+        }
+        if (entry.type === 'diaper' && userId) {
+          await addToSupply(userId, 'diapers', 1);
+          setSuppliesRefreshKey(k => k + 1);
+        }
+      } catch (supplyErr: any) {
+        console.warn('[Delete] Supply restore failed (entry still deleted):', supplyErr?.message);
+      }
     } catch (err: any) {
       console.error('[Delete] error:', err);
       Alert.alert('Delete Failed', err.message);
@@ -1098,7 +1144,7 @@ export default function Track() {
         {/* ── Charts */}
         <FeedChartCard babyId={babyId} />
         <DiaperChartCard babyId={babyId} />
-        <PumpingChartCard userId={userId} />
+        <PumpingChartCard key={pumpChartKey} userId={userId} />
 
         {/* ── Supplies */}
         <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
