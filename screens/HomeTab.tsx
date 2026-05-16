@@ -7,6 +7,10 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +24,13 @@ interface Post {
   content: string;
   post_type: 'text' | 'milestone' | 'question';
   likes: number;
+  created_at: string;
+}
+
+interface Comment {
+  id: string;
+  author: string;
+  content: string;
   created_at: string;
 }
 
@@ -68,8 +79,14 @@ export default function HomeTab() {
   const [postContent, setPostContent] = useState('');
   const [postType, setPostType] = useState<Post['post_type']>('text');
 
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState('');
+
   useEffect(() => {
     fetchPosts();
+    fetchLikedPosts();
   }, []);
 
   async function fetchPosts() {
@@ -79,6 +96,76 @@ export default function HomeTab() {
       .order('created_at', { ascending: false })
       .limit(20);
     if (!error && data) setPosts(data);
+  }
+
+  async function fetchLikedPosts() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('user_likes')
+      .select('post_id')
+      .eq('user_id', user.id);
+    if (data) setLikedPostIds(new Set(data.map((r: any) => r.post_id)));
+  }
+
+  async function toggleLike(post: Post) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const isLiked = likedPostIds.has(post.id);
+
+    // Optimistic update
+    setLikedPostIds(prev => {
+      const next = new Set(prev);
+      if (isLiked) next.delete(post.id); else next.add(post.id);
+      return next;
+    });
+    setPosts(prev => prev.map(p =>
+      p.id === post.id ? { ...p, likes: p.likes + (isLiked ? -1 : 1) } : p
+    ));
+
+    if (isLiked) {
+      await supabase.from('user_likes').delete().eq('post_id', post.id).eq('user_id', user.id);
+      await supabase.from('posts').update({ likes: Math.max(0, post.likes - 1) }).eq('id', post.id);
+    } else {
+      await supabase.from('user_likes').insert({ post_id: post.id, user_id: user.id });
+      await supabase.from('posts').update({ likes: post.likes + 1 }).eq('id', post.id);
+    }
+  }
+
+  async function openComments(postId: string) {
+    setComments([]);
+    setCommentPostId(postId);
+    const { data } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+    if (data) setComments(data);
+  }
+
+  async function submitComment() {
+    if (!commentText.trim() || !commentPostId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('comments').insert({
+      post_id: commentPostId,
+      user_id: user.id,
+      author: user.email?.split('@')[0] || 'Anonymous',
+      content: commentText,
+    });
+    if (!error) {
+      setCommentText('');
+      const { data } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('post_id', commentPostId)
+        .order('created_at', { ascending: true });
+      if (data) setComments(data);
+    }
+  }
+
+  async function handleShare(post: Post) {
+    await Share.share({ message: post.content });
   }
 
   async function handleCreatePost() {
@@ -330,13 +417,15 @@ export default function HomeTab() {
             </View>
             <Text style={styles.postContent}>{post.content}</Text>
             <View style={styles.postFooter}>
-              <TouchableOpacity style={styles.postAction}>
-                <Text style={styles.postActionText}>❤️ {post.likes}</Text>
+              <TouchableOpacity style={styles.postAction} onPress={() => toggleLike(post)}>
+                <Text style={[styles.postActionText, likedPostIds.has(post.id) && styles.likedText]}>
+                  {likedPostIds.has(post.id) ? '❤️' : '🤍'} {post.likes}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.postAction}>
+              <TouchableOpacity style={styles.postAction} onPress={() => openComments(post.id)}>
                 <Text style={styles.postActionText}>💬 Reply</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.postAction}>
+              <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}>
                 <Text style={styles.postActionText}>↗️ Share</Text>
               </TouchableOpacity>
             </View>
@@ -345,6 +434,61 @@ export default function HomeTab() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Comments modal */}
+      <Modal
+        visible={commentPostId !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCommentPostId(null)}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Comments</Text>
+            <TouchableOpacity onPress={() => setCommentPostId(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsContent}>
+            {comments.length === 0 ? (
+              <Text style={styles.noComments}>No comments yet. Start the conversation!</Text>
+            ) : (
+              comments.map(c => (
+                <View key={c.id} style={styles.commentItem}>
+                  <View style={styles.commentAvatar}>
+                    <Text style={styles.commentAvatarText}>{c.author.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.commentBody}>
+                    <Text style={styles.commentAuthor}>{c.author}</Text>
+                    <Text style={styles.commentContent}>{c.content}</Text>
+                    <Text style={styles.commentTime}>{getTimeAgo(c.created_at)}</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Add a comment..."
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.commentSubmit, !commentText.trim() && styles.submitButtonDisabled]}
+                onPress={submitComment}
+                disabled={!commentText.trim()}
+              >
+                <Text style={styles.commentSubmitText}>Post</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -636,6 +780,114 @@ const styles = StyleSheet.create({
   postActionText: {
     fontSize: 13,
     color: '#B0A89E',
+  },
+  likedText: {
+    color: '#e11d48',
+    fontWeight: '600',
+  },
+  // ── Comments modal ──────────────────────────────────────────────────────────
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: '#FEFCF8',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#5A544E',
+  },
+  modalClose: {
+    fontSize: 18,
+    color: '#B0A89E',
+    paddingHorizontal: 4,
+  },
+  commentsList: {
+    flex: 1,
+  },
+  commentsContent: {
+    padding: 20,
+    paddingBottom: 12,
+  },
+  noComments: {
+    textAlign: 'center',
+    color: '#B0A89E',
+    fontSize: 15,
+    marginTop: 40,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#ede9fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  commentAvatarText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7c3aed',
+  },
+  commentBody: {
+    flex: 1,
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5A544E',
+    marginBottom: 2,
+  },
+  commentContent: {
+    fontSize: 14,
+    color: '#5A544E',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  commentTime: {
+    fontSize: 11,
+    color: '#B0A89E',
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+    backgroundColor: '#FEFCF8',
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    maxHeight: 100,
+  },
+  commentSubmit: {
+    backgroundColor: '#B8A9C9',
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  commentSubmitText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
   emptyFeed: {
     backgroundColor: '#ffffff',
