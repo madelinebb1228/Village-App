@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
+import SuppliesSection, { addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -747,6 +748,7 @@ export default function Track() {
   const [saving,      setSaving]      = useState(false);
   const [babyId,      setBabyId]      = useState<string | null>(null);
   const [userId,      setUserId]      = useState<string | null>(null);
+  const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
 
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
@@ -762,6 +764,8 @@ export default function Track() {
   const [feedManualMin,     setFeedManualMin]      = useState('');
   const [breastLeft,        setBreastLeft]         = useState(true);
   const [breastRight,       setBreastRight]        = useState(false);
+  const [feedAmount,        setFeedAmount]         = useState('');
+  const [bottleSource,      setBottleSource]       = useState<'breastmilk' | 'formula'>('breastmilk');
   const feedTimer = useTimer();
 
   // Diaper form
@@ -849,7 +853,9 @@ export default function Track() {
       setFeedPositionOther(''); setLatchQuality('good'); setSpitUp('none');
       setFeedBurps(0); setFeedNotes(''); setFeedCaregiver('mom');
       setFeedUseManual(false); setFeedManualMin('');
-      setBreastLeft(true); setBreastRight(false); feedTimer.reset();
+      setBreastLeft(true); setBreastRight(false);
+      setFeedAmount(''); setBottleSource('breastmilk');
+      feedTimer.reset();
     } else if (type === 'diaper') {
       setDiaperType('wet'); setDiaperColor('yellow'); setDiaperConsist('seedy');
       setDiaperAmount('medium'); setDiaperRash('none'); setDiaperNotes('');
@@ -909,6 +915,20 @@ export default function Track() {
       feedTimer.stop();
       setActiveModal(null);
       await fetchTimeline();
+
+      // Deduct from supplies after successful save
+      if (feedType === 'bottle' && feedAmount && userId) {
+        const oz = parseFloat(feedAmount) || 0;
+        if (oz > 0) {
+          if (bottleSource === 'breastmilk') {
+            const ml = oz * 29.5735;
+            await deductFromSupply(userId, 'breastmilk', ml);
+          } else {
+            await deductFromSupply(userId, 'formula', oz);
+          }
+          setSuppliesRefreshKey(k => k + 1);
+        }
+      }
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
       console.error('[Feed] Save failed:', info);
@@ -942,6 +962,12 @@ export default function Track() {
       if (error) throw error;
       setActiveModal(null);
       await fetchTimeline();
+
+      // Deduct one diaper from supplies
+      if (userId) {
+        await deductFromSupply(userId, 'diapers', 1);
+        setSuppliesRefreshKey(k => k + 1);
+      }
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
       console.error('[Diaper] Save failed:', info);
@@ -988,6 +1014,13 @@ export default function Track() {
       pumpTimer.stop();
       setActiveModal(null);
       await fetchTimeline();
+
+      // Update supplies after successful save
+      if (storageLocation !== 'used_immediately') {
+        await addToMilkStash(user.id, total_ml);
+      }
+      await incrementPumpPartSessions(user.id);
+      setSuppliesRefreshKey(k => k + 1);
     } catch (err: any) {
       const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
       console.error('[Pump] Save failed:', info);
@@ -1066,6 +1099,9 @@ export default function Track() {
         <FeedChartCard babyId={babyId} />
         <DiaperChartCard babyId={babyId} />
         <PumpingChartCard userId={userId} />
+
+        {/* ── Supplies */}
+        <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
 
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>
@@ -1147,6 +1183,36 @@ export default function Track() {
             )}
             <PickerField label="Latch quality" options={FEED_LATCH}
               value={latchQuality} onChange={setLatchQuality} accent="#B8A9C9" />
+          </>
+        )}
+
+        {feedType === 'bottle' && (
+          <>
+            <View style={pf.wrap}>
+              <Text style={pf.label}>What's in the bottle?</Text>
+              <View style={pf.row}>
+                <TouchableOpacity
+                  style={[pf.chip, bottleSource === 'breastmilk' && { backgroundColor: '#B8A9C9', borderColor: '#B8A9C9' }]}
+                  onPress={() => setBottleSource('breastmilk')} activeOpacity={0.75}>
+                  <Text style={[pf.chipText, bottleSource === 'breastmilk' && pf.chipSel]}>🤱 Breastmilk</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[pf.chip, bottleSource === 'formula' && { backgroundColor: '#B8A9C9', borderColor: '#B8A9C9' }]}
+                  onPress={() => setBottleSource('formula')} activeOpacity={0.75}>
+                  <Text style={[pf.chipText, bottleSource === 'formula' && pf.chipSel]}>🍶 Formula</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={{ marginBottom: 20 }}>
+              <Text style={pf.label}>Amount (oz)</Text>
+              <View style={styles.breastRow}>
+                <View style={[styles.breastField, { flex: 1 }]}>
+                  <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor="#C4BAB2"
+                    value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad" />
+                  <Text style={styles.breastUnit}>oz</Text>
+                </View>
+              </View>
+            </View>
           </>
         )}
 
