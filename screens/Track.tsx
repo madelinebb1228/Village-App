@@ -668,39 +668,48 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
         return;
       }
 
+      // LineChart requires labels.length === dataset.data.length.
+      // Never filter arrays to different lengths — blank out crowded labels instead.
+
       if (period === 'daily') {
-        // LineChart requires ≥ 2 data points; pad to 2 if only 1 session
-        const padded = pumps.length < 2 ? [...pumps, pumps[0]] : pumps;
-        const labels = padded.map((_, i) => `${i + 1}`);
-        const shown  = labels.length > 8 ? labels.filter((_, i) => i % 2 === 0) : labels;
+        // Show each session; pad to ≥ 2 points so LineChart can draw a line
+        const sessions = pumps.length < 2 ? [pumps[0], pumps[0]] : pumps;
+        const step = sessions.length > 6 ? 2 : 1;
+        const labels = sessions.map((p, i) => {
+          if (i % step !== 0) return '';
+          const d = new Date(p.logged_at);
+          return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+        });
         setData({
-          labels: shown,
+          labels,
           datasets: [
-            { data: padded.map(p => p.left_ml || 0), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: padded.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: sessions.map(p => p.left_ml  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: sessions.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
       } else {
-        const dailyData: Record<string, { left: number; right: number }> = {};
+        const buckets: Record<string, { left: number; right: number }> = {};
         pumps.forEach(p => {
-          const date = new Date(p.logged_at).toISOString().split('T')[0];
-          if (!dailyData[date]) dailyData[date] = { left: 0, right: 0 };
-          dailyData[date].left += p.left_ml || 0;
-          dailyData[date].right += p.right_ml || 0;
+          const day = p.logged_at.split('T')[0];
+          if (!buckets[day]) buckets[day] = { left: 0, right: 0 };
+          buckets[day].left  += p.left_ml  || 0;
+          buckets[day].right += p.right_ml || 0;
         });
+        let days = Object.keys(buckets).sort();
+        if (days.length < 2) days = [days[0], days[0]]; // pad to ≥ 2
 
-        const dates = Object.keys(dailyData).sort();
-        const labels = dates.map(d => {
-          const date = new Date(d);
-          return `${date.getMonth() + 1}/${date.getDate()}`;
+        const step = days.length > 7 ? Math.ceil(days.length / 7) : 1;
+        const labels = days.map((d, i) => {
+          if (i % step !== 0) return '';
+          const dt = new Date(d);
+          return `${dt.getMonth() + 1}/${dt.getDate()}`;
         });
-
         setData({
-          labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
+          labels,
           datasets: [
-            { data: dates.map(d => dailyData[d].left), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: dates.map(d => dailyData[d].right), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: days.map(d => buckets[d]?.left  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: days.map(d => buckets[d]?.right || 0), color: () => '#B8A9C9', strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
