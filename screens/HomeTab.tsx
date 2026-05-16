@@ -260,7 +260,6 @@ export default function HomeTab() {
   ];
 
   const greeting = greetingFor(new Date().getHours());
-  const hasActivity = stats.feeds > 0 || stats.diapers > 0 || stats.pumpedMl > 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -291,46 +290,6 @@ export default function HomeTab() {
               <Text style={styles.statLabel}>{card.label}</Text>
             </View>
           ))}
-        </View>
-
-        {/* Recent activity */}
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-
-        <View style={styles.activityCard}>
-          {loading ? (
-            <ActivityIndicator color="#B8A9C9" />
-          ) : hasActivity ? (
-            <View style={styles.activitySummary}>
-              {stats.feeds > 0 && (
-                <ActivityRow
-                  emoji="🍼"
-                  label={`${stats.feeds} feed${stats.feeds !== 1 ? 's' : ''} logged today`}
-                  accent="#B8A9C9"
-                />
-              )}
-              {stats.diapers > 0 && (
-                <ActivityRow
-                  emoji="💩"
-                  label={`${stats.diapers} diaper${stats.diapers !== 1 ? 's' : ''} logged today`}
-                  accent="#A8B8A0"
-                />
-              )}
-              {stats.pumpedMl > 0 && (
-                <ActivityRow
-                  emoji="🤱"
-                  label={`${mlToOz(stats.pumpedMl)} oz pumped today`}
-                  accent="#E8B4B8"
-                />
-              )}
-            </View>
-          ) : (
-            <>
-              <Text style={styles.activityEmpty}>No activity yet today.</Text>
-              <Text style={styles.activityHint}>
-                Tap Track to start logging feeds, diapers, and pumping sessions.
-              </Text>
-            </>
-          )}
         </View>
 
         {/* Village Feed */}
@@ -493,50 +452,6 @@ export default function HomeTab() {
   );
 }
 
-// ─── Activity row sub-component ───────────────────────────────────────────────
-
-function ActivityRow({
-  emoji,
-  label,
-  accent,
-}: {
-  emoji: string;
-  label: string;
-  accent: string;
-}) {
-  return (
-    <View style={activityRowStyles.row}>
-      <View style={[activityRowStyles.dot, { backgroundColor: accent }]} />
-      <Text style={activityRowStyles.emoji}>{emoji}</Text>
-      <Text style={activityRowStyles.label}>{label}</Text>
-    </View>
-  );
-}
-
-const activityRowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 10,
-  },
-  emoji: {
-    fontSize: 18,
-    marginRight: 10,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5A544E',
-    flex: 1,
-  },
-});
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -597,34 +512,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#5A544E',
     marginBottom: 14,
-  },
-  activityCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    minHeight: 72,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  activitySummary: {
-    width: '100%',
-  },
-  activityEmpty: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#5A544E',
-    marginBottom: 8,
-  },
-  activityHint: {
-    fontSize: 13,
-    color: '#B0A89E',
-    textAlign: 'center',
-    lineHeight: 20,
   },
   feedHeader: {
     flexDirection: 'row',
