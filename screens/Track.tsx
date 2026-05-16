@@ -751,6 +751,17 @@ export default function Track() {
   const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
   const [pumpChartKey,      setPumpChartKey]       = useState(0);
 
+  // History navigation
+  const [selectedDate,  setSelectedDate]  = useState(() => new Date());
+  const [detailEntry,   setDetailEntry]   = useState<TimelineEntry | null>(null);
+  const [detailData,    setDetailData]    = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Calendar picker
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calViewDate,  setCalViewDate]  = useState(() => new Date());
+  const [calMode,      setCalMode]      = useState<'month' | 'year'>('month');
+
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
   const [feedMood,          setFeedMood]           = useState('calm');
@@ -803,7 +814,10 @@ export default function Track() {
   const fetchTimeline = useCallback(async () => {
     setRefreshing(true);
     try {
-      const { start, end } = todayRange();
+      const dayStart = new Date(selectedDate); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd   = new Date(selectedDate); dayEnd.setHours(23, 59, 59, 999);
+      const start = dayStart.toISOString();
+      const end   = dayEnd.toISOString();
       const [feedRes, diaperRes, pumpRes] = await Promise.all([
         supabase.from('feeds').select('id, feed_type, logged_at')
           .gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
@@ -835,7 +849,7 @@ export default function Track() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => { fetchTimeline(); }, [fetchTimeline]);
 
@@ -1111,6 +1125,134 @@ export default function Track() {
     ]);
   }
 
+  // ── Date navigation ───────────────────────────────────────────────────────
+
+  function goToPrevDay() {
+    setSelectedDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; });
+  }
+  function goToNextDay() {
+    setSelectedDate(d => {
+      const next = new Date(d); next.setDate(next.getDate() + 1);
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(0,0,0,0);
+      return next < tomorrow ? next : d;
+    });
+  }
+  const isToday = (() => {
+    const t = new Date();
+    return selectedDate.getDate() === t.getDate() &&
+      selectedDate.getMonth() === t.getMonth() &&
+      selectedDate.getFullYear() === t.getFullYear();
+  })();
+  const dateLabel = isToday
+    ? 'Today'
+    : selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  function openCalendar() {
+    setCalViewDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    setCalMode('month');
+    setShowCalendar(true);
+  }
+  function calPrevMonth() {
+    setCalViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  }
+  function calNextMonth() {
+    setCalViewDate(d => {
+      const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const now  = new Date();
+      return next.getFullYear() < now.getFullYear() ||
+        (next.getFullYear() === now.getFullYear() && next.getMonth() <= now.getMonth())
+        ? next : d;
+    });
+  }
+  function selectCalYear(year: number) {
+    setCalViewDate(new Date(year, calViewDate.getMonth(), 1));
+    setCalMode('month');
+  }
+  function selectCalDay(day: number) {
+    setSelectedDate(new Date(calViewDate.getFullYear(), calViewDate.getMonth(), day, 12, 0, 0));
+    setShowCalendar(false);
+  }
+  const calYear  = calViewDate.getFullYear();
+  const calMonth = calViewDate.getMonth();
+  const daysInCalMonth    = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstDayOfCalWeek = new Date(calYear, calMonth, 1).getDay();
+  const todayDate = new Date();
+  const calYearRange = Array.from({ length: todayDate.getFullYear() - 2019 }, (_, i) => 2020 + i);
+
+  // ── Entry detail ───────────────────────────────────────────────────────────
+
+  async function openDetail(entry: TimelineEntry) {
+    setDetailEntry(entry);
+    setDetailData(null);
+    setDetailLoading(true);
+    let fields = '';
+    if (entry.type === 'feed') {
+      fields = 'feed_type,mood,position,latch_quality,breast_side,caregiver,spit_up,burps,duration_seconds,notes,bottle_source,bottle_amount_oz,logged_at';
+    } else if (entry.type === 'diaper') {
+      fields = 'diaper_type,color,consistency,amount,rash,notes,logged_at';
+    } else {
+      fields = 'left_breast,right_breast,total_ml,duration_minutes,cycle_speed,how_feel,milk_color,letdown_achieved,storage_location,logged_at';
+    }
+    const { data } = await supabase.from(entry.table as any).select(fields).eq('id', entry.rawId).maybeSingle();
+    setDetailData(data);
+    setDetailLoading(false);
+  }
+
+  function getDetailRows(type: EntryType, data: any): Array<{ label: string; value: string }> {
+    if (!data) return [];
+    const fmt = (v: any) => {
+      if (v === null || v === undefined || v === '') return '—';
+      if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+      if (typeof v === 'number') return String(v);
+      return String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
+    if (type === 'feed') {
+      const rows: Array<{ label: string; value: string }> = [{ label: 'Feed Type', value: fmt(data.feed_type) }];
+      if (data.feed_type === 'bottle') {
+        rows.push({ label: 'Source', value: fmt(data.bottle_source) });
+        if (data.bottle_amount_oz) rows.push({ label: 'Amount', value: `${data.bottle_amount_oz} oz` });
+      }
+      if (data.feed_type === 'breast') {
+        if (data.breast_side) rows.push({ label: 'Side', value: fmt(data.breast_side) });
+        if (data.duration_seconds) {
+          const m = Math.floor(data.duration_seconds / 60);
+          const s = data.duration_seconds % 60;
+          rows.push({ label: 'Duration', value: s > 0 ? `${m}m ${s}s` : `${m}m` });
+        }
+        if (data.position) rows.push({ label: 'Position', value: fmt(data.position) });
+        if (data.latch_quality) rows.push({ label: 'Latch', value: fmt(data.latch_quality) });
+      }
+      rows.push({ label: 'Baby Mood', value: fmt(data.mood) });
+      rows.push({ label: 'Spit Up', value: fmt(data.spit_up) });
+      if (data.burps > 0) rows.push({ label: 'Burps', value: String(data.burps) });
+      if (data.caregiver) rows.push({ label: 'Caregiver', value: fmt(data.caregiver) });
+      rows.push({ label: 'Notes', value: data.notes || '—' });
+      return rows;
+    }
+    if (type === 'diaper') {
+      const rows: Array<{ label: string; value: string }> = [{ label: 'Type', value: fmt(data.diaper_type) }];
+      if (data.diaper_type === 'dirty' || data.diaper_type === 'both') {
+        if (data.color) rows.push({ label: 'Color', value: fmt(data.color) });
+        if (data.consistency) rows.push({ label: 'Consistency', value: fmt(data.consistency) });
+        if (data.amount) rows.push({ label: 'Amount', value: fmt(data.amount) });
+      }
+      rows.push({ label: 'Rash', value: fmt(data.rash) });
+      rows.push({ label: 'Notes', value: data.notes || '—' });
+      return rows;
+    }
+    return [
+      { label: 'Left Breast',   value: `${data.left_breast  || 0} ml` },
+      { label: 'Right Breast',  value: `${data.right_breast || 0} ml` },
+      { label: 'Total',         value: `${data.total_ml     || 0} ml` },
+      ...(data.duration_minutes ? [{ label: 'Duration', value: `${data.duration_minutes} min` }] : []),
+      ...(data.cycle_speed      ? [{ label: 'Suction Level', value: String(data.cycle_speed) }] : []),
+      { label: 'How It Felt',   value: fmt(data.how_feel) },
+      { label: 'Milk Color',    value: fmt(data.milk_color) },
+      { label: 'Letdown',       value: typeof data.letdown_achieved === 'boolean' ? (data.letdown_achieved ? 'Yes' : 'No') : '—' },
+      { label: 'Storage',       value: fmt(data.storage_location) },
+    ];
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const showDiaperDetail = diaperType === 'dirty' || diaperType === 'both';
@@ -1151,15 +1293,35 @@ export default function Track() {
 
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>
-          <Text style={styles.sectionTitle}>Today's Timeline</Text>
+          <Text style={styles.sectionTitle}>Timeline</Text>
           {refreshing && <ActivityIndicator size="small" color="#B8A9C9" />}
         </View>
+
+        {/* Date navigation */}
+        <View style={styles.dateNav}>
+          <TouchableOpacity style={styles.dateNavBtn} onPress={goToPrevDay} activeOpacity={0.7}>
+            <Text style={styles.dateNavArrow}>‹</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dateNavCenter} onPress={openCalendar} activeOpacity={0.7}>
+            <Text style={styles.dateNavLabel}>{dateLabel} <Text style={styles.dateNavCal}>▾</Text></Text>
+            {!isToday && (
+              <TouchableOpacity onPress={() => setSelectedDate(new Date())} activeOpacity={0.7}>
+                <Text style={styles.dateNavToday}>Back to today</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.dateNavBtn, isToday && styles.dateNavBtnDisabled]}
+            onPress={goToNextDay} activeOpacity={isToday ? 1 : 0.7}>
+            <Text style={[styles.dateNavArrow, isToday && styles.dateNavArrowDisabled]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.timeline}>
           {entries.length === 0 ? (
-            <Text style={styles.empty}>No entries yet</Text>
+            <Text style={styles.empty}>No entries for this day</Text>
           ) : (
             entries.map((entry, i) => (
-              <View key={entry.id}
+              <TouchableOpacity key={entry.id} activeOpacity={0.75} onPress={() => openDetail(entry)}
                 style={[styles.entry, i < entries.length - 1 && styles.entryBorder]}>
                 <Text style={styles.entryEmoji}>{entry.emoji}</Text>
                 <View style={styles.entryBody}>
@@ -1171,11 +1333,48 @@ export default function Track() {
                   onPress={() => handleDeleteEntry(entry)} activeOpacity={0.7}>
                   <Text style={styles.deleteIcon}>🗑</Text>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
       </ScrollView>
+
+      {/* ══════════ DETAIL MODAL ══════════ */}
+      <Modal visible={detailEntry !== null} animationType="slide" transparent
+        onRequestClose={() => setDetailEntry(null)}>
+        <View style={det.overlay}>
+          <TouchableOpacity style={det.backdrop} activeOpacity={1} onPress={() => setDetailEntry(null)} />
+          <View style={det.sheet}>
+            <View style={det.handle} />
+            <View style={det.header}>
+              <Text style={det.title}>
+                {detailEntry?.emoji} {detailEntry?.label}
+                {'  '}<Text style={det.titleTime}>{detailEntry ? formatTime(detailEntry.logged_at) : ''}</Text>
+              </Text>
+              <TouchableOpacity onPress={() => setDetailEntry(null)} activeOpacity={0.7}>
+                <Text style={det.close}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {detailLoading ? (
+              <ActivityIndicator color="#B8A9C9" style={{ marginTop: 32, marginBottom: 24 }} />
+            ) : (
+              <ScrollView style={det.scroll} contentContainerStyle={det.content}
+                showsVerticalScrollIndicator={false}>
+                {detailEntry && getDetailRows(detailEntry.type, detailData).map((row, i, arr) => (
+                  <View key={row.label} style={[det.row, i < arr.length - 1 && det.rowBorder]}>
+                    <Text style={det.rowLabel}>{row.label}</Text>
+                    <Text style={det.rowValue}>{row.value}</Text>
+                  </View>
+                ))}
+                <TouchableOpacity style={det.deleteBtn} activeOpacity={0.8}
+                  onPress={() => { setDetailEntry(null); if (detailEntry) handleDeleteEntry(detailEntry); }}>
+                  <Text style={det.deleteBtnText}>🗑  Delete Entry</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* ══════════ FEED MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'feed'} onClose={closeModal}
@@ -1352,6 +1551,91 @@ export default function Track() {
         <PickerField label="Storage" options={PUMP_STORAGE}
           value={storageLocation} onChange={setStorageLocation} accent="#E8B4B8" />
       </ModalSheet>
+
+      {/* ══════════ CALENDAR PICKER ══════════ */}
+      <Modal visible={showCalendar} animationType="fade" transparent
+        onRequestClose={() => setShowCalendar(false)}>
+        <View style={cal.overlay}>
+          <TouchableOpacity style={cal.backdrop} activeOpacity={1} onPress={() => setShowCalendar(false)} />
+          <View style={cal.container}>
+
+            {/* Month/Year header */}
+            <View style={cal.header}>
+              {calMode === 'month' ? (
+                <>
+                  <TouchableOpacity onPress={calPrevMonth} style={cal.headerBtn}>
+                    <Text style={cal.headerArrow}>‹</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setCalMode('year')} activeOpacity={0.7}>
+                    <Text style={cal.headerTitle}>
+                      {calViewDate.toLocaleDateString('en-US', { month: 'long' })}{' '}
+                      <Text style={cal.headerYear}>{calYear}</Text>
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={calNextMonth} style={cal.headerBtn}>
+                    <Text style={cal.headerArrow}>›</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={cal.headerBtn} />
+                  <Text style={cal.headerTitle}>Select Year</Text>
+                  <TouchableOpacity onPress={() => setCalMode('month')} style={cal.headerBtn}>
+                    <Text style={[cal.headerArrow, { fontSize: 14 }]}>✕</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            {calMode === 'year' ? (
+              /* Year grid */
+              <View style={cal.yearGrid}>
+                {calYearRange.map(y => {
+                  const isCurYear = y === calYear;
+                  return (
+                    <TouchableOpacity key={y} style={[cal.yearCell, isCurYear && cal.yearCellSel]}
+                      onPress={() => selectCalYear(y)} activeOpacity={0.75}>
+                      <Text style={[cal.yearText, isCurYear && cal.yearTextSel]}>{y}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              /* Month grid */
+              <>
+                <View style={cal.dayHeaders}>
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                    <Text key={d} style={cal.dayHeader}>{d}</Text>
+                  ))}
+                </View>
+                <View style={cal.grid}>
+                  {Array.from({ length: firstDayOfCalWeek }).map((_, i) => (
+                    <View key={`e${i}`} style={cal.cell} />
+                  ))}
+                  {Array.from({ length: daysInCalMonth }, (_, i) => i + 1).map(day => {
+                    const date = new Date(calYear, calMonth, day);
+                    const isSel = day === selectedDate.getDate() &&
+                      calMonth === selectedDate.getMonth() &&
+                      calYear  === selectedDate.getFullYear();
+                    const isTod = day === todayDate.getDate() &&
+                      calMonth === todayDate.getMonth() &&
+                      calYear  === todayDate.getFullYear();
+                    const isFut = date > todayDate;
+                    return (
+                      <TouchableOpacity key={day} style={cal.cell} disabled={isFut}
+                        onPress={() => selectCalDay(day)} activeOpacity={0.75}>
+                        <View style={[cal.dayCell, isSel && cal.dayCellSel, isTod && !isSel && cal.dayCellToday]}>
+                          <Text style={[cal.dayText, isFut && cal.dayFuture, isSel && cal.daySel]}>{day}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1413,4 +1697,71 @@ const styles = StyleSheet.create({
   breastDivider:   { width: 1, backgroundColor: '#E0D8D0', marginVertical: 16 },
   totalPreview:    { fontSize: 13, color: '#E8B4B8', fontWeight: '700', textAlign: 'center',
                      marginBottom: 20, marginTop: 4 },
+
+  // Date navigation
+  dateNav:             { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  dateNavBtn:          { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  dateNavBtnDisabled:  { opacity: 0.25 },
+  dateNavArrow:        { fontSize: 28, fontWeight: '300', color: '#5A544E', lineHeight: 32 },
+  dateNavArrowDisabled:{ color: '#C4BAB2' },
+  dateNavCenter:       { flex: 1, alignItems: 'center', gap: 2 },
+  dateNavLabel:        { fontSize: 16, fontWeight: '700', color: '#3D3530' },
+  dateNavCal:          { fontSize: 12, color: '#B8A9C9' },
+  dateNavToday:        { fontSize: 12, color: '#B8A9C9', fontWeight: '600' },
+});
+
+// ── Calendar styles ───────────────────────────────────────────────────────────
+const cal = StyleSheet.create({
+  overlay:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(60,50,45,0.5)' },
+  container:   { backgroundColor: '#FEFCF8', borderRadius: 20, padding: 20, width: 320,
+                 shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+                 shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  headerBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerArrow: { fontSize: 26, color: '#5A544E', fontWeight: '300' },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#3D3530', textAlign: 'center' },
+  headerYear:  { color: '#B8A9C9' },
+  dayHeaders:  { flexDirection: 'row', marginBottom: 6 },
+  dayHeader:   { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700',
+                 color: '#B0A89E', textTransform: 'uppercase' },
+  grid:        { flexDirection: 'row', flexWrap: 'wrap' },
+  cell:        { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
+  dayCell:     { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  dayCellSel:  { backgroundColor: '#B8A9C9' },
+  dayCellToday:{ borderWidth: 1.5, borderColor: '#B8A9C9' },
+  dayText:     { fontSize: 14, fontWeight: '500', color: '#3D3530' },
+  dayFuture:   { color: '#D8D0C8' },
+  daySel:      { color: '#fff', fontWeight: '700' },
+  yearGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 4 },
+  yearCell:    { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
+                 backgroundColor: '#F3EFE9', minWidth: 72, alignItems: 'center' },
+  yearCellSel: { backgroundColor: '#B8A9C9' },
+  yearText:    { fontSize: 15, fontWeight: '600', color: '#5A544E' },
+  yearTextSel: { color: '#fff' },
+});
+
+// ── Detail modal styles ────────────────────────────────────────────────────────
+const det = StyleSheet.create({
+  overlay:    { flex: 1, justifyContent: 'flex-end' },
+  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(60,50,45,0.38)' },
+  sheet:      { backgroundColor: '#FEFCF8', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                paddingTop: 12, maxHeight: '80%' },
+  handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D8D0C8',
+                alignSelf: 'center', marginBottom: 16 },
+  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                paddingHorizontal: 24, marginBottom: 8 },
+  title:      { fontSize: 18, fontWeight: '800', color: '#3D3530' },
+  titleTime:  { fontSize: 14, fontWeight: '500', color: '#B0A89E' },
+  close:      { fontSize: 18, color: '#B0A89E', paddingLeft: 8 },
+  scroll:     { flexGrow: 0 },
+  content:    { paddingHorizontal: 24, paddingBottom: 24 },
+  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+                paddingVertical: 13 },
+  rowBorder:  { borderBottomWidth: 1, borderBottomColor: '#F3EFE9' },
+  rowLabel:   { fontSize: 14, fontWeight: '600', color: '#8A7E78', flex: 1 },
+  rowValue:   { fontSize: 14, color: '#3D3530', fontWeight: '500', flex: 1.5, textAlign: 'right' },
+  deleteBtn:  { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                backgroundColor: '#FFF0F0', borderWidth: 1.5, borderColor: '#E8A0A0' },
+  deleteBtnText: { fontSize: 15, fontWeight: '700', color: '#C05050' },
 });
