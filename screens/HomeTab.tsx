@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,14 +14,14 @@ import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Post = {
+interface Post {
   id: string;
   author: string;
   content: string;
-  timestamp: string;
+  post_type: 'text' | 'milestone' | 'question';
   likes: number;
-  type: 'text' | 'milestone' | 'question';
-};
+  created_at: string;
+}
 
 type Stats = {
   feeds: number;
@@ -49,55 +49,54 @@ function mlToOz(ml: number): string {
   return (ml / 29.5735).toFixed(1);
 }
 
+function getTimeAgo(dateString: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
+  if (seconds < 60) return 'now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeTab() {
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
 
-  const [posts, setPosts] = useState<Post[]>([
-    {
-      id: '1',
-      author: 'Sarah M.',
-      content: 'Finally got baby to sleep through the night! 7 hours straight 🎉 Any tips for keeping it consistent?',
-      timestamp: '2h ago',
-      likes: 12,
-      type: 'question',
-    },
-    {
-      id: '2',
-      author: 'Jessica K.',
-      content: 'First smile today at 6 weeks! My heart is melting 💕',
-      timestamp: '4h ago',
-      likes: 24,
-      type: 'milestone',
-    },
-    {
-      id: '3',
-      author: 'Village Admin',
-      content: "New WIC-approved recipes added! Check out the sweet potato puffs - babies love them and they're so easy to make.",
-      timestamp: '6h ago',
-      likes: 8,
-      type: 'text',
-    },
-  ]);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [postContent, setPostContent] = useState('');
-  const [postType, setPostType] = useState<Post['type']>('text');
+  const [postType, setPostType] = useState<Post['post_type']>('text');
 
-  function handleCreatePost() {
+  useEffect(() => {
+    fetchPosts();
+  }, []);
+
+  async function fetchPosts() {
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!error && data) setPosts(data);
+  }
+
+  async function handleCreatePost() {
     if (!postContent.trim()) return;
-    const newPost: Post = {
-      id: Date.now().toString(),
-      author: 'You',
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('posts').insert({
+      user_id: user.id,
+      author: user.email?.split('@')[0] || 'Anonymous',
       content: postContent,
-      timestamp: 'now',
+      post_type: postType,
       likes: 0,
-      type: postType,
-    };
-    setPosts([newPost, ...posts]);
-    setPostContent('');
-    setShowCreatePost(false);
+    });
+    if (!error) {
+      setPostContent('');
+      setShowCreatePost(false);
+      fetchPosts();
+    }
   }
 
   // Re-fetch every time this tab comes into focus so numbers update
@@ -261,7 +260,7 @@ export default function HomeTab() {
         {showCreatePost && (
           <View style={styles.createPostContainer}>
             <View style={styles.postTypeSelector}>
-              {(['text', 'milestone', 'question'] as const).map((t) => (
+              {(['text', 'milestone', 'question'] as Post['post_type'][]).map((t) => (
                 <TouchableOpacity
                   key={t}
                   style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
@@ -311,15 +310,15 @@ export default function HomeTab() {
                 </View>
                 <View>
                   <Text style={styles.postAuthorName}>{post.author}</Text>
-                  <Text style={styles.postTimestamp}>{post.timestamp}</Text>
+                  <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
                 </View>
               </View>
-              {post.type !== 'text' && (
+              {post.post_type !== 'text' && (
                 <View style={[
                   styles.postBadge,
-                  post.type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
+                  post.post_type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
                 ]}>
-                  <Text>{post.type === 'milestone' ? '🎉' : '❓'}</Text>
+                  <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
                 </View>
               )}
             </View>
