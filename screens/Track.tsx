@@ -669,12 +669,15 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
       }
 
       if (period === 'daily') {
-        const labels = pumps.map((_, i) => `${i + 1}`);
+        // LineChart requires ≥ 2 data points; pad to 2 if only 1 session
+        const padded = pumps.length < 2 ? [...pumps, pumps[0]] : pumps;
+        const labels = padded.map((_, i) => `${i + 1}`);
+        const shown  = labels.length > 8 ? labels.filter((_, i) => i % 2 === 0) : labels;
         setData({
-          labels: labels.length > 8 ? labels.filter((_, i) => i % 2 === 0) : labels,
+          labels: shown,
           datasets: [
-            { data: pumps.map(p => p.left_ml || 0), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: pumps.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: padded.map(p => p.left_ml || 0), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: padded.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
@@ -956,8 +959,8 @@ export default function Track() {
 
       const payload = {
         user_id:          user.id,
-        left_breast:      left,
-        right_breast:     right,
+        left_ml:          left,
+        right_ml:         right,
         total_ml,
         suction_level:    suctionLevel,
         how_feel:         howFeel,
