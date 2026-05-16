@@ -425,30 +425,300 @@ const chartStyles = StyleSheet.create({
 // Simplified chart components - full implementation would go here
 const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, [babyId, period]);
+
+  const loadData = async () => {
+    if (!babyId) return;
+    setLoading(true);
+    try {
+      const now = new Date();
+      const start = new Date();
+      if (period === 'daily') start.setHours(0, 0, 0, 0);
+      else if (period === 'weekly') start.setDate(now.getDate() - 7);
+      else start.setDate(now.getDate() - 30);
+
+      const { data: feeds } = await supabase
+        .from('feeds')
+        .select('amount, feed_type, logged_at')
+        .eq('baby_id', babyId)
+        .gte('logged_at', start.toISOString())
+        .order('logged_at', { ascending: true });
+
+      if (!feeds || feeds.length === 0) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      const types = ['breast', 'bottle', 'formula', 'solids'];
+      const colors = ['#B8A9C9', '#A8B8A0', '#E8B4B8', '#D4C4A8'];
+      const labels = ['Breast', 'Bottle', 'Formula', 'Solids'];
+      
+      if (period === 'daily') {
+        const hourlyData = types.map(() => new Array(8).fill(0));
+        const hourLabels = ['12a', '3a', '6a', '9a', '12p', '3p', '6p', '9p'];
+        
+        feeds.forEach(feed => {
+          const hour = new Date(feed.logged_at).getHours();
+          const bucket = Math.floor(hour / 3);
+          const typeIdx = types.indexOf(feed.feed_type || 'bottle');
+          if (typeIdx >= 0 && hourlyData[typeIdx][bucket] !== undefined) {
+            hourlyData[typeIdx][bucket] += feed.amount || 0;
+          }
+        });
+
+        setData({
+          labels: hourLabels,
+          datasets: types.map((_, i) => ({
+            data: hourlyData[i],
+            color: () => colors[i],
+            strokeWidth: 2,
+          })),
+          legend: labels,
+        });
+      } else {
+        const dailyData: Record<string, number[]> = {};
+        feeds.forEach(feed => {
+          const date = new Date(feed.logged_at).toISOString().split('T')[0];
+          if (!dailyData[date]) dailyData[date] = [0, 0, 0, 0];
+          const typeIdx = types.indexOf(feed.feed_type || 'bottle');
+          if (typeIdx >= 0) dailyData[date][typeIdx] += feed.amount || 0;
+        });
+
+        const dates = Object.keys(dailyData).sort();
+        const dateLabels = dates.map(d => {
+          const date = new Date(d);
+          return `${date.getMonth() + 1}/${date.getDate()}`;
+        });
+
+        setData({
+          labels: dateLabels.length > 7 ? dateLabels.filter((_, i) => i % Math.ceil(dateLabels.length / 7) === 0) : dateLabels,
+          datasets: types.map((_, i) => ({
+            data: dates.map(d => dailyData[d][i]),
+            color: () => colors[i],
+            strokeWidth: 2,
+          })),
+          legend: labels,
+        });
+      }
+    } catch (err) {
+      console.error('Feed chart error:', err);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <ChartCard title="Feeding Activity"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (!data) return (
+    <ChartCard title="Feeding Activity (ml)">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>No feeding data for this period</Text>
+    </ChartCard>
+  );
+
   return (
     <ChartCard title="Feeding Activity (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <Text style={chartStyles.noData}>Chart loading...</Text>
+      <LineChart data={data} width={screenWidth - 64} height={200} chartConfig={chartConfig} bezier
+        style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
 };
 
 const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, [babyId, period]);
+
+  const loadData = async () => {
+    if (!babyId) return;
+    setLoading(true);
+    try {
+      const now = new Date();
+      const start = new Date();
+      if (period === 'daily') start.setHours(0, 0, 0, 0);
+      else if (period === 'weekly') start.setDate(now.getDate() - 7);
+      else start.setDate(now.getDate() - 30);
+
+      const { data: diapers } = await supabase
+        .from('diaper_logs')
+        .select('diaper_type, logged_at')
+        .eq('baby_id', babyId)
+        .gte('logged_at', start.toISOString())
+        .order('logged_at', { ascending: true });
+
+      if (!diapers || diapers.length === 0) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      if (period === 'daily') {
+        const hours = ['12a', '3a', '6a', '9a', '12p', '3p', '6p', '9p'];
+        const wet = new Array(8).fill(0);
+        const dirty = new Array(8).fill(0);
+
+        diapers.forEach(d => {
+          const hour = new Date(d.logged_at).getHours();
+          const bucket = Math.floor(hour / 3);
+          if (d.diaper_type === 'wet' || d.diaper_type === 'both') wet[bucket]++;
+          if (d.diaper_type === 'dirty' || d.diaper_type === 'both') dirty[bucket]++;
+        });
+
+        setData({
+          labels: hours,
+          datasets: [
+            { data: wet, color: () => '#A8B8A0', strokeWidth: 2 },
+            { data: dirty, color: () => '#8B5E3C', strokeWidth: 2 },
+          ],
+          legend: ['Wet', 'Dirty'],
+        });
+      } else {
+        const dailyData: Record<string, { wet: number; dirty: number }> = {};
+        diapers.forEach(d => {
+          const date = new Date(d.logged_at).toISOString().split('T')[0];
+          if (!dailyData[date]) dailyData[date] = { wet: 0, dirty: 0 };
+          if (d.diaper_type === 'wet' || d.diaper_type === 'both') dailyData[date].wet++;
+          if (d.diaper_type === 'dirty' || d.diaper_type === 'both') dailyData[date].dirty++;
+        });
+
+        const dates = Object.keys(dailyData).sort();
+        const labels = dates.map(d => {
+          const date = new Date(d);
+          return `${date.getMonth() + 1}/${date.getDate()}`;
+        });
+
+        setData({
+          labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
+          datasets: [
+            { data: dates.map(d => dailyData[d].wet), color: () => '#A8B8A0', strokeWidth: 2 },
+            { data: dates.map(d => dailyData[d].dirty), color: () => '#8B5E3C', strokeWidth: 2 },
+          ],
+          legend: ['Wet', 'Dirty'],
+        });
+      }
+    } catch (err) {
+      console.error('Diaper chart error:', err);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <ChartCard title="Diaper Changes"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (!data) return (
+    <ChartCard title="Diaper Changes">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>No diaper data for this period</Text>
+    </ChartCard>
+  );
+
   return (
     <ChartCard title="Diaper Changes">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <Text style={chartStyles.noData}>Chart loading...</Text>
+      <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+        style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
 };
 
 const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, [babyId, period]);
+
+  const loadData = async () => {
+    if (!babyId) return;
+    setLoading(true);
+    try {
+      const now = new Date();
+      const start = new Date();
+      if (period === 'daily') start.setHours(0, 0, 0, 0);
+      else if (period === 'weekly') start.setDate(now.getDate() - 7);
+      else start.setDate(now.getDate() - 30);
+
+      const { data: pumps } = await supabase
+        .from('pumping_sessions')
+        .select('left_ml, right_ml, total_ml, logged_at')
+        .eq('baby_id', babyId)
+        .gte('logged_at', start.toISOString())
+        .order('logged_at', { ascending: true });
+
+      if (!pumps || pumps.length === 0) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      if (period === 'daily') {
+        const labels = pumps.map((_, i) => `${i + 1}`);
+        setData({
+          labels: labels.length > 8 ? labels.filter((_, i) => i % 2 === 0) : labels,
+          datasets: [
+            { data: pumps.map(p => p.left_ml || 0), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: pumps.map(p => p.right_ml || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+          ],
+          legend: ['Left', 'Right'],
+        });
+      } else {
+        const dailyData: Record<string, { left: number; right: number }> = {};
+        pumps.forEach(p => {
+          const date = new Date(p.logged_at).toISOString().split('T')[0];
+          if (!dailyData[date]) dailyData[date] = { left: 0, right: 0 };
+          dailyData[date].left += p.left_ml || 0;
+          dailyData[date].right += p.right_ml || 0;
+        });
+
+        const dates = Object.keys(dailyData).sort();
+        const labels = dates.map(d => {
+          const date = new Date(d);
+          return `${date.getMonth() + 1}/${date.getDate()}`;
+        });
+
+        setData({
+          labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
+          datasets: [
+            { data: dates.map(d => dailyData[d].left), color: () => '#E8B4B8', strokeWidth: 2 },
+            { data: dates.map(d => dailyData[d].right), color: () => '#B8A9C9', strokeWidth: 2 },
+          ],
+          legend: ['Left', 'Right'],
+        });
+      }
+    } catch (err) {
+      console.error('Pumping chart error:', err);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <ChartCard title="Pumping Output"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (!data) return (
+    <ChartCard title="Pumping Output (ml)">
+      <PeriodToggle period={period} onChange={setPeriod} />
+      <Text style={chartStyles.noData}>No pumping data for this period</Text>
+    </ChartCard>
+  );
+
   return (
     <ChartCard title="Pumping Output (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <Text style={chartStyles.noData}>Chart loading...</Text>
+      <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+        style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
 };
