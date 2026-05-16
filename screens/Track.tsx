@@ -779,8 +779,9 @@ export default function Track() {
   const [howFeel,         setHowFeel]         = useState('comfortable');
   const [storageLocation, setStorageLocation] = useState('fridge');
   const [milkColor,       setMilkColor]       = useState('white');
-  const [pumpUseManual,   setPumpUseManual]   = useState(false);
-  const [pumpManualMin,   setPumpManualMin]   = useState('');
+  const [pumpUseManual,    setPumpUseManual]   = useState(false);
+  const [pumpManualMin,    setPumpManualMin]   = useState('');
+  const [letdownAchieved, setLetdownAchieved] = useState(true);
   const pumpTimer = useTimer();
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -855,7 +856,7 @@ export default function Track() {
     } else {
       setLeftBreast(''); setRightBreast(''); setSuctionLevel(5);
       setHowFeel('comfortable'); setStorageLocation('fridge'); setMilkColor('white');
-      setPumpUseManual(false); setPumpManualMin(''); pumpTimer.reset();
+      setPumpUseManual(false); setPumpManualMin(''); setLetdownAchieved(true); pumpTimer.reset();
     }
     setActiveModal(type);
   }
@@ -962,9 +963,10 @@ export default function Track() {
       const total_ml = left + right;
       if (total_ml === 0) throw new Error('Enter at least one breast amount.');
 
-      const durationMinutes = pumpUseManual
-        ? parseFloat(pumpManualMin) || 0
-        : pumpTimer.elapsed / 60;
+      // DB column is integer — round to avoid "invalid input syntax" error
+      const durationMinutes = Math.round(
+        pumpUseManual ? (parseFloat(pumpManualMin) || 0) : pumpTimer.elapsed / 60
+      );
 
       const payload = {
         user_id:          user.id,
@@ -974,8 +976,9 @@ export default function Track() {
         cycle_speed:      suctionLevel,
         how_feel:         howFeel,
         storage_location: storageLocation,
-        milk_color:       milkColor,
-        duration_minutes: durationMinutes > 0 ? durationMinutes : null,
+        milk_color:        milkColor,
+        letdown_achieved:  letdownAchieved,
+        duration_minutes:  durationMinutes > 0 ? durationMinutes : null,
         logged_at:        new Date().toISOString(),
       };
       console.log('[Pump] Attempting to save:', payload);
@@ -1227,6 +1230,23 @@ export default function Track() {
           value={milkColor} onChange={setMilkColor} />
         <PickerField label="How did it feel?" options={PUMP_HOW_FEEL}
           value={howFeel} onChange={setHowFeel} accent="#E8B4B8" />
+
+        <View style={pf.wrap}>
+          <Text style={pf.label}>Letdown achieved?</Text>
+          <View style={pf.row}>
+            <TouchableOpacity
+              style={[pf.chip, letdownAchieved && { backgroundColor: '#E8B4B8', borderColor: '#E8B4B8' }]}
+              onPress={() => setLetdownAchieved(true)} activeOpacity={0.75}>
+              <Text style={[pf.chipText, letdownAchieved && pf.chipSel]}>Yes ✓</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[pf.chip, !letdownAchieved && { backgroundColor: '#E8B4B8', borderColor: '#E8B4B8' }]}
+              onPress={() => setLetdownAchieved(false)} activeOpacity={0.75}>
+              <Text style={[pf.chipText, !letdownAchieved && pf.chipSel]}>No</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <PickerField label="Storage" options={PUMP_STORAGE}
           value={storageLocation} onChange={setStorageLocation} accent="#E8B4B8" />
       </ModalSheet>
