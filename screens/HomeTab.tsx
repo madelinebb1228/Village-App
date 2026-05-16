@@ -5,12 +5,23 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type Post = {
+  id: string;
+  author: string;
+  content: string;
+  timestamp: string;
+  likes: number;
+  type: 'text' | 'milestone' | 'question';
+};
 
 type Stats = {
   feeds: number;
@@ -43,6 +54,51 @@ function mlToOz(ml: number): string {
 export default function HomeTab() {
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
+
+  const [posts, setPosts] = useState<Post[]>([
+    {
+      id: '1',
+      author: 'Sarah M.',
+      content: 'Finally got baby to sleep through the night! 7 hours straight 🎉 Any tips for keeping it consistent?',
+      timestamp: '2h ago',
+      likes: 12,
+      type: 'question',
+    },
+    {
+      id: '2',
+      author: 'Jessica K.',
+      content: 'First smile today at 6 weeks! My heart is melting 💕',
+      timestamp: '4h ago',
+      likes: 24,
+      type: 'milestone',
+    },
+    {
+      id: '3',
+      author: 'Village Admin',
+      content: "New WIC-approved recipes added! Check out the sweet potato puffs - babies love them and they're so easy to make.",
+      timestamp: '6h ago',
+      likes: 8,
+      type: 'text',
+    },
+  ]);
+  const [showCreatePost, setShowCreatePost] = useState(false);
+  const [postContent, setPostContent] = useState('');
+  const [postType, setPostType] = useState<Post['type']>('text');
+
+  function handleCreatePost() {
+    if (!postContent.trim()) return;
+    const newPost: Post = {
+      id: Date.now().toString(),
+      author: 'You',
+      content: postContent,
+      timestamp: 'now',
+      likes: 0,
+      type: postType,
+    };
+    setPosts([newPost, ...posts]);
+    setPostContent('');
+    setShowCreatePost(false);
+  }
 
   // Re-fetch every time this tab comes into focus so numbers update
   // immediately after the user logs something on the Track tab.
@@ -190,6 +246,99 @@ export default function HomeTab() {
             </>
           )}
         </View>
+
+        {/* Village Feed */}
+        <View style={styles.feedHeader}>
+          <Text style={styles.sectionTitle}>Village Feed</Text>
+          <TouchableOpacity
+            style={styles.createPostButton}
+            onPress={() => setShowCreatePost(!showCreatePost)}
+          >
+            <Text style={styles.createPostButtonText}>+ Post</Text>
+          </TouchableOpacity>
+        </View>
+
+        {showCreatePost && (
+          <View style={styles.createPostContainer}>
+            <View style={styles.postTypeSelector}>
+              {(['text', 'milestone', 'question'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
+                  onPress={() => setPostType(t)}
+                >
+                  <Text style={[styles.postTypeText, postType === t && styles.postTypeTextActive]}>
+                    {t === 'text' ? '💬 Update' : t === 'milestone' ? '🎉 Milestone' : '❓ Question'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.postInput}
+              placeholder={
+                postType === 'milestone'
+                  ? 'Share a milestone...'
+                  : postType === 'question'
+                  ? 'Ask the village...'
+                  : "What's on your mind?"
+              }
+              value={postContent}
+              onChangeText={setPostContent}
+              multiline
+              numberOfLines={3}
+            />
+            <View style={styles.postActions}>
+              <TouchableOpacity onPress={() => setShowCreatePost(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, !postContent.trim() && styles.submitButtonDisabled]}
+                onPress={handleCreatePost}
+                disabled={!postContent.trim()}
+              >
+                <Text style={styles.submitButtonText}>Post</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {posts.map((post) => (
+          <View key={post.id} style={styles.postCard}>
+            <View style={styles.postHeader}>
+              <View style={styles.postAuthorRow}>
+                <View style={styles.postAvatar}>
+                  <Text style={styles.postAvatarText}>{post.author.charAt(0)}</Text>
+                </View>
+                <View>
+                  <Text style={styles.postAuthorName}>{post.author}</Text>
+                  <Text style={styles.postTimestamp}>{post.timestamp}</Text>
+                </View>
+              </View>
+              {post.type !== 'text' && (
+                <View style={[
+                  styles.postBadge,
+                  post.type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
+                ]}>
+                  <Text>{post.type === 'milestone' ? '🎉' : '❓'}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.postContent}>{post.content}</Text>
+            <View style={styles.postFooter}>
+              <TouchableOpacity style={styles.postAction}>
+                <Text style={styles.postActionText}>❤️ {post.likes}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.postAction}>
+                <Text style={styles.postActionText}>💬 Reply</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.postAction}>
+                <Text style={styles.postActionText}>↗️ Share</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -327,5 +476,160 @@ const styles = StyleSheet.create({
     color: '#B0A89E',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  feedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 14,
+  },
+  createPostButton: {
+    backgroundColor: '#B8A9C9',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  createPostButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  createPostContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  postTypeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  postTypeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f3f4f6',
+  },
+  postTypeButtonActive: {
+    backgroundColor: '#ede9fe',
+  },
+  postTypeText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  postTypeTextActive: {
+    color: '#7c3aed',
+  },
+  postInput: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  postActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cancelText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  submitButton: {
+    backgroundColor: '#B8A9C9',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#d1d5db',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  postCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  postHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  postAuthorRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  postAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ede9fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  postAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#7c3aed',
+  },
+  postAuthorName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5A544E',
+  },
+  postTimestamp: {
+    fontSize: 12,
+    color: '#B0A89E',
+    marginTop: 1,
+  },
+  postBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  postContent: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#5A544E',
+    marginBottom: 12,
+  },
+  postFooter: {
+    flexDirection: 'row',
+    gap: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  postAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  postActionText: {
+    fontSize: 13,
+    color: '#B0A89E',
   },
 });
