@@ -401,17 +401,28 @@ const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p:
 );
 
 
-const ensureMinRange = (datasets: any[]) => {
-  const allValues = datasets.flatMap(d => d.data);
-  const max = Math.max(...allValues, 0);
-  if (max <= 1) {
-    // Pad datasets to ensure Y-axis shows 0, 1, 2
-    return datasets.map(d => ({
-      ...d,
-      data: d.data.map((v: number) => v === 0 ? 0 : v)
-    }));
-  }
-  return datasets;
+// When yMax < segments (4), tick spacing becomes fractional and Math.round
+// collapses multiple ticks to the same integer (e.g. 0, 0, 1, 1, 1).
+// Fix: inject an invisible phantom dataset whose flat value equals segments,
+// forcing tick spacing to exactly 1 unit. The phantom line is fully transparent
+// with no dots so it has zero visual impact.
+const padToMinYRange = (chartData: any, minRange = 4): any => {
+  const allValues = (chartData.datasets as any[]).flatMap((d: any) => d.data as number[]);
+  const yMax = Math.max(...allValues, 0);
+  if (yMax >= minRange) return chartData;
+  const len = (chartData.datasets[0]?.data as number[])?.length ?? 2;
+  return {
+    ...chartData,
+    datasets: [
+      ...chartData.datasets,
+      {
+        data: new Array(len).fill(minRange),
+        color: () => 'rgba(0,0,0,0)',
+        strokeWidth: 0,
+        withDots: false,
+      },
+    ],
+  };
 };
 
 const chartConfig = {
@@ -542,7 +553,7 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
   return (
     <ChartCard title="Feeding Activity (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <LineChart data={data} width={screenWidth - 64} height={200} chartConfig={chartConfig} bezier
+      <LineChart data={padToMinYRange(data)} width={screenWidth - 64} height={200} chartConfig={chartConfig} bezier
         segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
@@ -644,7 +655,7 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
   return (
     <ChartCard title="Diaper Changes">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+      <LineChart data={padToMinYRange(data)} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
         segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
@@ -736,7 +747,7 @@ const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
   return (
     <ChartCard title="Pumping Output (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
-      <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+      <LineChart data={padToMinYRange(data)} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
         segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
