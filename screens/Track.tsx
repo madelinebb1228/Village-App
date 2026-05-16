@@ -402,11 +402,14 @@ const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p:
 
 const chartConfig = {
   backgroundColor: '#FEFCF8', backgroundGradientFrom: '#FEFCF8', backgroundGradientTo: '#FEFCF8',
-  decimalPlaces: 0, color: (o = 1) => `rgba(90, 84, 78, ${o})`,
+  decimalPlaces: 0, 
+  color: (o = 1) => `rgba(90, 84, 78, ${o})`,
   labelColor: (o = 1) => `rgba(90, 84, 78, ${o * 0.7})`,
   style: { borderRadius: 16 },
   propsForDots: { r: '4', strokeWidth: '2', stroke: '#FEFCF8' },
   propsForBackgroundLines: { strokeDasharray: '', stroke: '#F3EFE9', strokeWidth: 1 },
+  propsForLabels: { fontSize: 10 },
+  formatYLabel: (value) => Math.round(Number(value)).toString(),
 };
 
 const chartStyles = StyleSheet.create({
@@ -526,6 +529,7 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
     <ChartCard title="Feeding Activity (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
       <LineChart data={data} width={screenWidth - 64} height={200} chartConfig={chartConfig} bezier
+        segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
@@ -627,6 +631,7 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
     <ChartCard title="Diaper Changes">
       <PeriodToggle period={period} onChange={setPeriod} />
       <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+        segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
@@ -718,6 +723,7 @@ const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
     <ChartCard title="Pumping Output (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
       <LineChart data={data} width={screenWidth - 64} height={180} chartConfig={chartConfig} bezier
+        segments={4}
         style={chartStyles.chart} withDots withShadow={false} withInnerLines withOuterLines />
     </ChartCard>
   );
