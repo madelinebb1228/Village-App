@@ -451,17 +451,17 @@ const chartStyles = StyleSheet.create({
 });
 
 // Simplified chart components - full implementation would go here
+// Counts sessions per feed type — avoids mixing breast (duration) with
+// bottle/solids (ml) on the same Y-axis.
 const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [babyId, period]);
+  useEffect(() => { loadData(); }, [babyId, period]);
 
   const loadData = async () => {
-    if (!babyId) return;
+    if (!babyId) { setData(null); return; }
     setLoading(true);
     try {
       const now = new Date();
@@ -470,69 +470,41 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
       else if (period === 'weekly') start.setDate(now.getDate() - 7);
       else start.setDate(now.getDate() - 30);
 
-      const { data: feeds } = await supabase
+      const { data: feeds, error } = await supabase
         .from('feeds')
-        .select('amount, feed_type, logged_at')
+        .select('feed_type, logged_at')
         .eq('baby_id', babyId)
         .gte('logged_at', start.toISOString())
         .order('logged_at', { ascending: true });
 
-      if (!feeds || feeds.length === 0) {
-        setData(null);
-        setLoading(false);
-        return;
-      }
+      if (error) console.error('Feed chart query error:', error);
+      if (!feeds || feeds.length === 0) { setData(null); return; }
 
-      const types = ['breast', 'bottle', 'formula', 'solids'];
-      const colors = ['#B8A9C9', '#A8B8A0', '#E8B4B8', '#D4C4A8'];
-      const labels = ['Breast', 'Bottle', 'Formula', 'Solids'];
-      
+      const types  = ['breast', 'bottle', 'solids'];
+      const colors = ['#B8A9C9', '#A8B8A0', '#E8B4B8'];
+      const legend = ['Breast', 'Bottle', 'Solids'];
+
       if (period === 'daily') {
-        const hourlyData = types.map(() => new Array(8).fill(0));
         const hourLabels = ['12a', '3a', '6a', '9a', '12p', '3p', '6p', '9p'];
-        
-        feeds.forEach(feed => {
-          const hour = new Date(feed.logged_at).getHours();
-          const bucket = Math.floor(hour / 3);
-          const typeIdx = types.indexOf(feed.feed_type || 'bottle');
-          if (typeIdx >= 0 && hourlyData[typeIdx][bucket] !== undefined) {
-            hourlyData[typeIdx][bucket] += feed.amount || 0;
-          }
+        const counts = types.map(() => new Array(8).fill(0));
+        feeds.forEach(f => {
+          const bucket = Math.min(Math.floor(new Date(f.logged_at).getHours() / 3), 7);
+          const idx = types.indexOf(f.feed_type ?? 'bottle');
+          if (idx >= 0) counts[idx][bucket]++;
         });
-
-        setData({
-          labels: hourLabels,
-          datasets: types.map((_, i) => ({
-            data: hourlyData[i],
-            color: () => colors[i],
-            strokeWidth: 2,
-          })),
-          legend: labels,
-        });
+        setData({ labels: hourLabels, datasets: types.map((_, i) => ({ data: counts[i], color: () => colors[i], strokeWidth: 2 })), legend });
       } else {
-        const dailyData: Record<string, number[]> = {};
-        feeds.forEach(feed => {
-          const date = new Date(feed.logged_at).toISOString().split('T')[0];
-          if (!dailyData[date]) dailyData[date] = [0, 0, 0, 0];
-          const typeIdx = types.indexOf(feed.feed_type || 'bottle');
-          if (typeIdx >= 0) dailyData[date][typeIdx] += feed.amount || 0;
+        const buckets: Record<string, number[]> = {};
+        feeds.forEach(f => {
+          const day = f.logged_at.split('T')[0];
+          if (!buckets[day]) buckets[day] = [0, 0, 0];
+          const idx = types.indexOf(f.feed_type ?? 'bottle');
+          if (idx >= 0) buckets[day][idx]++;
         });
-
-        const dates = Object.keys(dailyData).sort();
-        const dateLabels = dates.map(d => {
-          const date = new Date(d);
-          return `${date.getMonth() + 1}/${date.getDate()}`;
-        });
-
-        setData({
-          labels: dateLabels.length > 7 ? dateLabels.filter((_, i) => i % Math.ceil(dateLabels.length / 7) === 0) : dateLabels,
-          datasets: types.map((_, i) => ({
-            data: dates.map(d => dailyData[d][i]),
-            color: () => colors[i],
-            strokeWidth: 2,
-          })),
-          legend: labels,
-        });
+        const days = Object.keys(buckets).sort();
+        const dayLabels = days.map(d => { const dt = new Date(d); return `${dt.getMonth() + 1}/${dt.getDate()}`; });
+        const shown = dayLabels.length > 7 ? dayLabels.filter((_, i) => i % Math.ceil(dayLabels.length / 7) === 0) : dayLabels;
+        setData({ labels: shown, datasets: types.map((_, i) => ({ data: days.map(d => buckets[d][i]), color: () => colors[i], strokeWidth: 2 })), legend });
       }
     } catch (err) {
       console.error('Feed chart error:', err);
@@ -542,16 +514,16 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
     }
   };
 
-  if (loading) return <ChartCard title="Feeding Activity"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (loading) return <ChartCard title="Feeding Sessions"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
   if (!data) return (
-    <ChartCard title="Feeding Activity (ml)">
+    <ChartCard title="Feeding Sessions">
       <PeriodToggle period={period} onChange={setPeriod} />
       <Text style={chartStyles.noData}>No feeding data for this period</Text>
     </ChartCard>
   );
 
   return (
-    <ChartCard title="Feeding Activity (ml)">
+    <ChartCard title="Feeding Sessions">
       <PeriodToggle period={period} onChange={setPeriod} />
       <LineChart data={padToMinYRange(data)} width={screenWidth - 64} height={200} chartConfig={chartConfig} bezier
         segments={4}
@@ -563,14 +535,14 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
 const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadData();
   }, [babyId, period]);
 
   const loadData = async () => {
-    if (!babyId) return;
+    if (!babyId) { setData(null); return; }
     setLoading(true);
     try {
       const now = new Date();
@@ -662,17 +634,17 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
   );
 };
 
-const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
+const PumpingChartCard = ({ userId }: { userId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadData();
-  }, [babyId, period]);
+  }, [userId, period]);
 
   const loadData = async () => {
-    if (!babyId) return;
+    if (!userId) { setData(null); return; }
     setLoading(true);
     try {
       const now = new Date();
@@ -681,12 +653,14 @@ const PumpingChartCard = ({ babyId }: { babyId: string | null }) => {
       else if (period === 'weekly') start.setDate(now.getDate() - 7);
       else start.setDate(now.getDate() - 30);
 
-      const { data: pumps } = await supabase
+      const { data: pumps, error } = await supabase
         .from('pumping_sessions')
         .select('left_ml, right_ml, total_ml, logged_at')
-        .eq('baby_id', babyId)
+        .eq('user_id', userId)
         .gte('logged_at', start.toISOString())
         .order('logged_at', { ascending: true });
+
+      if (error) console.error('Pumping chart query error:', error);
 
       if (!pumps || pumps.length === 0) {
         setData(null);
@@ -760,6 +734,7 @@ export default function Track() {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [saving,      setSaving]      = useState(false);
   const [babyId,      setBabyId]      = useState<string | null>(null);
+  const [userId,      setUserId]      = useState<string | null>(null);
 
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
@@ -799,7 +774,12 @@ export default function Track() {
   // ── Data ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    getFirstBabyId().then(setBabyId);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      setUserId(user.id);
+      supabase.from('babies').select('id').eq('user_id', user.id).limit(1).maybeSingle()
+        .then(({ data }) => setBabyId(data?.id ?? null));
+    });
   }, []);
 
   const fetchTimeline = useCallback(async () => {
@@ -1080,7 +1060,7 @@ export default function Track() {
         {/* ── Charts */}
         <FeedChartCard babyId={babyId} />
         <DiaperChartCard babyId={babyId} />
-        <PumpingChartCard babyId={babyId} />
+        <PumpingChartCard userId={userId} />
 
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>
