@@ -4,6 +4,7 @@ import {
   Text,
   ScrollView,
   StyleSheet,
+  Alert,
   ActivityIndicator,
   TouchableOpacity,
   TextInput,
@@ -39,6 +40,35 @@ type Stats = {
   feeds: number;
   diapers: number;
   pumpedMl: number;
+};
+
+type ReminderUrgency = 'info' | 'warning' | 'alert' | 'milestone' | 'streak';
+interface Reminder {
+  id: string;
+  emoji: string;
+  text: string;
+  urgency: ReminderUrgency;
+}
+
+const REMINDER_COLORS: Record<ReminderUrgency, { bg: string; border: string; text: string }> = {
+  info:      { bg: '#F0F6FF', border: '#B8CCE8', text: '#4A6080' },
+  warning:   { bg: '#FFF8EC', border: '#E8C060', text: '#7A5A10' },
+  alert:     { bg: '#FFF0F0', border: '#E87878', text: '#802020' },
+  milestone: { bg: '#F0FFF4', border: '#68C88A', text: '#1A6635' },
+  streak:    { bg: '#F5F0FF', border: '#B8A9C9', text: '#4A3870' },
+};
+
+const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
+  membranes:      { sessions: 30,  days: 60  },
+  valves:         { sessions: 15,  days: 28  },
+  breast_shields: { sessions: 100, days: 180 },
+  tubing:         { sessions: 100, days: 180 },
+};
+const PART_LABELS: Record<string, string> = {
+  membranes:      'Pump membranes',
+  valves:         'Pump valves',
+  breast_shields: 'Breast shields',
+  tubing:         'Pump tubing',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -85,6 +115,7 @@ export default function HomeTab() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
 
   useEffect(() => {
     fetchPosts();
@@ -261,7 +292,162 @@ export default function HomeTab() {
         }
       }
 
+      async function fetchReminders() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user || !isActive) return;
+
+          const items: Reminder[] = [];
+          const now = Date.now();
+
+          // ── Baby age & milestone ─────────────────────────────────────────────
+          const { data: baby } = await supabase
+            .from('babies')
+            .select('name, date_of_birth')
+            .eq('user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (baby?.date_of_birth) {
+            const ageDays = Math.floor((now - new Date(baby.date_of_birth).getTime()) / 86400000);
+            const ageWeeks = Math.floor(ageDays / 7);
+            const birthDate = new Date(baby.date_of_birth);
+            const today = new Date();
+            const sameDay = today.getDate() === birthDate.getDate();
+            const monthsOld = (today.getFullYear() - birthDate.getFullYear()) * 12
+              + (today.getMonth() - birthDate.getMonth());
+            const name = baby.name || 'Baby';
+            const WEEK_MILESTONES  = [4, 8, 12];
+            const MONTH_MILESTONES = [4, 5, 6, 9, 12, 15, 18, 24];
+
+            const isWeekMilestone  = ageDays % 7 === 0 && WEEK_MILESTONES.includes(ageWeeks);
+            const isMonthMilestone = sameDay && MONTH_MILESTONES.includes(monthsOld);
+
+            if (isMonthMilestone) {
+              items.push({ id: 'milestone', emoji: '🎉', text: `${name} is ${monthsOld} months old today!`, urgency: 'milestone' });
+            } else if (isWeekMilestone) {
+              items.push({ id: 'milestone', emoji: '🎉', text: `${name} is ${ageWeeks} weeks old today!`, urgency: 'milestone' });
+            } else {
+              const ageLabel = monthsOld >= 3
+                ? `${monthsOld} month${monthsOld !== 1 ? 's' : ''}`
+                : `${ageWeeks} week${ageWeeks !== 1 ? 's' : ''}`;
+              items.push({ id: 'age', emoji: '👶', text: `${name} is ${ageLabel} old`, urgency: 'info' });
+            }
+          }
+
+          // ── Feeding gap ──────────────────────────────────────────────────────
+          const { data: lastFeed } = await supabase
+            .from('feeds')
+            .select('logged_at')
+            .order('logged_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (lastFeed) {
+            const mins = (now - new Date(lastFeed.logged_at).getTime()) / 60000;
+            const h = Math.floor(mins / 60);
+            const m = Math.floor(mins % 60);
+            const label = h > 0 ? `${h}h ${m}m ago` : `${m}m ago`;
+            if (mins > 210) {
+              items.push({ id: 'feed_gap', emoji: '🍼', text: `Baby last fed ${label} — might be hungry!`, urgency: 'alert' });
+            } else if (mins > 150) {
+              items.push({ id: 'feed_gap', emoji: '🍼', text: `Baby last fed ${label} — feed time coming up`, urgency: 'warning' });
+            }
+          }
+
+          // ── Diaper gap ───────────────────────────────────────────────────────
+          const { data: lastDiaper } = await supabase
+            .from('diaper_logs')
+            .select('logged_at')
+            .order('logged_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (lastDiaper) {
+            const hrs = (now - new Date(lastDiaper.logged_at).getTime()) / 3600000;
+            const h = Math.floor(hrs);
+            const m = Math.floor((hrs - h) * 60);
+            const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+            if (hrs > 4) {
+              items.push({ id: 'diaper_gap', emoji: '💩', text: `No diaper change logged in ${label}`, urgency: 'warning' });
+            }
+          }
+
+          // ── Supply alerts ────────────────────────────────────────────────────
+          const { data: supplies } = await supabase
+            .from('supply_items')
+            .select('supply_type, quantity_remaining, unit, low_threshold')
+            .eq('user_id', user.id);
+
+          for (const s of supplies ?? []) {
+            if (s.low_threshold > 0 && s.quantity_remaining <= s.low_threshold) {
+              if (s.supply_type === 'formula') {
+                items.push({ id: 'supply_formula', emoji: '🍶', text: `Low on formula — ${s.quantity_remaining.toFixed(1)} oz left`, urgency: 'warning' });
+              } else if (s.supply_type === 'diapers') {
+                items.push({ id: 'supply_diapers', emoji: '🩺', text: `Running low on diapers — ${Math.round(s.quantity_remaining)} left`, urgency: 'warning' });
+              } else if (s.supply_type === 'breastmilk') {
+                items.push({ id: 'supply_milk', emoji: '🤱', text: `Milk stash low — ${(s.quantity_remaining / 29.5735).toFixed(1)} oz left`, urgency: 'warning' });
+              }
+            }
+          }
+
+          // ── Pump parts overdue ───────────────────────────────────────────────
+          const { data: parts } = await supabase
+            .from('pump_parts')
+            .select('part_name, sessions_since_replaced, last_replaced')
+            .eq('user_id', user.id);
+
+          for (const p of parts ?? []) {
+            const limits = PART_LIMITS[p.part_name];
+            if (!limits) continue;
+            const daysSince = (now - new Date(p.last_replaced).getTime()) / 86400000;
+            if (p.sessions_since_replaced >= limits.sessions || daysSince >= limits.days) {
+              items.push({
+                id: `part_${p.part_name}`,
+                emoji: '🔧',
+                text: `${PART_LABELS[p.part_name] || p.part_name} overdue for replacement`,
+                urgency: 'alert',
+              });
+            }
+          }
+
+          // ── Logging streak ───────────────────────────────────────────────────
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+          sevenDaysAgo.setHours(0, 0, 0, 0);
+          const since = sevenDaysAgo.toISOString();
+
+          const [sFeeds, sDiapers, sPumps] = await Promise.all([
+            supabase.from('feeds').select('logged_at').gte('logged_at', since),
+            supabase.from('diaper_logs').select('logged_at').gte('logged_at', since),
+            supabase.from('pumping_sessions').select('logged_at').gte('logged_at', since).eq('user_id', user.id),
+          ]);
+
+          const loggedDays = new Set<string>();
+          for (const r of [...(sFeeds.data ?? []), ...(sDiapers.data ?? []), ...(sPumps.data ?? [])]) {
+            loggedDays.add(r.logged_at.split('T')[0]);
+          }
+          let streak = 0;
+          for (let i = 0; i < 7; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            if (loggedDays.has(d.toISOString().split('T')[0])) streak++;
+            else break;
+          }
+          if (streak >= 7) {
+            items.push({ id: 'streak', emoji: '🔥', text: `7-day logging streak! You're on a roll!`, urgency: 'streak' });
+          } else if (streak >= 3) {
+            items.push({ id: 'streak', emoji: '⭐', text: `${streak}-day logging streak — keep it up!`, urgency: 'streak' });
+          }
+
+          if (isActive) setReminders(items);
+        } catch (err: any) {
+          console.warn('HomeTab fetchReminders error:', err.message);
+        }
+      }
+
       fetchStats();
+      fetchReminders();
 
       return () => {
         isActive = false;
@@ -319,6 +505,22 @@ export default function HomeTab() {
             </View>
           ))}
         </View>
+
+        {/* Reminders */}
+        {reminders.length > 0 && (
+          <View style={styles.remindersSection}>
+            <Text style={styles.sectionTitle}>Reminders</Text>
+            {reminders.map(r => {
+              const c = REMINDER_COLORS[r.urgency];
+              return (
+                <View key={r.id} style={[styles.reminderCard, { backgroundColor: c.bg, borderLeftColor: c.border }]}>
+                  <Text style={styles.reminderEmoji}>{r.emoji}</Text>
+                  <Text style={[styles.reminderText, { color: c.text }]}>{r.text}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Village Feed */}
         <View style={styles.feedHeader}>
@@ -547,6 +749,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#5A544E',
     marginBottom: 14,
+  },
+  remindersSection: {
+    marginBottom: 28,
+  },
+  reminderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    gap: 10,
+  },
+  reminderEmoji: {
+    fontSize: 18,
+  },
+  reminderText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
   },
   feedHeader: {
     flexDirection: 'row',
