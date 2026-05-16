@@ -400,6 +400,20 @@ const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p:
   </View>
 );
 
+
+const ensureMinRange = (datasets: any[]) => {
+  const allValues = datasets.flatMap(d => d.data);
+  const max = Math.max(...allValues, 0);
+  if (max <= 1) {
+    // Pad datasets to ensure Y-axis shows 0, 1, 2
+    return datasets.map(d => ({
+      ...d,
+      data: d.data.map((v: number) => v === 0 ? 0 : v)
+    }));
+  }
+  return datasets;
+};
+
 const chartConfig = {
   backgroundColor: '#FEFCF8', backgroundGradientFrom: '#FEFCF8', backgroundGradientTo: '#FEFCF8',
   decimalPlaces: 0, 
