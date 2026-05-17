@@ -391,6 +391,42 @@ export default function HomeTab() {
             }
           }
 
+          // ── Milk stash expiration ────────────────────────────────────────────
+          const { data: milkBatches } = await supabase
+            .from('milk_stash')
+            .select('id, amount_ml, stored_date, location')
+            .eq('user_id', user.id);
+
+          const MILK_FRIDGE_DAYS  = 4;
+          const MILK_FREEZER_DAYS = 365;
+          let fridgeExpiredOz = 0, fridgeTodayOz = 0, fridgeSoonOz = 0, freezerSoonOz = 0;
+
+          for (const batch of milkBatches ?? []) {
+            const limit     = batch.location === 'fridge' ? MILK_FRIDGE_DAYS : MILK_FREEZER_DAYS;
+            const expiresMs = new Date(batch.stored_date).getTime() + limit * 86400000;
+            const daysLeft  = Math.ceil((expiresMs - now) / 86400000);
+            const oz        = batch.amount_ml / 29.5735;
+            if (batch.location === 'fridge') {
+              if (daysLeft <= 0)      fridgeExpiredOz += oz;
+              else if (daysLeft <= 1) fridgeTodayOz   += oz;
+              else if (daysLeft <= 2) fridgeSoonOz    += oz;
+            } else if (daysLeft <= 30) {
+              freezerSoonOz += oz;
+            }
+          }
+          if (fridgeExpiredOz > 0)
+            items.push({ id: 'milk_expired', emoji: '🍼', urgency: 'alert',
+              text: `${fridgeExpiredOz.toFixed(1)} oz of fridge milk has expired — use or discard` });
+          if (fridgeTodayOz > 0)
+            items.push({ id: 'milk_today', emoji: '🍼', urgency: 'alert',
+              text: `${fridgeTodayOz.toFixed(1)} oz of fridge milk expires today — use or move to freezer!` });
+          if (fridgeSoonOz > 0)
+            items.push({ id: 'milk_soon', emoji: '🍼', urgency: 'warning',
+              text: `${fridgeSoonOz.toFixed(1)} oz of fridge milk expires in 1–2 days — use or freeze soon` });
+          if (freezerSoonOz > 0)
+            items.push({ id: 'milk_freezer_soon', emoji: '❄️', urgency: 'warning',
+              text: `${freezerSoonOz.toFixed(1)} oz of frozen milk expires within 30 days` });
+
           // ── Pump parts overdue ───────────────────────────────────────────────
           const { data: parts } = await supabase
             .from('pump_parts')

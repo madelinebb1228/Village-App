@@ -750,6 +750,7 @@ export default function Track() {
   const [userId,      setUserId]      = useState<string | null>(null);
   const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
   const [pumpChartKey,      setPumpChartKey]       = useState(0);
+  const [editingId,         setEditingId]          = useState<string | null>(null);
 
   // History navigation
   const [selectedDate,  setSelectedDate]  = useState(() => new Date());
@@ -886,6 +887,7 @@ export default function Track() {
     feedTimer.stop();
     pumpTimer.stop();
     setActiveModal(null);
+    setEditingId(null);
   }
 
   // ── Save handlers ─────────────────────────────────────────────────────────
@@ -893,10 +895,6 @@ export default function Track() {
   async function handleSaveFeed() {
     setSaving(true);
     try {
-      const baby_id = await getFirstBabyId();
-      console.log('[Feed] Baby ID:', baby_id);
-      if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
-
       const durationSeconds = feedUseManual
         ? (parseFloat(feedManualMin) || 0) * 60
         : feedTimer.elapsed;
@@ -909,8 +907,7 @@ export default function Track() {
         ? (breastLeft && breastRight ? 'both' : breastLeft ? 'left' : breastRight ? 'right' : null)
         : null;
 
-      const payload = {
-        baby_id,
+      const fields = {
         feed_type:          feedType,
         mood:               feedMood,
         latch_quality:      feedType === 'breast' ? latchQuality : null,
@@ -921,38 +918,41 @@ export default function Track() {
         burps:              feedBurps,
         duration_seconds:   durationSeconds > 0 ? durationSeconds : null,
         notes:              feedNotes.trim() || null,
-        logged_at:          new Date().toISOString(),
         bottle_source:      feedType === 'bottle' ? bottleSource : null,
         bottle_amount_oz:   feedType === 'bottle' && feedAmount ? (parseFloat(feedAmount) || null) : null,
       };
-      console.log('[Feed] Attempting to save:', payload);
 
-      const { error } = await supabase.from('feeds').insert(payload);
-      if (error) throw error;
+      if (editingId) {
+        const { error } = await supabase.from('feeds').update(fields).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const baby_id = await getFirstBabyId();
+        if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
+        const { error } = await supabase.from('feeds').insert({ ...fields, baby_id, logged_at: new Date().toISOString() });
+        if (error) throw error;
+        try {
+          if (feedType === 'bottle' && feedAmount && userId) {
+            const oz = parseFloat(feedAmount) || 0;
+            if (oz > 0) {
+              if (bottleSource === 'breastmilk') {
+                await deductFromSupply(userId, 'breastmilk', oz * 29.5735);
+              } else {
+                await deductFromSupply(userId, 'formula', oz);
+              }
+              setSuppliesRefreshKey(k => k + 1);
+            }
+          }
+        } catch (supplyErr: any) {
+          console.warn('[Feed] Supply update failed (feed still saved):', supplyErr?.message);
+        }
+      }
+
       feedTimer.stop();
       setActiveModal(null);
+      setEditingId(null);
       await fetchTimeline();
-
-      // Supply helpers run independently — failures don't block the save success
-      try {
-        if (feedType === 'bottle' && feedAmount && userId) {
-          const oz = parseFloat(feedAmount) || 0;
-          if (oz > 0) {
-            if (bottleSource === 'breastmilk') {
-              await deductFromSupply(userId, 'breastmilk', oz * 29.5735);
-            } else {
-              await deductFromSupply(userId, 'formula', oz);
-            }
-            setSuppliesRefreshKey(k => k + 1);
-          }
-        }
-      } catch (supplyErr: any) {
-        console.warn('[Feed] Supply update failed (feed still saved):', supplyErr?.message);
-      }
     } catch (err: any) {
-      const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
-      console.error('[Feed] Save failed:', info);
-      Alert.alert('Save Failed', err?.message || err?.code || JSON.stringify(info) || 'Unknown error');
+      Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
       setSaving(false);
     }
@@ -961,41 +961,39 @@ export default function Track() {
   async function handleSaveDiaper() {
     setSaving(true);
     try {
-      const baby_id = await getFirstBabyId();
-      console.log('[Diaper] Baby ID:', baby_id);
-      if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
-
       const hasPoop = diaperType === 'dirty' || diaperType === 'both';
-      const payload = {
-        baby_id,
+      const fields = {
         diaper_type:  diaperType,
         color:        hasPoop ? diaperColor   : null,
         consistency:  hasPoop ? diaperConsist : null,
         amount:       hasPoop ? diaperAmount  : null,
         rash:         diaperRash,
         notes:        diaperNotes.trim() || null,
-        logged_at:    new Date().toISOString(),
       };
-      console.log('[Diaper] Attempting to save:', payload);
 
-      const { error } = await supabase.from('diaper_logs').insert(payload);
-      if (error) throw error;
-      setActiveModal(null);
-      await fetchTimeline();
-
-      // Supply helpers run independently — failures don't block the save success
-      try {
-        if (userId) {
-          await deductFromSupply(userId, 'diapers', 1);
-          setSuppliesRefreshKey(k => k + 1);
+      if (editingId) {
+        const { error } = await supabase.from('diaper_logs').update(fields).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const baby_id = await getFirstBabyId();
+        if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
+        const { error } = await supabase.from('diaper_logs').insert({ ...fields, baby_id, logged_at: new Date().toISOString() });
+        if (error) throw error;
+        try {
+          if (userId) {
+            await deductFromSupply(userId, 'diapers', 1);
+            setSuppliesRefreshKey(k => k + 1);
+          }
+        } catch (supplyErr: any) {
+          console.warn('[Diaper] Supply update failed (diaper still saved):', supplyErr?.message);
         }
-      } catch (supplyErr: any) {
-        console.warn('[Diaper] Supply update failed (diaper still saved):', supplyErr?.message);
       }
+
+      setActiveModal(null);
+      setEditingId(null);
+      await fetchTimeline();
     } catch (err: any) {
-      const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
-      console.error('[Diaper] Save failed:', info);
-      Alert.alert('Save Failed', err?.message || err?.code || JSON.stringify(info) || 'Unknown error');
+      Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
       setSaving(false);
     }
@@ -1005,55 +1003,55 @@ export default function Track() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      console.log('[Pump] User ID:', user?.id);
       if (!user) throw new Error('Not signed in.');
 
-      const left  = parseFloat(leftBreast)  || 0;
-      const right = parseFloat(rightBreast) || 0;
+      const left     = parseFloat(leftBreast)  || 0;
+      const right    = parseFloat(rightBreast) || 0;
       const total_ml = left + right;
       if (total_ml === 0) throw new Error('Enter at least one breast amount.');
 
-      // DB column is integer — round to avoid "invalid input syntax" error
       const durationMinutes = Math.round(
         pumpUseManual ? (parseFloat(pumpManualMin) || 0) : pumpTimer.elapsed / 60
       );
 
-      const payload = {
-        user_id:          user.id,
+      const fields = {
         left_breast:      left,
         right_breast:     right,
         total_ml,
         cycle_speed:      suctionLevel,
         how_feel:         howFeel,
         storage_location: storageLocation,
-        milk_color:        milkColor,
-        letdown_achieved:  letdownAchieved,
-        duration_minutes:  durationMinutes > 0 ? durationMinutes : null,
-        logged_at:        new Date().toISOString(),
+        milk_color:       milkColor,
+        letdown_achieved: letdownAchieved,
+        duration_minutes: durationMinutes > 0 ? durationMinutes : null,
       };
-      console.log('[Pump] Attempting to save:', payload);
 
-      const { error } = await supabase.from('pumping_sessions').insert(payload);
-      if (error) throw error;
+      if (editingId) {
+        const { error } = await supabase.from('pumping_sessions').update(fields).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('pumping_sessions').insert({
+          ...fields, user_id: user.id, logged_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+        try {
+          if (storageLocation === 'fridge' || storageLocation === 'freezer') {
+            await addToMilkStash(user.id, total_ml, storageLocation);
+          }
+          await incrementPumpPartSessions(user.id);
+          setSuppliesRefreshKey(k => k + 1);
+        } catch (supplyErr: any) {
+          console.warn('[Pump] Supply update failed (session still saved):', supplyErr?.message);
+        }
+      }
+
       pumpTimer.stop();
       setActiveModal(null);
+      setEditingId(null);
       await fetchTimeline();
       setPumpChartKey(k => k + 1);
-
-      // Supply helpers run independently — failures don't block the save success
-      try {
-        if (storageLocation !== 'used_immediately') {
-          await addToMilkStash(user.id, total_ml);
-        }
-        await incrementPumpPartSessions(user.id);
-        setSuppliesRefreshKey(k => k + 1);
-      } catch (supplyErr: any) {
-        console.warn('[Pump] Supply update failed (session still saved):', supplyErr?.message);
-      }
     } catch (err: any) {
-      const info = { message: err?.message, code: err?.code, details: err?.details, hint: err?.hint, name: err?.name };
-      console.error('[Pump] Save failed:', info);
-      Alert.alert('Save Failed', err?.message || err?.code || JSON.stringify(info) || 'Unknown error');
+      Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
       setSaving(false);
     }
@@ -1123,6 +1121,68 @@ export default function Track() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => doDelete(entry) },
     ]);
+  }
+
+  // ── Edit entry ────────────────────────────────────────────────────────────
+
+  async function openEdit(entry: TimelineEntry) {
+    setDetailEntry(null);
+    const data = detailData ?? await (async () => {
+      let fields = '';
+      if (entry.type === 'feed') {
+        fields = 'feed_type,mood,position,latch_quality,breast_side,caregiver,spit_up,burps,duration_seconds,notes,bottle_source,bottle_amount_oz';
+      } else if (entry.type === 'diaper') {
+        fields = 'diaper_type,color,consistency,amount,rash,notes';
+      } else {
+        fields = 'left_breast,right_breast,total_ml,duration_minutes,cycle_speed,how_feel,milk_color,letdown_achieved,storage_location';
+      }
+      const { data: fetched } = await supabase.from(entry.table as any).select(fields).eq('id', entry.rawId).maybeSingle();
+      return fetched;
+    })();
+    if (!data) { Alert.alert('Error', 'Could not load entry'); return; }
+
+    setEditingId(entry.rawId);
+
+    if (entry.type === 'feed') {
+      setFeedType(data.feed_type || 'breast');
+      setFeedMood(data.mood || 'calm');
+      const knownPos = FEED_POSITION.map(p => p.value);
+      const pos = data.position || 'cradle';
+      setFeedPosition(knownPos.includes(pos) ? pos : 'other');
+      setFeedPositionOther(knownPos.includes(pos) ? '' : pos);
+      setLatchQuality(data.latch_quality || 'good');
+      setSpitUp(data.spit_up || 'none');
+      setFeedBurps(data.burps || 0);
+      setFeedNotes(data.notes || '');
+      setFeedCaregiver(data.caregiver || 'mom');
+      setFeedUseManual(true);
+      setFeedManualMin(data.duration_seconds ? String(Math.round(data.duration_seconds / 60)) : '');
+      setBreastLeft(data.breast_side === 'left' || data.breast_side === 'both');
+      setBreastRight(data.breast_side === 'right' || data.breast_side === 'both');
+      setFeedAmount(data.bottle_amount_oz != null ? String(data.bottle_amount_oz) : '');
+      setBottleSource(data.bottle_source || 'breastmilk');
+      feedTimer.reset();
+    } else if (entry.type === 'diaper') {
+      setDiaperType(data.diaper_type || 'wet');
+      setDiaperColor(data.color || 'yellow');
+      setDiaperConsist(data.consistency || 'seedy');
+      setDiaperAmount(data.amount || 'medium');
+      setDiaperRash(data.rash || 'none');
+      setDiaperNotes(data.notes || '');
+    } else {
+      setLeftBreast(data.left_breast != null ? String(data.left_breast) : '');
+      setRightBreast(data.right_breast != null ? String(data.right_breast) : '');
+      setSuctionLevel(data.cycle_speed || 5);
+      setHowFeel(data.how_feel || 'comfortable');
+      setStorageLocation(data.storage_location || 'fridge');
+      setMilkColor(data.milk_color || 'white');
+      setLetdownAchieved(data.letdown_achieved ?? true);
+      setPumpUseManual(true);
+      setPumpManualMin(data.duration_minutes ? String(data.duration_minutes) : '');
+      pumpTimer.reset();
+    }
+
+    setActiveModal(entry.type);
   }
 
   // ── Date navigation ───────────────────────────────────────────────────────
@@ -1366,6 +1426,10 @@ export default function Track() {
                     <Text style={det.rowValue}>{row.value}</Text>
                   </View>
                 ))}
+                <TouchableOpacity style={det.editBtn} activeOpacity={0.8}
+                  onPress={() => { if (detailEntry) openEdit(detailEntry); }}>
+                  <Text style={det.editBtnText}>✏️  Edit Entry</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={det.deleteBtn} activeOpacity={0.8}
                   onPress={() => { setDetailEntry(null); if (detailEntry) handleDeleteEntry(detailEntry); }}>
                   <Text style={det.deleteBtnText}>🗑  Delete Entry</Text>
@@ -1378,7 +1442,7 @@ export default function Track() {
 
       {/* ══════════ FEED MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'feed'} onClose={closeModal}
-        title="🍼 Log Feed" accent="#B8A9C9" onSave={handleSaveFeed} saving={saving}>
+        title={editingId ? '🍼 Edit Feed' : '🍼 Log Feed'} accent="#B8A9C9" onSave={handleSaveFeed} saving={saving}>
 
         <PickerField label="Feed type" options={FEED_TYPE}
           value={feedType} onChange={setFeedType} accent="#B8A9C9" />
@@ -1476,7 +1540,7 @@ export default function Track() {
 
       {/* ══════════ DIAPER MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'diaper'} onClose={closeModal}
-        title="💩 Log Diaper" accent="#A8B8A0" onSave={handleSaveDiaper} saving={saving}>
+        title={editingId ? '💩 Edit Diaper' : '💩 Log Diaper'} accent="#A8B8A0" onSave={handleSaveDiaper} saving={saving}>
 
         <PickerField label="Type" options={DIAPER_TYPE}
           value={diaperType} onChange={setDiaperType} accent="#A8B8A0" />
@@ -1499,7 +1563,7 @@ export default function Track() {
 
       {/* ══════════ PUMPING MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'pumping'} onClose={closeModal}
-        title="🤱 Log Pumping" accent="#E8B4B8" onSave={handleSavePumping} saving={saving}>
+        title={editingId ? '🤱 Edit Pumping' : '🤱 Log Pumping'} accent="#E8B4B8" onSave={handleSavePumping} saving={saving}>
 
         <TimerWidget timer={pumpTimer} accent="#E8B4B8"
           useManual={pumpUseManual} onToggleManual={() => setPumpUseManual(v => !v)}
@@ -1761,7 +1825,10 @@ const det = StyleSheet.create({
   rowBorder:  { borderBottomWidth: 1, borderBottomColor: '#F3EFE9' },
   rowLabel:   { fontSize: 14, fontWeight: '600', color: '#8A7E78', flex: 1 },
   rowValue:   { fontSize: 14, color: '#3D3530', fontWeight: '500', flex: 1.5, textAlign: 'right' },
-  deleteBtn:  { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+  editBtn:    { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                backgroundColor: '#F0F4FF', borderWidth: 1.5, borderColor: '#A0B0E8' },
+  editBtnText:   { fontSize: 15, fontWeight: '700', color: '#3050C0' },
+  deleteBtn:  { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
                 backgroundColor: '#FFF0F0', borderWidth: 1.5, borderColor: '#E8A0A0' },
   deleteBtnText: { fontSize: 15, fontWeight: '700', color: '#C05050' },
 });
