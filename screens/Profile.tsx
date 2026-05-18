@@ -1,703 +1,967 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  Modal,
   ScrollView,
-  Alert,
+  TouchableOpacity,
+  TextInput,
   ActivityIndicator,
-  KeyboardAvoidingView,
+  Alert,
+  Image,
   Platform,
-  Switch,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import BabyProfileSheet from './BabyProfileSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Baby = {
+interface UserProfile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  parent_role: string | null;
+}
+
+interface Baby {
   id: string;
   name: string;
   birth_date: string | null;
   is_expecting: boolean;
-};
+  photo_url: string | null;
+  gender: string | null;
+}
+
+interface Post {
+  id: string;
+  content: string;
+  post_type: 'text' | 'milestone' | 'question';
+  created_at: string;
+  likes: number;
+}
+
+const PARENT_ROLES = ['Mom', 'Dad', 'Grandparent', 'Caregiver', 'Other'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDisplayDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00'); // force local timezone
-  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+function memberSince(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function formatDateShort(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function ageLabel(iso: string): string {
-  const birth = new Date(iso + 'T00:00:00');
-  const now = new Date();
-  const days = Math.floor((now.getTime() - birth.getTime()) / 86400000);
+  const days = Math.floor((Date.now() - new Date(iso + 'T00:00:00').getTime()) / 86400000);
   if (days < 0) return 'Not born yet';
-  if (days < 7) return `${days} day${days !== 1 ? 's' : ''} old`;
+  if (days < 7) return `${days}d old`;
   const weeks = Math.floor(days / 7);
-  if (weeks < 8) return `${weeks} week${weeks !== 1 ? 's' : ''} old`;
+  if (weeks < 8) return `${weeks}w old`;
   const months = Math.floor(days / 30.44);
-  if (months < 24) return `${months} month${months !== 1 ? 's' : ''} old`;
-  const years = Math.floor(months / 12);
-  return `${years} year${years !== 1 ? 's' : ''} old`;
+  if (months < 24) return `${months}mo old`;
+  return `${Math.floor(months / 12)}yr old`;
+}
+
+function getTimeAgo(dateString: string): string {
+  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
+  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+async function uploadAvatar(uri: string, userId: string): Promise<string | null> {
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const path = `${userId}/avatar-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('baby-photos')
+      .upload(path, blob, { contentType: `image/${ext}`, upsert: true });
+    if (error) throw error;
+    const { data } = supabase.storage.from('baby-photos').getPublicUrl(path);
+    return data.publicUrl;
+  } catch (err: any) {
+    console.warn('Avatar upload failed:', err.message);
+    return null;
+  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Profile() {
-  const insets = useSafeAreaInsets();
-
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [userEmail, setUserEmail] = useState('');
+  const [userCreatedAt, setUserCreatedAt] = useState('');
   const [baby, setBaby] = useState<Baby | null>(null);
-  const [loadingBaby, setLoadingBaby] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-
-  // Form fields
-  const [name, setName] = useState('');
-  const [month, setMonth] = useState('');
-  const [day, setDay] = useState('');
-  const [year, setYear] = useState('');
-  const [isExpecting, setIsExpecting] = useState(false);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showProfileSheet, setShowProfileSheet] = useState(false);
 
-  // Refs for date tab-through
-  const dayRef = useRef<TextInput>(null);
-  const yearRef = useRef<TextInput>(null);
+  // Edit state
+  const [editUsername, setEditUsername] = useState('');
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editParentRole, setEditParentRole] = useState('');
+  const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState('');
+  const [saveError, setSaveError] = useState('');
 
-  useEffect(() => {
-    loadBaby();
-  }, []);
-
-  async function loadBaby() {
-    setLoadingBaby(true);
+  const loadAll = useCallback(async () => {
+    setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setUserEmail(user.email ?? '');
+      setUserCreatedAt(user.created_at ?? '');
 
-      const { data, error } = await supabase
-        .from('babies')
-        .select('id, name, birth_date, is_expecting')
-        .eq('user_id', user.id)
-        .limit(1)
-        .maybeSingle();
+      const [profileRes, babyRes, postsRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
+        supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
+        supabase.from('posts').select('id,content,post_type,created_at,likes').eq('user_id', user.id).order('created_at', { ascending: false }),
+      ]);
 
-      if (error) console.warn('loadBaby error:', error.message);
-      setBaby(data ?? null);
+      setProfile(profileRes.data ?? null);
+      setBaby(babyRes.data ?? null);
+      setPosts(postsRes.data ?? []);
     } catch (err: any) {
-      console.warn('loadBaby threw:', err.message);
+      console.warn('Profile loadAll error:', err.message);
     } finally {
-      setLoadingBaby(false);
+      setLoading(false);
     }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
+
+  function startEdit() {
+    setEditUsername(profile?.username ?? '');
+    setEditDisplayName(profile?.display_name ?? '');
+    setEditBio(profile?.bio ?? '');
+    setEditParentRole(profile?.parent_role ?? '');
+    setPendingAvatarUri(null);
+    setUsernameError('');
+    setSaveError('');
+    setEditing(true);
   }
 
-  function openForm() {
-    if (baby) {
-      setName(baby.name);
-      setIsExpecting(baby.is_expecting);
-      if (baby.birth_date) {
-        const [y, m, d] = baby.birth_date.split('-');
-        setMonth(m ?? '');
-        setDay(d ?? '');
-        setYear(y ?? '');
-      } else {
-        setMonth(''); setDay(''); setYear('');
-      }
-    } else {
-      setName(''); setMonth(''); setDay(''); setYear('');
-      setIsExpecting(false);
-    }
-    setShowForm(true);
+  function cancelEdit() {
+    setPendingAvatarUri(null);
+    setUsernameError('');
+    setSaveError('');
+    setEditing(false);
   }
 
-  async function handleSave() {
-    if (!name.trim()) {
-      Alert.alert('Name required', "Please enter your baby's name.");
+  async function pickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to add a profile photo.');
       return;
     }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPendingAvatarUri(result.assets[0].uri);
+    }
+  }
 
-    let birth_date: string | null = null;
-    if (!isExpecting) {
-      const mm = month.padStart(2, '0');
-      const dd = day.padStart(2, '0');
-      const yyyy = year;
-      if (!mm || !dd || yyyy.length < 4) {
-        Alert.alert('Date required', 'Enter a full birth date, or turn on "Currently Expecting".');
+  async function saveProfile() {
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) { setSaveError('Not signed in — please restart the app.'); return; }
+
+    const trimmedUsername = editUsername.trim().toLowerCase();
+    if (trimmedUsername) {
+      if (!/^[a-z0-9_]{3,20}$/.test(trimmedUsername)) {
+        setUsernameError('3–20 chars, letters / numbers / underscores only');
         return;
       }
-      birth_date = `${yyyy}-${mm}-${dd}`;
-      if (isNaN(Date.parse(birth_date))) {
-        Alert.alert('Invalid date', 'Please check the birth date and try again.');
-        return;
+      if (trimmedUsername !== profile?.username) {
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', trimmedUsername)
+          .maybeSingle();
+        if (existing) { setUsernameError('That username is already taken'); return; }
       }
     }
 
+    setUsernameError('');
+    setSaveError('');
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not signed in.');
-
-      const payload = {
-        name: name.trim(),
-        birth_date,
-        is_expecting: isExpecting,
-      };
-
-      if (baby) {
-        const { error } = await supabase
-          .from('babies')
-          .update(payload)
-          .eq('id', baby.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('babies')
-          .insert({ ...payload, user_id: user.id });
-        if (error) throw error;
+      let avatarUrl = profile?.avatar_url ?? null;
+      if (pendingAvatarUri) {
+        const uploaded = await uploadAvatar(pendingAvatarUri, user.id);
+        if (uploaded) avatarUrl = uploaded;
       }
 
-      setShowForm(false);
-      await loadBaby();
+      const payload = {
+        username: trimmedUsername || null,
+        display_name: editDisplayName.trim() || null,
+        bio: editBio.trim() || null,
+        avatar_url: avatarUrl,
+        parent_role: editParentRole || null,
+      };
+
+      // Try UPDATE first; if no rows matched, INSERT (handles first-time profile creation)
+      const { data: updated, error: updateErr } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', user.id)
+        .select('id');
+
+      if (updateErr) throw updateErr;
+
+      if (!updated || updated.length === 0) {
+        const { error: insertErr } = await supabase
+          .from('profiles')
+          .insert({ id: user.id, ...payload });
+        if (insertErr) throw insertErr;
+      }
+
+      await loadAll();
+      setEditing(false);
+      setPendingAvatarUri(null);
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      console.warn('saveProfile error:', err.message);
+      setSaveError(err.message || 'Save failed — check your Supabase RLS policies.');
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleSignOut() {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase.auth.signOut();
-              if (error) throw error;
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to sign out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+  async function deletePost(postId: string) {
+    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    if (!error) setPosts(prev => prev.filter(p => p.id !== postId));
   }
 
-  // ─── Sub-renders ────────────────────────────────────────────────────────────
-
-  function renderBabyCard() {
-    if (!baby) {
-      return (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyEmoji}>👶</Text>
-          <Text style={styles.emptyTitle}>No baby profile yet</Text>
-          <Text style={styles.emptySubtitle}>
-            Add your baby's details so Village can personalize your tracking.
-          </Text>
-          <TouchableOpacity style={styles.addButton} onPress={openForm} activeOpacity={0.8}>
-            <Text style={styles.addButtonText}>+ Create Baby Profile</Text>
-          </TouchableOpacity>
-        </View>
-      );
+  function confirmDeletePost(postId: string) {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Delete this post?')) deletePost(postId);
+      return;
     }
+    Alert.alert('Delete Post', 'Delete this post? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deletePost(postId) },
+    ]);
+  }
 
-    const emoji = baby.is_expecting ? '🤰' : '🍼';
-    const dateLabel = baby.is_expecting
-      ? 'Due soon!'
-      : baby.birth_date
-      ? `${formatDisplayDate(baby.birth_date)} · ${ageLabel(baby.birth_date)}`
-      : '';
+  async function handleSignOut() {
+    Alert.alert('Sign Out', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.auth.signOut();
+        if (error) Alert.alert('Error', error.message);
+      }},
+    ]);
+  }
 
+  // ── Derived values ────────────────────────────────────────────────────────
+
+  const avatarSource = pendingAvatarUri
+    ? { uri: pendingAvatarUri }
+    : profile?.avatar_url
+    ? { uri: profile.avatar_url }
+    : null;
+
+  const displayName = profile?.display_name || profile?.username || userEmail.split('@')[0] || 'Your Name';
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (loading) {
     return (
-      <View style={styles.babyCard}>
-        <View style={styles.babyCardAccent} />
-        <View style={styles.babyCardBody}>
-          <Text style={styles.babyEmoji}>{emoji}</Text>
-          <View style={styles.babyInfo}>
-            <Text style={styles.babyName}>{baby.name}</Text>
-            {dateLabel ? <Text style={styles.babyDate}>{dateLabel}</Text> : null}
-          </View>
-          <TouchableOpacity style={styles.editButton} onPress={openForm} activeOpacity={0.8}>
-            <Text style={styles.editButtonText}>Edit</Text>
-          </TouchableOpacity>
+      <SafeAreaView style={s.safeArea}>
+        <View style={s.center}>
+          <ActivityIndicator size="large" color="#B8A9C9" />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
-
-  function renderForm() {
-    return (
-      <Modal
-        visible={showForm}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowForm(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowForm(false)}
-          />
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-            {/* Handle */}
-            <View style={styles.sheetHandle} />
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <Text style={styles.sheetTitle}>
-                {baby ? 'Edit Baby Profile' : 'Create Baby Profile'}
-              </Text>
-
-              {/* Name */}
-              <Text style={styles.fieldLabel}>Baby's name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Olivia"
-                placeholderTextColor="#C4BAB2"
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
-
-              {/* Expecting toggle */}
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleText}>
-                  <Text style={styles.toggleLabel}>Currently expecting</Text>
-                  <Text style={styles.toggleSub}>Turn on if your baby hasn't arrived yet</Text>
-                </View>
-                <Switch
-                  value={isExpecting}
-                  onValueChange={setIsExpecting}
-                  trackColor={{ false: '#E8E3DC', true: '#B8A9C9' }}
-                  thumbColor="#ffffff"
-                />
-              </View>
-
-              {/* Date of birth */}
-              {!isExpecting && (
-                <View style={styles.dateSection}>
-                  <Text style={styles.fieldLabel}>Date of birth</Text>
-                  <View style={styles.dateRow}>
-                    <View style={styles.dateField}>
-                      <Text style={styles.dateFieldLabel}>MM</Text>
-                      <TextInput
-                        style={styles.dateInput}
-                        placeholder="06"
-                        placeholderTextColor="#C4BAB2"
-                        value={month}
-                        onChangeText={(v) => {
-                          const clean = v.replace(/\D/g, '').slice(0, 2);
-                          setMonth(clean);
-                          if (clean.length === 2) dayRef.current?.focus();
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        returnKeyType="next"
-                      />
-                    </View>
-                    <Text style={styles.dateSep}>/</Text>
-                    <View style={styles.dateField}>
-                      <Text style={styles.dateFieldLabel}>DD</Text>
-                      <TextInput
-                        ref={dayRef}
-                        style={styles.dateInput}
-                        placeholder="15"
-                        placeholderTextColor="#C4BAB2"
-                        value={day}
-                        onChangeText={(v) => {
-                          const clean = v.replace(/\D/g, '').slice(0, 2);
-                          setDay(clean);
-                          if (clean.length === 2) yearRef.current?.focus();
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        returnKeyType="next"
-                      />
-                    </View>
-                    <Text style={styles.dateSep}>/</Text>
-                    <View style={[styles.dateField, styles.dateFieldYear]}>
-                      <Text style={styles.dateFieldLabel}>YYYY</Text>
-                      <TextInput
-                        ref={yearRef}
-                        style={styles.dateInput}
-                        placeholder="2024"
-                        placeholderTextColor="#C4BAB2"
-                        value={year}
-                        onChangeText={(v) => setYear(v.replace(/\D/g, '').slice(0, 4))}
-                        keyboardType="number-pad"
-                        maxLength={4}
-                        returnKeyType="done"
-                      />
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {/* Save */}
-              <TouchableOpacity
-                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.85}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.saveButtonText}>
-                    {baby ? 'Save Changes' : 'Create Profile'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowForm(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    );
-  }
-
-  // ─── Main render ────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.heading}>Profile</Text>
+    <SafeAreaView style={s.safeArea}>
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
 
-        <View style={styles.cardWrap}>
-          {loadingBaby ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#B8A9C9" />
+        {/* ── Top bar ── */}
+        <View style={s.topBar}>
+          <Text style={s.heading}>Profile</Text>
+          {editing ? (
+            <View style={s.topBarActions}>
+              <TouchableOpacity onPress={cancelEdit} style={s.topBarCancelBtn}>
+                <Text style={s.topBarCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={saveProfile} style={s.topBarSaveBtn} disabled={saving}>
+                {saving
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={s.topBarSaveText}>Save</Text>
+                }
+              </TouchableOpacity>
             </View>
           ) : (
-            renderBabyCard()
+            <TouchableOpacity onPress={startEdit} style={s.editProfileBtn}>
+              <Text style={s.editProfileBtnText}>Edit Profile</Text>
+            </TouchableOpacity>
           )}
         </View>
 
-        <TouchableOpacity
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.signOutButtonText}>Sign Out</Text>
-        </TouchableOpacity>
-      </View>
+        {/* ── Hero ── */}
+        <View style={s.hero}>
 
-      {renderForm()}
+          {/* Avatar */}
+          <TouchableOpacity
+            style={s.avatarWrap}
+            onPress={editing ? pickAvatar : undefined}
+            activeOpacity={editing ? 0.75 : 1}
+          >
+            {avatarSource ? (
+              <Image source={avatarSource} style={s.avatarImage} />
+            ) : (
+              <Text style={s.avatarInitial}>
+                {(profile?.display_name || userEmail).charAt(0).toUpperCase() || '?'}
+              </Text>
+            )}
+            {editing && (
+              <View style={s.cameraBadge}>
+                <Text style={s.cameraIcon}>📷</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Info — view or edit */}
+          {editing ? (
+            <View style={s.editBlock}>
+              <TextInput
+                style={s.editNameInput}
+                value={editDisplayName}
+                onChangeText={setEditDisplayName}
+                placeholder="Your name"
+                placeholderTextColor="#C4BAB2"
+                autoCapitalize="words"
+              />
+
+              <View style={s.usernameRow}>
+                <Text style={s.atSign}>@</Text>
+                <TextInput
+                  style={s.editUsernameInput}
+                  value={editUsername}
+                  onChangeText={v => {
+                    setEditUsername(v.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+                    setUsernameError('');
+                  }}
+                  placeholder="username"
+                  placeholderTextColor="#C4BAB2"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={20}
+                />
+              </View>
+              {usernameError ? <Text style={s.usernameError}>{usernameError}</Text> : null}
+
+              <TextInput
+                style={s.editBioInput}
+                value={editBio}
+                onChangeText={setEditBio}
+                placeholder="Add a bio..."
+                placeholderTextColor="#C4BAB2"
+                multiline
+                maxLength={160}
+              />
+              <Text style={s.fieldLabel}>I am a...</Text>
+              <View style={s.roleRow}>
+                {PARENT_ROLES.map(role => (
+                  <TouchableOpacity
+                    key={role}
+                    style={[s.roleChip, editParentRole === role && s.roleChipActive]}
+                    onPress={() => setEditParentRole(prev => prev === role ? '' : role)}
+                  >
+                    <Text style={[s.roleChipText, editParentRole === role && s.roleChipTextActive]}>{role}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {saveError ? <Text style={s.saveError}>{saveError}</Text> : null}
+            </View>
+          ) : (
+            <View style={s.viewBlock}>
+              <Text style={s.heroName}>{displayName}</Text>
+              {profile?.username && (
+                <Text style={s.heroUsername}>@{profile.username}</Text>
+              )}
+              {profile?.parent_role && (
+                <View style={s.roleBadge}>
+                  <Text style={s.roleBadgeText}>{profile.parent_role}</Text>
+                </View>
+              )}
+              {profile?.bio ? (
+                <Text style={s.heroBio}>{profile.bio}</Text>
+              ) : null}
+
+              {/* Stats row */}
+              <View style={s.statsRow}>
+                <View style={s.statItem}>
+                  <Text style={s.statNum}>{posts.length}</Text>
+                  <Text style={s.statLbl}>Posts</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statItem}>
+                  <Text style={s.statNum} numberOfLines={1} adjustsFontSizeToFit>
+                    {userCreatedAt ? memberSince(userCreatedAt) : '–'}
+                  </Text>
+                  <Text style={s.statLbl}>Member since</Text>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* ── Baby card ── */}
+        <Text style={s.sectionTitle}>Baby Profile</Text>
+        {baby ? (
+          <TouchableOpacity
+            style={[
+              s.babyCard,
+              baby.gender?.toLowerCase() === 'girl' && { backgroundColor: '#FFC2C3', borderLeftColor: '#FA92B1', shadowColor: '#FA92B1' },
+              baby.gender?.toLowerCase() === 'boy' && { backgroundColor: '#AEC5F1', borderLeftColor: '#57B2E8', shadowColor: '#57B2E8' },
+            ]}
+            onPress={() => setShowProfileSheet(true)}
+            activeOpacity={0.85}
+          >
+            <View style={s.babyCardLeft}>
+              {baby.photo_url ? (
+                <Image source={{ uri: baby.photo_url }} style={s.babyPhoto} />
+              ) : (
+                <View style={[
+                  s.babyAvatarCircle,
+                  baby.gender?.toLowerCase() === 'girl' && { backgroundColor: '#FA92B1' },
+                  baby.gender?.toLowerCase() === 'boy' && { backgroundColor: '#57B2E8' },
+                ]}>
+                  <Text style={s.babyAvatarInitial}>{baby.name.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+              <View>
+                <Text style={s.babyName}>{baby.name}</Text>
+                <Text style={s.babyAge}>
+                  {baby.is_expecting
+                    ? 'Due soon 🤰'
+                    : baby.birth_date
+                    ? `${formatDateShort(baby.birth_date)} · ${ageLabel(baby.birth_date)}`
+                    : ''}
+                </Text>
+              </View>
+            </View>
+            <Text style={s.babyChevron}>›</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={s.babyCardEmpty} onPress={() => setShowProfileSheet(true)} activeOpacity={0.85}>
+            <Text style={s.babyCardEmptyText}>+ Add baby profile</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Your Posts ── */}
+        <Text style={[s.sectionTitle, { marginTop: 28 }]}>Your Posts</Text>
+        {posts.length === 0 ? (
+          <View style={s.emptyPosts}>
+            <Text style={s.emptyPostsText}>No posts yet — share something with your village!</Text>
+          </View>
+        ) : (
+          posts.map(post => (
+            <View key={post.id} style={[
+              s.postCard,
+              {
+                borderLeftWidth: 4,
+                borderLeftColor: post.post_type === 'milestone' ? '#F9DE87'
+                  : post.post_type === 'question' ? '#57B2E8'
+                  : '#B1A7F0',
+              },
+            ]}>
+              <View style={s.postCardTop}>
+                <View style={[
+                  s.postTypeBadge,
+                  post.post_type === 'milestone' && { backgroundColor: '#F8F3D4' },
+                  post.post_type === 'question' && { backgroundColor: '#AEC5F1' },
+                  post.post_type === 'text' && { backgroundColor: '#FDE4DE' },
+                ]}>
+                  <Text style={s.postTypeBadgeText}>
+                    {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
+                  <Text style={s.postDeleteIcon}>🗑</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={s.postContent}>{post.content}</Text>
+              <View style={s.postCardFooter}>
+                <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+                <Text style={s.postLikes}>❤️ {post.likes}</Text>
+              </View>
+            </View>
+          ))
+        )}
+
+        {/* ── Sign out ── */}
+        <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
+          <Text style={s.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+
+      <BabyProfileSheet
+        visible={showProfileSheet}
+        onClose={() => { setShowProfileSheet(false); loadAll(); }}
+      />
     </SafeAreaView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FEFCF8',
-  },
-  container: {
-    flex: 1,
-    padding: 24,
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#FEFCF8' },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 40 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // ── Top bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 28,
   },
   heading: {
     fontSize: 28,
     fontWeight: '800',
     color: '#5A544E',
-    marginBottom: 28,
   },
-  cardWrap: {
-    flex: 1,
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  loadingWrap: {
-    flex: 1,
+  topBarCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  topBarCancelText: {
+    fontSize: 15,
+    color: '#B0A89E',
+    fontWeight: '600',
+  },
+  topBarSaveBtn: {
+    backgroundColor: '#B1A7F0',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  topBarSaveText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  editProfileBtn: {
+    borderWidth: 1.5,
+    borderColor: '#94B58C',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
+  editProfileBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94B58C',
+  },
+
+  // ── Hero
+  hero: {
+    backgroundColor: '#FDE4DE',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#DBABBF',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  avatarWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#FFC2C3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+  },
+  avatarInitial: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#B1A7F0',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FA92B1',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  signOutButton: {
-    backgroundColor: '#E8A0A0',
-    borderRadius: 14,
-    paddingVertical: 17,
-    alignItems: 'center',
-    marginTop: 16,
-    shadowColor: '#E8A0A0',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  signOutButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
+  cameraIcon: { fontSize: 13 },
 
-  // ── Empty state
-  emptyCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 32,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+  // view mode
+  viewBlock: { alignItems: 'center', width: '100%' },
+  heroName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#3D3530',
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  emptyEmoji: {
-    fontSize: 56,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#5A544E',
+  heroUsername: {
+    fontSize: 14,
+    color: '#AEBCB1',
+    fontWeight: '600',
     marginBottom: 8,
   },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#B0A89E',
-    textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: 24,
+  roleBadge: {
+    backgroundColor: '#FA92B1',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginBottom: 10,
   },
-  addButton: {
-    backgroundColor: '#B8A9C9',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    shadowColor: '#B8A9C9',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
+  roleBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    color: '#fff',
+  },
+  heroBio: {
+    fontSize: 14,
+    color: '#8A7E78',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#C1C89B',
+    paddingTop: 14,
+    width: '100%',
+    marginTop: 4,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNum: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#5A544E',
+    marginBottom: 2,
+  },
+  statLbl: {
+    fontSize: 11,
+    color: '#B0A89E',
+    fontWeight: '500',
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#D3E5CF',
+  },
+
+  // edit mode
+  editBlock: { width: '100%', gap: 10 },
+  editNameInput: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3D3530',
+    textAlign: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: '#C1C89B',
+    paddingVertical: 6,
+    marginBottom: 2,
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F5F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  atSign: {
+    fontSize: 15,
+    color: '#AEBCB1',
+    fontWeight: '700',
+    marginRight: 4,
+  },
+  editUsernameInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#3D3530',
+    fontWeight: '600',
+    padding: 0,
+  },
+  usernameError: {
+    fontSize: 12,
+    color: '#DC2626',
+    marginTop: -4,
+    paddingHorizontal: 4,
+  },
+  saveError: {
+    fontSize: 13,
+    color: '#DC2626',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 4,
+    paddingHorizontal: 4,
+  },
+  editBioInput: {
+    backgroundColor: '#F8F5F0',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#3D3530',
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9A8E88',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    paddingHorizontal: 2,
+    marginTop: 4,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  roleChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#F8F3D4',
+  },
+  roleChipActive: {
+    backgroundColor: '#FA92B1',
+  },
+  roleChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8A7E78',
+  },
+  roleChipTextActive: {
+    color: '#fff',
+  },
+
+  // ── Section title
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5A544E',
+    marginBottom: 12,
   },
 
   // ── Baby card
   babyCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  babyCardAccent: {
-    width: 6,
-    backgroundColor: '#B8A9C9',
-  },
-  babyCardBody: {
-    flex: 1,
+    backgroundColor: '#D3E5CF',
+    borderRadius: 16,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#94B58C',
+    shadowColor: '#94B58C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  babyCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
   },
-  babyEmoji: {
-    fontSize: 40,
+  babyPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
-  babyInfo: {
-    flex: 1,
+  babyAvatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFC2C3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  babyAvatarInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
   },
   babyName: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 4,
-  },
-  babyDate: {
-    fontSize: 13,
-    color: '#B0A89E',
-    lineHeight: 18,
-  },
-  editButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#B8A9C9',
-  },
-  editButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#B8A9C9',
-  },
-
-  // ── Modal / sheet
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(60,50,45,0.35)',
-  },
-  sheet: {
-    backgroundColor: '#FEFCF8',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 12,
-    paddingHorizontal: 24,
-    maxHeight: '90%',
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#D8D0C8',
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  sheetTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 28,
-  },
-
-  // ── Form fields
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#5A544E',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  input: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#E8E3DC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
     fontSize: 16,
-    color: '#5A544E',
-    marginBottom: 24,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#E8E3DC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    gap: 12,
-  },
-  toggleText: {
-    flex: 1,
-  },
-  toggleLabel: {
-    fontSize: 15,
     fontWeight: '700',
-    color: '#5A544E',
+    color: '#3D3530',
     marginBottom: 2,
   },
-  toggleSub: {
+  babyAge: {
     fontSize: 12,
-    color: '#B0A89E',
+    color: '#fff',
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
   },
-  dateSection: {
-    marginBottom: 24,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  dateField: {
-    flex: 1,
-  },
-  dateFieldYear: {
-    flex: 1.6,
-  },
-  dateFieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#B0A89E',
-    textAlign: 'center',
-    marginBottom: 6,
-    letterSpacing: 0.5,
-  },
-  dateInput: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#E8E3DC',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#5A544E',
-    textAlign: 'center',
-  },
-  dateSep: {
+  babyChevron: {
     fontSize: 22,
-    color: '#C4BAB2',
-    paddingBottom: 12,
+    color: '#AEBCB1',
+  },
+  babyCardEmpty: {
+    backgroundColor: '#F8F3D4',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#94B58C',
+    borderStyle: 'dashed',
+  },
+  babyCardEmptyText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#94B58C',
   },
 
-  // ── Buttons
-  saveButton: {
-    backgroundColor: '#B8A9C9',
-    borderRadius: 14,
-    paddingVertical: 17,
+  // ── Posts
+  emptyPosts: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 28,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 12,
-    shadowColor: '#B8A9C9',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  saveButtonDisabled: {
-    opacity: 0.65,
+  emptyPostsText: {
+    fontSize: 14,
+    color: '#B0A89E',
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  saveButtonText: {
-    color: '#ffffff',
+  postCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  postCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  postTypeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  postTypeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#5A544E',
+  },
+  postDeleteBtn: {
+    padding: 4,
+  },
+  postDeleteIcon: {
+    fontSize: 15,
+  },
+  postContent: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#5A544E',
+    marginBottom: 10,
+  },
+  postCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F5F0EA',
+    paddingTop: 8,
+  },
+  postTimestamp: {
+    fontSize: 11,
+    color: '#B0A89E',
+  },
+  postLikes: {
+    fontSize: 12,
+    color: '#B0A89E',
+    fontWeight: '500',
+  },
+
+  // ── Sign out
+  signOutBtn: {
+    backgroundColor: '#FF8BA0',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 28,
+    shadowColor: '#FF8BA0',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  signOutText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  cancelButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginBottom: 4,
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    color: '#B0A89E',
-    fontWeight: '600',
   },
 });

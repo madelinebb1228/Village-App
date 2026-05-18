@@ -13,6 +13,7 @@ import AuthScreen from './screens/Auth';
 import OnboardingScreen from './screens/Onboarding';
 import HomeScreen from './screens/HomeTab';
 import TrackScreen from './screens/Track';
+import VillageScreen from './screens/VillageTab';
 import ProfileScreen from './screens/Profile';
 
 const Tab = createBottomTabNavigator();
@@ -23,24 +24,70 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#B8A9C9',
-        tabBarInactiveTintColor: '#5A544E',
+        tabBarActiveTintColor: '#5A544E',
+        tabBarInactiveTintColor: '#AEBCB1',
+        tabBarStyle: {
+          backgroundColor: '#FEFEE2',
+          borderTopColor: '#C1C89B',
+          borderTopWidth: 1.5,
+          paddingTop: 8,
+          paddingBottom: 8,
+          height: 64,
+          shadowColor: '#5A544E',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.10,
+          shadowRadius: 8,
+          elevation: 12,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 2,
+        },
       }}
     >
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 24 }}>🏠</Text> }}
+        options={{
+          tabBarLabel: 'Home',
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏡</Text>
+          ),
+        }}
       />
       <Tab.Screen
         name="Track"
         component={TrackScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 24 }}>📝</Text> }}
+        options={{
+          tabBarLabel: 'Track',
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📋</Text>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Village"
+        component={VillageScreen}
+        options={{
+          tabBarLabel: 'Village',
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏘️</Text>
+          ),
+        }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 24 }}>👤</Text> }}
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🌸</Text>
+          ),
+        }}
       />
     </Tab.Navigator>
   );

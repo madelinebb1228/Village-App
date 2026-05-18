@@ -12,10 +12,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Share,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import BabyProfileSheet from './BabyProfileSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,7 @@ interface Post {
   post_type: 'text' | 'milestone' | 'question';
   likes: number;
   created_at: string;
+  image_url?: string | null;
 }
 
 interface Comment {
@@ -51,11 +55,11 @@ interface Reminder {
 }
 
 const REMINDER_COLORS: Record<ReminderUrgency, { bg: string; border: string; text: string }> = {
-  info:      { bg: '#F0F6FF', border: '#B8CCE8', text: '#4A6080' },
-  warning:   { bg: '#FFF8EC', border: '#E8C060', text: '#7A5A10' },
-  alert:     { bg: '#FFF0F0', border: '#E87878', text: '#802020' },
-  milestone: { bg: '#F0FFF4', border: '#68C88A', text: '#1A6635' },
-  streak:    { bg: '#F5F0FF', border: '#B8A9C9', text: '#4A3870' },
+  info:      { bg: '#AEC5F1', border: '#57B2E8', text: '#5A544E' },
+  warning:   { bg: '#FCE9C4', border: '#F9DE87', text: '#5A544E' },
+  alert:     { bg: '#FDE4DE', border: '#FFC2C3', text: '#5A544E' },
+  milestone: { bg: '#D3E5CF', border: '#94B58C', text: '#5A544E' },
+  streak:    { bg: '#FFC2C3', border: '#FA92B1', text: '#5A544E' },
 };
 
 const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
@@ -91,12 +95,44 @@ function mlToOz(ml: number): string {
   return (ml / 29.5735).toFixed(1);
 }
 
+function babyAgeLabel(dob: string): string {
+  const now = Date.now();
+  const ageDays = Math.floor((now - new Date(dob).getTime()) / 86400000);
+  const ageWeeks = Math.floor(ageDays / 7);
+  const d = new Date(dob);
+  const today = new Date();
+  const monthsOld = (today.getFullYear() - d.getFullYear()) * 12 + (today.getMonth() - d.getMonth());
+  return monthsOld >= 3
+    ? `${monthsOld} month${monthsOld !== 1 ? 's' : ''} old`
+    : `${ageWeeks} week${ageWeeks !== 1 ? 's' : ''} old`;
+}
+
 function getTimeAgo(dateString: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
-  if (seconds < 60) return 'now';
+  // Ensure the string is parsed as UTC (Supabase stores UTC; without Z JS may treat as local)
+  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
+  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+async function uploadPostImage(uri: string, userId: string): Promise<string | null> {
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const path = `${userId}/post-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('baby-photos')
+      .upload(path, blob, { contentType: `image/${ext}`, upsert: true });
+    if (error) throw error;
+    const { data } = supabase.storage.from('baby-photos').getPublicUrl(path);
+    return data.publicUrl;
+  } catch (err: any) {
+    console.warn('Post image upload failed:', err.message);
+    return null;
+  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -115,7 +151,21 @@ export default function HomeTab() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reportPostId, setReportPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
+  const [reportedPostIds, setReportedPostIds] = useState<Set<string>>(new Set());
+  const [pendingPostImageUri, setPendingPostImageUri] = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [baby, setBaby] = useState<{ name: string; birth_date: string; photo_url: string | null; gender: string | null } | null>(null);
+  const [showProfileSheet, setShowProfileSheet] = useState(false);
+  const [suppliesSnap, setSuppliesSnap] = useState<{
+    formula: number | null; formulaLow: boolean;
+    diapers: number | null; diapersLow: boolean;
+    milkOz: number;
+  } | null>(null);
 
   useEffect(() => {
     fetchPosts();
@@ -183,10 +233,16 @@ export default function HomeTab() {
     if (!commentText.trim() || !commentPostId) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('username, display_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const author = profileData?.username ?? profileData?.display_name ?? user.email?.split('@')[0] ?? 'Anonymous';
     const { error } = await supabase.from('comments').insert({
       post_id: commentPostId,
       user_id: user.id,
-      author: user.email?.split('@')[0] || 'Anonymous',
+      author,
       content: commentText,
     });
     if (!error) {
@@ -227,22 +283,79 @@ export default function HomeTab() {
     ]);
   }
 
-  async function handleCreatePost() {
-    if (!postContent.trim()) return;
+  async function submitReport() {
+    if (!reportPostId || !reportReason) return;
+    setReportSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await supabase.from('posts').insert({
+    if (!user) { setReportSubmitting(false); return; }
+    const { error } = await supabase.from('post_reports').insert({
+      reporter_id: user.id,
+      post_id: reportPostId,
+      reason: reportReason,
+    });
+    setReportSubmitting(false);
+    if (!error) {
+      setReportedPostIds(prev => { const next = new Set(prev); next.add(reportPostId!); return next; });
+      setReportDone(true);
+    }
+  }
+
+  async function pickPostImage() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to add a photo to your post.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPendingPostImageUri(result.assets[0].uri);
+    }
+  }
+
+  async function handleCreatePost() {
+    if (!postContent.trim() && !pendingPostImageUri) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { Alert.alert('Not signed in'); return; }
+
+    // Use username if set, otherwise display name, otherwise email prefix
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('username, display_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const author = profileData?.username ?? profileData?.display_name ?? user.email?.split('@')[0] ?? 'Someone';
+
+    let imageUrl: string | null = null;
+    if (pendingPostImageUri) {
+      setImageUploading(true);
+      imageUrl = await uploadPostImage(pendingPostImageUri, user.id);
+      setImageUploading(false);
+    }
+
+    const payload: Record<string, any> = {
       user_id: user.id,
-      author: user.email?.split('@')[0] || 'Anonymous',
-      content: postContent,
+      author,
+      content: postContent.trim(),
       post_type: postType,
       likes: 0,
-    });
-    if (!error) {
-      setPostContent('');
-      setShowCreatePost(false);
-      fetchPosts();
+      created_at: new Date().toISOString(),
+    };
+    if (imageUrl) payload.image_url = imageUrl;
+
+    const { error } = await supabase.from('posts').insert(payload);
+    if (error) {
+      Alert.alert('Could not post', error.message);
+      return;
     }
+    setPostContent('');
+    setPendingPostImageUri(null);
+    setPostType('text');
+    setShowCreatePost(false);
+    fetchPosts();
   }
 
   // Re-fetch every time this tab comes into focus so numbers update
@@ -303,15 +416,17 @@ export default function HomeTab() {
           // ── Baby age & milestone ─────────────────────────────────────────────
           const { data: baby } = await supabase
             .from('babies')
-            .select('name, date_of_birth')
+            .select('name, birth_date, photo_url, gender')
             .eq('user_id', user.id)
             .limit(1)
             .maybeSingle();
 
-          if (baby?.date_of_birth) {
-            const ageDays = Math.floor((now - new Date(baby.date_of_birth).getTime()) / 86400000);
+          if (baby && isActive) setBaby(baby);
+
+          if (baby?.birth_date) {
+            const ageDays = Math.floor((now - new Date(baby.birth_date).getTime()) / 86400000);
             const ageWeeks = Math.floor(ageDays / 7);
-            const birthDate = new Date(baby.date_of_birth);
+            const birthDate = new Date(baby.birth_date);
             const today = new Date();
             const sameDay = today.getDate() === birthDate.getDate();
             const monthsOld = (today.getFullYear() - birthDate.getFullYear()) * 12
@@ -427,6 +542,20 @@ export default function HomeTab() {
             items.push({ id: 'milk_freezer_soon', emoji: '❄️', urgency: 'warning',
               text: `${freezerSoonOz.toFixed(1)} oz of frozen milk expires within 30 days` });
 
+          // ── Supplies snapshot for homepage card ──────────────────────────────
+          if (isActive) {
+            const formulaItem = (supplies ?? []).find(s => s.supply_type === 'formula');
+            const diapersItem = (supplies ?? []).find(s => s.supply_type === 'diapers');
+            const milkOz = (milkBatches ?? []).reduce((sum, b) => sum + b.amount_ml, 0) / 29.5735;
+            setSuppliesSnap({
+              formula: formulaItem?.quantity_remaining ?? null,
+              formulaLow: !!formulaItem && formulaItem.low_threshold > 0 && formulaItem.quantity_remaining <= formulaItem.low_threshold,
+              diapers: diapersItem?.quantity_remaining ?? null,
+              diapersLow: !!diapersItem && diapersItem.low_threshold > 0 && diapersItem.quantity_remaining <= diapersItem.low_threshold,
+              milkOz,
+            });
+          }
+
           // ── Pump parts overdue ───────────────────────────────────────────────
           const { data: parts } = await supabase
             .from('pump_parts')
@@ -492,22 +621,25 @@ export default function HomeTab() {
   );
 
   const statCards = [
-    {
-      label: 'Feeds\nToday',
-      value: String(stats.feeds),
-      accent: '#B8A9C9',
-    },
-    {
-      label: 'Diapers\nToday',
-      value: String(stats.diapers),
-      accent: '#A8B8A0',
-    },
-    {
-      label: 'Pumped\nToday',
-      value: `${mlToOz(stats.pumpedMl)} oz`,
-      accent: '#E8B4B8',
-    },
+    { label: 'Feeds\nToday',   value: String(stats.feeds),           accent: '#94B58C', bg: '#D3E5CF' },
+    { label: 'Diapers\nToday', value: String(stats.diapers),          accent: '#C1C89B', bg: '#F8F3D4' },
+    { label: 'Pumped\nToday',  value: `${mlToOz(stats.pumpedMl)} oz`, accent: '#DBABBF', bg: '#FDE4DE' },
   ];
+
+  const coloredReminders = (() => {
+    const allKeys: ReminderUrgency[] = ['info', 'warning', 'alert', 'milestone', 'streak'];
+    const result: ReminderUrgency[] = [];
+    for (let i = 0; i < reminders.length; i++) {
+      const preferred = reminders[i].urgency;
+      if (i === 0 || REMINDER_COLORS[preferred].bg !== REMINDER_COLORS[result[i - 1]].bg) {
+        result.push(preferred);
+      } else {
+        const alt = allKeys.find(k => REMINDER_COLORS[k].bg !== REMINDER_COLORS[result[i - 1]].bg) ?? preferred;
+        result.push(alt);
+      }
+    }
+    return result;
+  })();
 
   const greeting = greetingFor(new Date().getHours());
 
@@ -520,12 +652,53 @@ export default function HomeTab() {
       >
         <Text style={styles.heading}>{greeting}</Text>
 
+        {/* Baby profile card */}
+        {baby && (
+          <TouchableOpacity
+            style={[
+              styles.babyCard,
+              {
+                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? '#FFC2C3'
+                  : baby.gender?.toLowerCase() === 'boy' ? '#AEC5F1'
+                  : '#FDE4DE',
+                borderLeftColor: baby.gender?.toLowerCase() === 'girl' ? '#FA92B1'
+                  : baby.gender?.toLowerCase() === 'boy' ? '#57B2E8'
+                  : '#DBABBF',
+              },
+            ]}
+            onPress={() => setShowProfileSheet(true)}
+            activeOpacity={0.8}
+          >
+            <View style={[
+              styles.babyAvatar,
+              {
+                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? '#FA92B1'
+                  : baby.gender?.toLowerCase() === 'boy' ? '#57B2E8'
+                  : '#FFC2C3',
+              },
+            ]}>
+              {baby.photo_url ? (
+                <Image source={{ uri: baby.photo_url }} style={styles.babyAvatarPhoto} />
+              ) : (
+                <Text style={styles.babyAvatarText}>
+                  {baby.name ? baby.name.charAt(0).toUpperCase() : '👶'}
+                </Text>
+              )}
+            </View>
+            <View style={styles.babyInfo}>
+              <Text style={styles.babyName}>{baby.name || 'Your Baby'}</Text>
+              <Text style={styles.babyAge}>{babyAgeLabel(baby.birth_date)}</Text>
+            </View>
+            <Text style={styles.babyCardChevron}>›</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Stat cards */}
         <View style={styles.statRow}>
           {statCards.map((card) => (
             <View
               key={card.label}
-              style={[styles.statCard, { borderTopColor: card.accent }]}
+              style={[styles.statCard, { borderTopColor: card.accent, backgroundColor: card.bg }]}
             >
               {loading ? (
                 <ActivityIndicator
@@ -546,8 +719,8 @@ export default function HomeTab() {
         {reminders.length > 0 && (
           <View style={styles.remindersSection}>
             <Text style={styles.sectionTitle}>Reminders</Text>
-            {reminders.map(r => {
-              const c = REMINDER_COLORS[r.urgency];
+            {reminders.map((r, idx) => {
+              const c = REMINDER_COLORS[coloredReminders[idx]];
               return (
                 <View key={r.id} style={[styles.reminderCard, { backgroundColor: c.bg, borderLeftColor: c.border }]}>
                   <Text style={styles.reminderEmoji}>{r.emoji}</Text>
@@ -558,60 +731,44 @@ export default function HomeTab() {
           </View>
         )}
 
-        {/* Village Feed */}
-        <View style={styles.feedHeader}>
-          <Text style={styles.sectionTitle}>Village Feed</Text>
-          <TouchableOpacity
-            style={styles.createPostButton}
-            onPress={() => setShowCreatePost(!showCreatePost)}
-          >
-            <Text style={styles.createPostButtonText}>+ Post</Text>
-          </TouchableOpacity>
-        </View>
-
-        {showCreatePost && (
-          <View style={styles.createPostContainer}>
-            <View style={styles.postTypeSelector}>
-              {(['text', 'milestone', 'question'] as Post['post_type'][]).map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
-                  onPress={() => setPostType(t)}
-                >
-                  <Text style={[styles.postTypeText, postType === t && styles.postTypeTextActive]}>
-                    {t === 'text' ? '💬 Update' : t === 'milestone' ? '🎉 Milestone' : '❓ Question'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+        {/* Supplies overview card */}
+        {suppliesSnap && (
+          <View style={styles.suppliesCard}>
+            <Text style={styles.sectionTitle}>Supplies</Text>
+            <View style={styles.suppliesGrid}>
+              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? '#FFC2A6' : '#FCE9C4' }]}>
+                <Text style={styles.supplyChipEmoji}>🍼</Text>
+                <Text style={[styles.supplyChipValue, suppliesSnap.formulaLow && styles.supplyChipValueLow]}>
+                  {suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} oz` : '–'}
+                </Text>
+                <Text style={styles.supplyChipLabel}>Formula</Text>
+              </View>
+              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? '#F9DE87' : '#F8F3D4' }]}>
+                <Text style={styles.supplyChipEmoji}>👶</Text>
+                <Text style={[styles.supplyChipValue, suppliesSnap.diapersLow && styles.supplyChipValueLow]}>
+                  {suppliesSnap.diapers !== null ? String(Math.round(suppliesSnap.diapers)) : '–'}
+                </Text>
+                <Text style={styles.supplyChipLabel}>Diapers</Text>
+              </View>
+              <View style={[styles.supplyChip, { backgroundColor: '#FDE4DE' }]}>
+                <Text style={styles.supplyChipEmoji}>🤱</Text>
+                <Text style={styles.supplyChipValue}>
+                  {suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} oz` : '–'}
+                </Text>
+                <Text style={styles.supplyChipLabel}>Milk Stash</Text>
+              </View>
             </View>
-            <TextInput
-              style={styles.postInput}
-              placeholder={
-                postType === 'milestone'
-                  ? 'Share a milestone...'
-                  : postType === 'question'
-                  ? 'Ask the village...'
-                  : "What's on your mind?"
-              }
-              value={postContent}
-              onChangeText={setPostContent}
-              multiline
-              numberOfLines={3}
-            />
-            <View style={styles.postActions}>
-              <TouchableOpacity onPress={() => setShowCreatePost(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitButton, !postContent.trim() && styles.submitButtonDisabled]}
-                onPress={handleCreatePost}
-                disabled={!postContent.trim()}
-              >
-                <Text style={styles.submitButtonText}>Post</Text>
-              </TouchableOpacity>
-            </View>
+            {suppliesSnap.formula === null && suppliesSnap.diapers === null && suppliesSnap.milkOz === 0 && (
+              <Text style={styles.suppliesEmptyHint}>Track formula, diapers & milk in the Supplies tab</Text>
+            )}
           </View>
         )}
+
+        {/* For You feed */}
+        <View style={styles.forYouHeader}>
+          <View style={styles.forYouDot} />
+          <Text style={styles.forYouTitle}>For You</Text>
+        </View>
 
         {posts.length === 0 && (
           <View style={styles.emptyFeed}>
@@ -620,7 +777,12 @@ export default function HomeTab() {
         )}
 
         {posts.map((post) => (
-          <View key={post.id} style={styles.postCard}>
+          <View key={post.id} style={[styles.postCard, {
+            borderLeftWidth: 4,
+            borderLeftColor: post.post_type === 'milestone' ? '#F9DE87'
+              : post.post_type === 'question' ? '#57B2E8'
+              : '#B1A7F0',
+          }]}>
             <View style={styles.postHeader}>
               <View style={styles.postAuthorRow}>
                 <View style={styles.postAvatar}>
@@ -635,7 +797,7 @@ export default function HomeTab() {
                 {post.post_type !== 'text' && (
                   <View style={[
                     styles.postBadge,
-                    post.post_type === 'milestone' ? { backgroundColor: '#fef3c7' } : { backgroundColor: '#dbeafe' },
+                    post.post_type === 'milestone' ? { backgroundColor: '#F8F3D4' } : { backgroundColor: '#AEC5F1' },
                   ]}>
                     <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
                   </View>
@@ -647,7 +809,14 @@ export default function HomeTab() {
                 )}
               </View>
             </View>
-            <Text style={styles.postContent}>{post.content}</Text>
+            {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+            {post.image_url ? (
+              <Image
+                source={{ uri: post.image_url }}
+                style={styles.postImage}
+                resizeMode="cover"
+              />
+            ) : null}
             <View style={styles.postFooter}>
               <TouchableOpacity style={styles.postAction} onPress={() => toggleLike(post)}>
                 <Text style={[styles.postActionText, likedPostIds.has(post.id) && styles.likedText]}>
@@ -660,12 +829,30 @@ export default function HomeTab() {
               <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}>
                 <Text style={styles.postActionText}>↗️ Share</Text>
               </TouchableOpacity>
+              {currentUserId && post.user_id !== currentUserId && (
+                reportedPostIds.has(post.id) ? (
+                  <Text style={[styles.postActionText, { marginLeft: 'auto' as any, fontSize: 11, fontStyle: 'italic' }]}>Reported</Text>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.postAction, { marginLeft: 'auto' as any }]}
+                    onPress={() => { setReportPostId(post.id); setReportReason(''); setReportDone(false); }}
+                  >
+                    <Text style={styles.postActionText}>🚩</Text>
+                  </TouchableOpacity>
+                )
+              )}
             </View>
           </View>
         ))}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Baby profile sheet */}
+      <BabyProfileSheet
+        visible={showProfileSheet}
+        onClose={() => setShowProfileSheet(false)}
+      />
 
       {/* Comments modal */}
       <Modal
@@ -721,6 +908,152 @@ export default function HomeTab() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+      {/* Report post modal */}
+      <Modal
+        visible={reportPostId !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { setReportPostId(null); setReportDone(false); }}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Report Post</Text>
+            <TouchableOpacity onPress={() => { setReportPostId(null); setReportDone(false); }}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {reportDone ? (
+            <View style={styles.reportDoneContainer}>
+              <Text style={styles.reportDoneEmoji}>✅</Text>
+              <Text style={styles.reportDoneTitle}>Report Submitted</Text>
+              <Text style={styles.reportDoneBody}>Thank you for helping keep the village safe. We'll review this post.</Text>
+              <TouchableOpacity
+                style={styles.reportCloseBtn}
+                onPress={() => { setReportPostId(null); setReportDone(false); }}
+              >
+                <Text style={styles.reportCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              <Text style={styles.reportPrompt}>Why are you reporting this post?</Text>
+              {['Spam', 'Inappropriate content', 'Harassment', 'Misinformation', 'Other'].map(reason => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[styles.reportReasonBtn, reportReason === reason && styles.reportReasonBtnActive]}
+                  onPress={() => setReportReason(reason)}
+                >
+                  <Text style={[styles.reportReasonText, reportReason === reason && styles.reportReasonTextActive]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.reportSubmitBtn, (!reportReason || reportSubmitting) && styles.submitButtonDisabled]}
+                onPress={submitReport}
+                disabled={!reportReason || reportSubmitting}
+              >
+                {reportSubmitting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.reportSubmitBtnText}>Submit Report</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Floating action button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setShowCreatePost(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabIcon}>＋</Text>
+      </TouchableOpacity>
+
+      {/* Create post modal */}
+      <Modal
+        visible={showCreatePost}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { setShowCreatePost(false); setPendingPostImageUri(null); }}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => { setShowCreatePost(false); setPendingPostImageUri(null); }}>
+              <Text style={styles.modalClose}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Post</Text>
+            <TouchableOpacity
+              style={[
+                styles.postModalSubmitBtn,
+                (!postContent.trim() && !pendingPostImageUri) && styles.submitButtonDisabled,
+              ]}
+              onPress={handleCreatePost}
+              disabled={(!postContent.trim() && !pendingPostImageUri) || imageUploading}
+            >
+              {imageUploading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.postModalSubmitText}>Post</Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+              <View style={styles.postTypeSelector}>
+                {(['text', 'milestone', 'question'] as Post['post_type'][]).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
+                    onPress={() => setPostType(t)}
+                  >
+                    <Text style={[styles.postTypeText, postType === t && styles.postTypeTextActive]}>
+                      {t === 'text' ? '💬 Update' : t === 'milestone' ? '🎉 Milestone' : '❓ Question'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                style={styles.postInput}
+                placeholder={
+                  postType === 'milestone' ? 'Share a milestone...' :
+                  postType === 'question' ? 'Ask the village...' :
+                  "What's on your mind?"
+                }
+                value={postContent}
+                onChangeText={setPostContent}
+                multiline
+                numberOfLines={6}
+                autoFocus
+                textAlignVertical="top"
+              />
+
+              {pendingPostImageUri && (
+                <View style={styles.postImagePreviewWrap}>
+                  <Image
+                    source={{ uri: pendingPostImageUri }}
+                    style={styles.postImagePreview}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    style={styles.removePostImageBtn}
+                    onPress={() => setPendingPostImageUri(null)}
+                  >
+                    <Text style={styles.removePostImageText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}>
+                <Text style={styles.addPhotoBtnText}>📷  Add Photo</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -772,6 +1105,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '800',
     marginBottom: 6,
+    color: '#3D3530',
   },
   statLabel: {
     fontSize: 11,
@@ -816,7 +1150,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   createPostButton: {
-    backgroundColor: '#B8A9C9',
+    backgroundColor: '#B1A7F0',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -849,7 +1183,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f3f4f6',
   },
   postTypeButtonActive: {
-    backgroundColor: '#ede9fe',
+    backgroundColor: '#FDE4DE',
   },
   postTypeText: {
     fontSize: 12,
@@ -857,7 +1191,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   postTypeTextActive: {
-    color: '#7c3aed',
+    color: '#B1A7F0',
   },
   postInput: {
     backgroundColor: '#f9fafb',
@@ -879,7 +1213,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   submitButton: {
-    backgroundColor: '#B8A9C9',
+    backgroundColor: '#B1A7F0',
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
@@ -918,14 +1252,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#ede9fe',
+    backgroundColor: '#AEC5F1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   postAvatarText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#7c3aed',
+    color: '#B1A7F0',
   },
   postAuthorName: {
     fontSize: 14,
@@ -1024,7 +1358,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#ede9fe',
+    backgroundColor: '#AEC5F1',
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
@@ -1032,7 +1366,7 @@ const styles = StyleSheet.create({
   commentAvatarText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#7c3aed',
+    color: '#B1A7F0',
   },
   commentBody: {
     flex: 1,
@@ -1072,7 +1406,7 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   commentSubmit: {
-    backgroundColor: '#B8A9C9',
+    backgroundColor: '#B1A7F0',
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingVertical: 10,
@@ -1093,5 +1427,290 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#B0A89E',
     textAlign: 'center',
+  },
+  // ── For You header
+  forYouHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 14,
+    gap: 8,
+  },
+  forYouDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FA92B1',
+  },
+  forYouTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#5A544E',
+  },
+  // ── Baby profile card ───────────────────────────────────────────────────────
+  babyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDE4DE',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    gap: 14,
+    borderLeftWidth: 5,
+    borderLeftColor: '#DBABBF',
+  },
+  babyAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFC2C3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  babyAvatarText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  babyInfo: {
+    flex: 1,
+  },
+  babyName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#3D3530',
+  },
+  babyAge: {
+    fontSize: 13,
+    color: '#fff',
+    marginTop: 2,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
+  },
+  babyAvatarPhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  babyCardChevron: {
+    fontSize: 22,
+    color: '#AEBCB1',
+    fontWeight: '300',
+    marginLeft: 4,
+  },
+  // ── Supplies overview card ──────────────────────────────────────────────────
+  suppliesCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  suppliesGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  supplyChip: {
+    flex: 1,
+    backgroundColor: '#F8F6F2',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+  },
+  supplyChipLow: {
+    backgroundColor: '#FFFBEB',
+  },
+  supplyChipEmoji: {
+    fontSize: 22,
+    marginBottom: 6,
+  },
+  supplyChipValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#5A544E',
+    marginBottom: 3,
+  },
+  supplyChipValueLow: {
+    color: '#D97706',
+  },
+  supplyChipLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#B0A89E',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  suppliesEmptyHint: {
+    fontSize: 12,
+    color: '#B0A89E',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+  // ── Report modal ────────────────────────────────────────────────────────────
+  reportPrompt: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5A544E',
+    marginBottom: 16,
+  },
+  reportReasonBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F8F3D4',
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  reportReasonBtnActive: {
+    borderColor: '#B1A7F0',
+    backgroundColor: '#FDE4DE',
+  },
+  reportReasonText: {
+    fontSize: 15,
+    color: '#5A544E',
+    fontWeight: '500',
+  },
+  reportReasonTextActive: {
+    color: '#B1A7F0',
+    fontWeight: '700',
+  },
+  reportSubmitBtn: {
+    backgroundColor: '#B1A7F0',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  reportSubmitBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  reportDoneContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  reportDoneEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  reportDoneTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#5A544E',
+    marginBottom: 8,
+  },
+  reportDoneBody: {
+    fontSize: 15,
+    color: '#8A7E78',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  reportCloseBtn: {
+    backgroundColor: '#B1A7F0',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  reportCloseBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  // ── Post image (in feed cards) ──────────────────────────────────────────────
+  postImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#F0EBE4',
+  },
+  // ── FAB ────────────────────────────────────────────────────────────────────
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FA92B1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FA92B1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  fabIcon: {
+    color: '#fff',
+    fontSize: 30,
+    fontWeight: '300',
+    lineHeight: 34,
+    marginTop: -2,
+  },
+  // ── Create post modal ───────────────────────────────────────────────────────
+  postModalSubmitBtn: {
+    backgroundColor: '#B1A7F0',
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  postModalSubmitText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  postImagePreviewWrap: {
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  postImagePreview: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    backgroundColor: '#F0EBE4',
+  },
+  removePostImageBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removePostImageText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  addPhotoBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#FDE4DE',
+    alignSelf: 'flex-start',
+  },
+  addPhotoBtnText: {
+    fontSize: 14,
+    color: '#B1A7F0',
+    fontWeight: '600',
   },
 });
