@@ -673,7 +673,7 @@ function makeStyles(c: Colors) {
     partStatus:     { fontSize: 11, color: c.textMuted, marginTop: 2 },
     partStatusDue:  { color: '#DC2626', fontWeight: '600' },
     replaceBtn:     { backgroundColor: c.cardLavender, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-    replaceBtnDue:  { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+    replaceBtnDue:  { borderColor: '#EF4444', borderWidth: 1.5 },
     replaceBtnText: { color: c.lavender, fontWeight: '700', fontSize: 11 },
     replaceBtnTextDue: { color: '#EF4444' },
 
