@@ -197,6 +197,8 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [postCount, setPostCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [theirVillageIds, setTheirVillageIds] = useState<string[]>([]);
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -208,6 +210,8 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
     setTheirVillageIds([]);
     setMyVillageIds([]);
     setPostCount(0);
+    setFollowerCount(0);
+    setFollowingCount(0);
     setIsOwnProfile(false);
 
     (async () => {
@@ -222,15 +226,19 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
           return;
         }
 
-        const [profileRes, postsRes, theirVillagesRes, myVillagesRes] = await Promise.all([
+        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes] = await Promise.all([
           supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
+          supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
+          supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', userId),
         ]);
 
         setProfile(profileRes.data ?? null);
         setPostCount(postsRes.count ?? 0);
+        setFollowerCount(followersRes.count ?? 0);
+        setFollowingCount(followingRes.count ?? 0);
         setTheirVillageIds((theirVillagesRes.data ?? []).map((r: any) => r.village_id));
         setMyVillageIds((myVillagesRes.data ?? []).map((r: any) => r.village_id));
       } catch (err: any) {
@@ -298,6 +306,16 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
                 <View style={s.statItem}>
                   <Text style={s.statNum}>{postCount}</Text>
                   <Text style={s.statLbl}>Posts</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statItem}>
+                  <Text style={s.statNum}>{followerCount}</Text>
+                  <Text style={s.statLbl}>Followers</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statItem}>
+                  <Text style={s.statNum}>{followingCount}</Text>
+                  <Text style={s.statLbl}>Following</Text>
                 </View>
                 {showVillages && (
                   <>
