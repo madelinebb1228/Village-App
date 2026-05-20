@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal,
   TextInput, Alert, Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import SupplyInsights from './SupplyInsights';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ async function adjustMilkTotal(userId: string, deltaMl: number) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SuppliesSection({ userId, refreshKey }: { userId: string | null; refreshKey?: number }) {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+
   const [supplies, setSupplies]           = useState<SupplyItem[]>([]);
   const [pumpParts, setPumpParts]         = useState<PumpPart[]>([]);
   const [milkBatches, setMilkBatches]     = useState<MilkBatch[]>([]);
@@ -290,7 +294,7 @@ export default function SuppliesSection({ userId, refreshKey }: { userId: string
       <Text style={s.heading}>Smart Supplies</Text>
 
       {/* Formula */}
-      <View style={[s.supplyRow, formula.low && s.rowLow]}>
+      <View style={[s.supplyRow, { backgroundColor: c.cardHoney, borderColor: c.honey }, formula.low && s.rowLow]}>
         <Text style={s.emoji}>🍼</Text>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Formula</Text>
@@ -307,7 +311,7 @@ export default function SuppliesSection({ userId, refreshKey }: { userId: string
       </View>
 
       {/* Diapers */}
-      <View style={[s.supplyRow, diapers.low && s.rowLow]}>
+      <View style={[s.supplyRow, { backgroundColor: c.cardSage, borderColor: c.sage }, diapers.low && s.rowLow]}>
         <Text style={s.emoji}>👶</Text>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Diapers</Text>
@@ -357,8 +361,9 @@ export default function SuppliesSection({ userId, refreshKey }: { userId: string
               key={batch.id}
               style={[
                 s.batchRow,
-                urgency === 'alert'   && s.batchAlert,
-                urgency === 'warning' && s.batchWarning,
+                urgency === 'alert'   ? s.batchAlert :
+                urgency === 'warning' ? s.batchWarning :
+                batch.location === 'freezer' ? s.batchFreezer : s.batchFridge,
               ]}
             >
               <View style={s.batchInfo}>
@@ -610,89 +615,90 @@ export async function incrementPumpPartSessions(userId: string) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  container:      { paddingHorizontal: 16, paddingBottom: 8 },
-  heading:        { fontSize: 18, fontWeight: '700', color: '#3D3530', marginBottom: 14 },
-  subHeading:     { fontSize: 12, fontWeight: '700', color: '#8A7E78', textTransform: 'uppercase',
-                    letterSpacing: 0.6, marginTop: 18, marginBottom: 10 },
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    container:      { paddingHorizontal: 16, paddingBottom: 8 },
+    heading:        { fontSize: 18, fontWeight: '700', color: c.textPrimary, marginBottom: 14 },
+    subHeading:     { fontSize: 12, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase',
+                      letterSpacing: 0.6, marginTop: 18, marginBottom: 10 },
 
-  supplyRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14,
-                    padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: '#E0D8D0',
-                    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
-  rowLow:         { borderColor: '#FCD34D', backgroundColor: '#FFFBEB' },
-  emoji:          { fontSize: 26, marginRight: 12 },
-  supplyInfo:     { flex: 1 },
-  supplyLabel:    { fontSize: 11, fontWeight: '700', color: '#8A7E78', textTransform: 'uppercase',
-                    letterSpacing: 0.5, marginBottom: 2 },
-  supplyQty:      { fontSize: 22, fontWeight: '800', color: '#3D3530' },
-  qtyLow:         { color: '#D97706' },
-  lowAlert:       { fontSize: 11, color: '#D97706', fontWeight: '700', marginTop: 3 },
-  hint:           { fontSize: 11, color: '#B0A89E', marginTop: 2 },
-  actionBtn:      { backgroundColor: '#B8A9C9', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
-  actionBtnText:  { color: '#fff', fontWeight: '700', fontSize: 12 },
+    supplyRow:      { flexDirection: 'row', alignItems: 'center', borderRadius: 14,
+                      padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: c.cardBorder },
+    rowLow:         { borderColor: c.supplyLowBorder, backgroundColor: c.supplyLowBg },
+    emoji:          { fontSize: 26, marginRight: 12 },
+    supplyInfo:     { flex: 1 },
+    supplyLabel:    { fontSize: 11, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase',
+                      letterSpacing: 0.5, marginBottom: 2 },
+    supplyQty:      { fontSize: 22, fontWeight: '800', color: c.textPrimary },
+    qtyLow:         { color: c.supplyLowText },
+    lowAlert:       { fontSize: 11, color: c.supplyLowText, fontWeight: '700', marginTop: 3 },
+    hint:           { fontSize: 11, color: c.textMuted, marginTop: 2 },
+    actionBtn:      { backgroundColor: c.cardLavender, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1.5, borderColor: c.lavender },
+    actionBtnText:  { color: c.lavender, fontWeight: '700', fontSize: 12 },
 
-  // Milk stash section
-  milkSection:         { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10,
-                         borderWidth: 1.5, borderColor: '#E0D8D0',
-                         shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-                         shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
-  milkSectionUrgent:   { borderColor: '#FCA5A5', backgroundColor: '#FFF5F5' },
-  milkHeader:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  milkHeaderLeft:      { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
-  milkTotals:          { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 3 },
-  milkTotalChip:       { fontSize: 12, fontWeight: '700', color: '#5A544E' },
-  milkEmpty:           { fontSize: 12, color: '#B0A89E', textAlign: 'center', paddingVertical: 6 },
+    // Milk stash section
+    milkSection:         { backgroundColor: c.card, borderRadius: 14, padding: 14, marginBottom: 10,
+                           borderWidth: 1.5, borderColor: c.cardBorder },
+    milkSectionUrgent:   { borderColor: c.blush, borderWidth: 2 },
+    milkHeader:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    milkHeaderLeft:      { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+    milkTotals:          { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 3 },
+    milkTotalChip:       { fontSize: 12, fontWeight: '700', color: c.textSecondary },
+    milkEmpty:           { fontSize: 12, color: c.textMuted, textAlign: 'center', paddingVertical: 6 },
 
-  batchRow:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                         backgroundColor: '#F8F6F2', borderRadius: 10, padding: 10, marginBottom: 6 },
-  batchAlert:          { backgroundColor: '#FEF2F2' },
-  batchWarning:        { backgroundColor: '#FFFBEB' },
-  batchInfo:           { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, marginRight: 8 },
-  batchLocation:       { fontSize: 18 },
-  batchAmount:         { fontSize: 15, fontWeight: '800', color: '#3D3530' },
-  batchDate:           { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-  batchDaysLeft:       { fontSize: 12, fontWeight: '700', color: '#6B7280', marginLeft: 'auto' },
-  batchDaysAlert:      { color: '#DC2626' },
-  batchDaysWarning:    { color: '#D97706' },
-  batchActions:        { flexDirection: 'row', gap: 6, flexShrink: 0 },
-  freezeBtn:           { backgroundColor: '#DBEAFE', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
-  freezeBtnText:       { fontSize: 11, fontWeight: '700', color: '#1D4ED8' },
-  useBtn:              { backgroundColor: '#A8B8A0', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
-  useBtnText:          { fontSize: 11, fontWeight: '700', color: '#fff' },
+    batchRow:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                           borderRadius: 10, padding: 10, marginBottom: 6 },
+    batchFridge:         { backgroundColor: c.cardSage },
+    batchFreezer:        { backgroundColor: c.cardBlue },
+    batchAlert:          { backgroundColor: c.cardBlush },
+    batchWarning:        { backgroundColor: c.cardHoney },
+    batchInfo:           { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, marginRight: 8 },
+    batchLocation:       { fontSize: 18 },
+    batchAmount:         { fontSize: 15, fontWeight: '800', color: c.textPrimary },
+    batchDate:           { fontSize: 11, color: c.textMuted, marginTop: 1 },
+    batchDaysLeft:       { fontSize: 12, fontWeight: '700', color: c.textMuted, marginLeft: 'auto' },
+    batchDaysAlert:      { color: '#DC2626' },
+    batchDaysWarning:    { color: c.supplyLowText },
+    batchActions:        { flexDirection: 'row', gap: 6, flexShrink: 0 },
+    freezeBtn:           { backgroundColor: c.cardLavender, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
+    freezeBtnText:       { fontSize: 11, fontWeight: '700', color: c.lavender },
+    useBtn:              { backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
+    useBtnText:          { fontSize: 11, fontWeight: '700', color: c.sage },
 
-  partRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12,
-                    padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: '#E0D8D0' },
-  partRowDue:     { borderColor: '#FCA5A5', backgroundColor: '#FFF5F5' },
-  partInfo:       { flex: 1 },
-  partLabel:      { fontSize: 13, fontWeight: '700', color: '#5A544E' },
-  partStatus:     { fontSize: 11, color: '#B0A89E', marginTop: 2 },
-  partStatusDue:  { color: '#DC2626', fontWeight: '600' },
-  replaceBtn:     { backgroundColor: '#A8B8A0', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-  replaceBtnDue:  { backgroundColor: '#EF4444' },
-  replaceBtnText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+    partRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: c.cardBlush, borderRadius: 12,
+                      padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: c.blush },
+    partRowDue:     { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+    partInfo:       { flex: 1 },
+    partLabel:      { fontSize: 13, fontWeight: '700', color: c.textPrimary },
+    partStatus:     { fontSize: 11, color: c.textMuted, marginTop: 2 },
+    partStatusDue:  { color: '#DC2626', fontWeight: '600' },
+    replaceBtn:     { backgroundColor: c.cardLavender, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
+    replaceBtnDue:  { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+    replaceBtnText: { color: c.lavender, fontWeight: '700', fontSize: 11 },
+    replaceBtnTextDue: { color: '#EF4444' },
 
-  overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  sheet:          { backgroundColor: '#FEFCF8', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-                    padding: 24, paddingBottom: 44 },
-  modalTitle:     { fontSize: 20, fontWeight: '800', color: '#3D3530', marginBottom: 20 },
-  modalLabel:     { fontSize: 12, fontWeight: '700', color: '#8A7E78', textTransform: 'uppercase',
-                    letterSpacing: 0.5, marginBottom: 8 },
-  modalInput:     { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E0D8D0', borderRadius: 12,
-                    paddingHorizontal: 14, paddingVertical: 12, fontSize: 17, fontWeight: '700',
-                    color: '#3D3530', marginBottom: 16 },
-  saveBtn:        { backgroundColor: '#B8A9C9', borderRadius: 14, paddingVertical: 16,
-                    alignItems: 'center', marginBottom: 10 },
-  saveBtnText:    { color: '#fff', fontWeight: '700', fontSize: 16 },
-  cancelBtn:      { alignItems: 'center', paddingVertical: 12 },
-  cancelBtnText:  { color: '#B0A89E', fontWeight: '600', fontSize: 15 },
+    overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    sheet:          { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                      padding: 24, paddingBottom: 44 },
+    modalTitle:     { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginBottom: 20 },
+    modalLabel:     { fontSize: 12, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase',
+                      letterSpacing: 0.5, marginBottom: 8 },
+    modalInput:     { backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 12,
+                      paddingHorizontal: 14, paddingVertical: 12, fontSize: 17, fontWeight: '700',
+                      color: c.textPrimary, marginBottom: 16 },
+    saveBtn:        { backgroundColor: c.primary, borderRadius: 14, paddingVertical: 16,
+                      alignItems: 'center', marginBottom: 10 },
+    saveBtnText:    { color: c.primaryText, fontWeight: '700', fontSize: 16 },
+    cancelBtn:      { alignItems: 'center', paddingVertical: 12 },
+    cancelBtnText:  { color: c.textMuted, fontWeight: '600', fontSize: 15 },
 
-  locationPicker:           { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  locationOption:           { flex: 1, borderWidth: 2, borderColor: '#E0D8D0', borderRadius: 12,
-                              padding: 14, alignItems: 'center' },
-  locationOptionActive:     { borderColor: '#B8A9C9', backgroundColor: '#F5F0FF' },
-  locationEmoji:            { fontSize: 24, marginBottom: 4 },
-  locationOptionText:       { fontSize: 14, fontWeight: '700', color: '#8A7E78' },
-  locationOptionTextActive: { color: '#6B21A8' },
-  locationSub:              { fontSize: 10, color: '#B0A89E', marginTop: 3 },
-});
+    locationPicker:           { flexDirection: 'row', gap: 10, marginBottom: 16 },
+    locationOption:           { flex: 1, borderWidth: 2, borderColor: c.inputBorder, borderRadius: 12,
+                                padding: 14, alignItems: 'center' },
+    locationOptionActive:     { borderColor: c.primary, backgroundColor: c.cardBlue },
+    locationEmoji:            { fontSize: 24, marginBottom: 4 },
+    locationOptionText:       { fontSize: 14, fontWeight: '700', color: c.textMuted },
+    locationOptionTextActive: { color: c.blue },
+    locationSub:              { fontSize: 10, color: c.textMuted, marginTop: 3 },
+  });
+}

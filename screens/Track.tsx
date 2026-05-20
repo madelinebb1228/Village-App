@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
   Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform,
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
+import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -151,6 +152,8 @@ function PickerField({ label, options, value, onChange, accent }: {
   label: string; options: PickerOption[]; value: string;
   onChange: (v: string) => void; accent: string;
 }) {
+  const c = useColors();
+  const pf = useMemo(() => makePfStyles(c), [c]);
   return (
     <View style={pf.wrap}>
       <Text style={pf.label}>{label}</Text>
@@ -169,20 +172,15 @@ function PickerField({ label, options, value, onChange, accent }: {
     </View>
   );
 }
-const pf = StyleSheet.create({
-  wrap:    { marginBottom: 20 },
-  label:   { fontSize: 12, fontWeight: '700', color: '#8A7E78', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 },
-  row:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:    { borderWidth: 1.5, borderColor: '#E0D8D0', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff' },
-  chipText:{ fontSize: 13, fontWeight: '600', color: '#5A544E' },
-  chipSel: { color: '#fff' },
-});
 
 // ─── ColorCirclePicker ────────────────────────────────────────────────────────
 
 function ColorCirclePicker({ label, options, value, onChange }: {
   label: string; options: ColorOption[]; value: string; onChange: (v: string) => void;
 }) {
+  const c = useColors();
+  const pf = useMemo(() => makePfStyles(c), [c]);
+  const cp = useMemo(() => makeCpStyles(c), [c]);
   return (
     <View style={cp.wrap}>
       <Text style={pf.label}>{label}</Text>
@@ -201,13 +199,6 @@ function ColorCirclePicker({ label, options, value, onChange }: {
     </View>
   );
 }
-const cp = StyleSheet.create({
-  wrap:     { marginBottom: 20 },
-  row:      { flexDirection: 'row', gap: 12 },
-  circle:   { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#E0D8D0', alignItems: 'center', justifyContent: 'center' },
-  selected: { borderColor: '#5A544E', borderWidth: 2.5 },
-  check:    { fontSize: 16, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-});
 
 // ─── Stepper ──────────────────────────────────────────────────────────────────
 
@@ -215,6 +206,9 @@ function Stepper({ label, value, onChange, min = 0, max = 10, accent }: {
   label: string; value: number; onChange: (v: number) => void;
   min?: number; max?: number; accent: string;
 }) {
+  const c = useColors();
+  const pf = useMemo(() => makePfStyles(c), [c]);
+  const st = useMemo(() => makeStStyles(c), [c]);
   return (
     <View style={st.wrap}>
       <Text style={pf.label}>{label}</Text>
@@ -232,13 +226,6 @@ function Stepper({ label, value, onChange, min = 0, max = 10, accent }: {
     </View>
   );
 }
-const st = StyleSheet.create({
-  wrap:    { marginBottom: 20 },
-  row:     { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  btn:     { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  btnText: { fontSize: 22, fontWeight: '600', lineHeight: 26 },
-  val:     { fontSize: 24, fontWeight: '800', color: '#3D3530', minWidth: 32, textAlign: 'center' },
-});
 
 // ─── TimerWidget ──────────────────────────────────────────────────────────────
 
@@ -247,6 +234,9 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
   useManual: boolean; onToggleManual: () => void;
   manualValue: string; onManualChange: (v: string) => void;
 }) {
+  const c = useColors();
+  const pf = useMemo(() => makePfStyles(c), [c]);
+  const tw = useMemo(() => makeTwStyles(c), [c]);
   return (
     <View style={tw.wrap}>
       <View style={tw.header}>
@@ -260,7 +250,7 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
 
       {useManual ? (
         <View style={tw.manualRow}>
-          <TextInput style={tw.manualInput} placeholder="0" placeholderTextColor="#C4BAB2"
+          <TextInput style={tw.manualInput} placeholder="0" placeholderTextColor={c.textMuted}
             value={manualValue} onChangeText={onManualChange} keyboardType="number-pad" />
           <Text style={tw.manualUnit}>min</Text>
         </View>
@@ -299,23 +289,6 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
     </View>
   );
 }
-const tw = StyleSheet.create({
-  wrap:        { marginBottom: 20 },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  toggleLink:  { fontSize: 12, fontWeight: '600' },
-  display:     { fontSize: 52, fontWeight: '800', textAlign: 'center', marginBottom: 12, letterSpacing: 2 },
-  btnRow:      { flexDirection: 'row', gap: 10, justifyContent: 'center', marginBottom: 4 },
-  timerBtn:    { borderRadius: 22, paddingVertical: 10, paddingHorizontal: 22 },
-  timerBtnText:{ color: '#fff', fontSize: 14, fontWeight: '700' },
-  outline:     { borderWidth: 1.5, backgroundColor: 'transparent' },
-  outlineText: { fontSize: 14, fontWeight: '700' },
-  danger:      { backgroundColor: '#E57373' },
-  manualRow:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  manualInput: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E0D8D0', borderRadius: 12,
-                  paddingHorizontal: 14, paddingVertical: 12, fontSize: 28, fontWeight: '800',
-                  color: '#3D3530', textAlign: 'center', width: 90 },
-  manualUnit:  { fontSize: 16, color: '#8A7E78', fontWeight: '600' },
-});
 
 // ─── ModalSheet ───────────────────────────────────────────────────────────────
 
@@ -324,6 +297,8 @@ function ModalSheet({ visible, onClose, title, accent, onSave, saving, children 
   onSave: () => void; saving: boolean; children: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const c = useColors();
+  const ms = useMemo(() => makeMsStyles(c), [c]);
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={ms.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -347,35 +322,21 @@ function ModalSheet({ visible, onClose, title, accent, onSave, saving, children 
     </Modal>
   );
 }
-const ms = StyleSheet.create({
-  overlay:    { flex: 1, justifyContent: 'flex-end' },
-  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(60,50,45,0.38)' },
-  sheet:      { backgroundColor: '#FEFCF8', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, maxHeight: '92%' },
-  handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D8D0C8', alignSelf: 'center', marginBottom: 18 },
-  content:    { paddingHorizontal: 24, paddingBottom: 8 },
-  title:      { fontSize: 22, fontWeight: '800', color: '#3D3530', marginBottom: 24 },
-  saveBtn:    { borderRadius: 14, paddingVertical: 17, alignItems: 'center', marginTop: 8, marginBottom: 12 },
-  saveBtnOff: { opacity: 0.65 },
-  saveBtnText:{ color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
-  cancelBtn:  { alignItems: 'center', paddingVertical: 12 },
-  cancelText: { fontSize: 15, color: '#B0A89E', fontWeight: '600' },
-});
 
 // ─── NotesInput ───────────────────────────────────────────────────────────────
 
 function NotesInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const c = useColors();
+  const pf = useMemo(() => makePfStyles(c), [c]);
+  const ni = useMemo(() => makeNiStyles(c), [c]);
   return (
     <View style={{ marginBottom: 8 }}>
       <Text style={pf.label}>Notes</Text>
-      <TextInput style={ni.input} placeholder="Any additional notes…" placeholderTextColor="#C4BAB2"
+      <TextInput style={ni.input} placeholder="Any additional notes…" placeholderTextColor={c.textMuted}
         value={value} onChangeText={onChange} multiline numberOfLines={3} textAlignVertical="top" />
     </View>
   );
 }
-const ni = StyleSheet.create({
-  input: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E0D8D0', borderRadius: 12,
-           paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, fontSize: 15, color: '#3D3530', minHeight: 80 },
-});
 
 // ─── Track screen ─────────────────────────────────────────────────────────────
 
@@ -384,22 +345,30 @@ const ni = StyleSheet.create({
 
 type ChartPeriod = 'daily' | 'weekly' | 'monthly';
 
-const ChartCard = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <View style={chartStyles.card}>
-    <Text style={chartStyles.title}>{title}</Text>
-    {children}
-  </View>
-);
+const ChartCard = ({ title, children }: { title: string; children: React.ReactNode }) => {
+  const c = useColors();
+  const chartStyles = useMemo(() => makeChartStyles(c), [c]);
+  return (
+    <View style={chartStyles.card}>
+      <Text style={chartStyles.title}>{title}</Text>
+      {children}
+    </View>
+  );
+};
 
-const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p: ChartPeriod) => void }) => (
-  <View style={chartStyles.toggleContainer}>
-    {(['daily', 'weekly', 'monthly'] as ChartPeriod[]).map((p) => (
-      <TouchableOpacity key={p} style={[chartStyles.toggle, period === p && chartStyles.toggleActive]} onPress={() => onChange(p)}>
-        <Text style={[chartStyles.toggleText, period === p && chartStyles.toggleTextActive]}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
-      </TouchableOpacity>
-    ))}
-  </View>
-);
+const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p: ChartPeriod) => void }) => {
+  const c = useColors();
+  const chartStyles = useMemo(() => makeChartStyles(c), [c]);
+  return (
+    <View style={chartStyles.toggleContainer}>
+      {(['daily', 'weekly', 'monthly'] as ChartPeriod[]).map((p) => (
+        <TouchableOpacity key={p} style={[chartStyles.toggle, period === p && chartStyles.toggleActive]} onPress={() => onChange(p)}>
+          <Text style={[chartStyles.toggleText, period === p && chartStyles.toggleTextActive]}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+};
 
 
 // When yMax < segments (4), tick spacing becomes fractional and Math.round
@@ -426,30 +395,19 @@ const padToMinYRange = (chartData: any, minRange = 4): any => {
   };
 };
 
-const chartConfig = {
-  backgroundColor: '#FEFCF8', backgroundGradientFrom: '#FEFCF8', backgroundGradientTo: '#FEFCF8',
-  decimalPlaces: 0, 
-  color: (o = 1) => `rgba(90, 84, 78, ${o})`,
-  labelColor: (o = 1) => `rgba(90, 84, 78, ${o * 0.7})`,
-  style: { borderRadius: 16 },
-  propsForDots: { r: '4', strokeWidth: '2', stroke: '#FEFCF8' },
-  propsForBackgroundLines: { strokeDasharray: '', stroke: '#F3EFE9', strokeWidth: 1 },
-  propsForLabels: { fontSize: 10 },
-  formatYLabel: (value) => Math.round(Number(value)).toString(),
-};
-
-const chartStyles = StyleSheet.create({
-  card: { backgroundColor: '#FEFCF8', borderRadius: 16, padding: 16, marginHorizontal: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
-  title: { fontSize: 15, fontWeight: '700', color: '#5A544E', marginBottom: 12 },
-  toggleContainer: { flexDirection: 'row', backgroundColor: '#F5F1EB', borderRadius: 8, padding: 3, marginBottom: 12 },
-  toggle: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 6 },
-  toggleActive: { backgroundColor: '#B8A9C9' },
-  toggleText: { fontSize: 11, color: '#8A7E78', fontWeight: '600' },
-  toggleTextActive: { color: '#FFFFFF' },
-  chart: { marginLeft: -16, borderRadius: 12 },
-  noData: { textAlign: 'center', color: '#B0A89E', paddingVertical: 40, fontSize: 13 },
-});
+function makeChartConfig(c: Colors) {
+  return {
+    backgroundColor: c.bg, backgroundGradientFrom: c.bg, backgroundGradientTo: c.bg,
+    decimalPlaces: 0,
+    color: (o = 1) => `rgba(90, 84, 78, ${o})`,
+    labelColor: (o = 1) => `rgba(90, 84, 78, ${o * 0.7})`,
+    style: { borderRadius: 16 },
+    propsForDots: { r: '4', strokeWidth: '2', stroke: c.bg },
+    propsForBackgroundLines: { strokeDasharray: '', stroke: c.inputBg, strokeWidth: 1 },
+    propsForLabels: { fontSize: 10 },
+    formatYLabel: (value) => Math.round(Number(value)).toString(),
+  };
+}
 
 // Simplified chart components - full implementation would go here
 // Counts sessions per feed type — avoids mixing breast (duration) with
@@ -458,6 +416,9 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const c = useColors();
+  const chartStyles = useMemo(() => makeChartStyles(c), [c]);
+  const chartConfig = useMemo(() => makeChartConfig(c), [c]);
 
   useEffect(() => { loadData(); }, [babyId, period]);
 
@@ -482,7 +443,7 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
       if (!feeds || feeds.length === 0) { setData(null); return; }
 
       const types  = ['breast', 'bottle', 'solids'];
-      const colors = ['#B8A9C9', '#A8B8A0', '#E8B4B8'];
+      const colors = [c.trackFeed, c.trackDiaper, c.trackPump];
       const legend = ['Breast', 'Bottle', 'Solids'];
 
       if (period === 'daily') {
@@ -515,7 +476,7 @@ const FeedChartCard = ({ babyId }: { babyId: string | null }) => {
     }
   };
 
-  if (loading) return <ChartCard title="Feeding Sessions"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (loading) return <ChartCard title="Feeding Sessions"><ActivityIndicator color={c.trackFeed} /></ChartCard>;
   if (!data) return (
     <ChartCard title="Feeding Sessions">
       <PeriodToggle period={period} onChange={setPeriod} />
@@ -537,6 +498,9 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const c = useColors();
+  const chartStyles = useMemo(() => makeChartStyles(c), [c]);
+  const chartConfig = useMemo(() => makeChartConfig(c), [c]);
 
   useEffect(() => {
     loadData();
@@ -580,8 +544,8 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
         setData({
           labels: hours,
           datasets: [
-            { data: wet, color: () => '#A8B8A0', strokeWidth: 2 },
-            { data: dirty, color: () => '#8B5E3C', strokeWidth: 2 },
+            { data: wet, color: () => c.trackDiaper, strokeWidth: 2 },
+            { data: dirty, color: () => c.honey, strokeWidth: 2 },
           ],
           legend: ['Wet', 'Dirty'],
         });
@@ -603,8 +567,8 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
         setData({
           labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
           datasets: [
-            { data: dates.map(d => dailyData[d].wet), color: () => '#A8B8A0', strokeWidth: 2 },
-            { data: dates.map(d => dailyData[d].dirty), color: () => '#8B5E3C', strokeWidth: 2 },
+            { data: dates.map(d => dailyData[d].wet), color: () => c.trackDiaper, strokeWidth: 2 },
+            { data: dates.map(d => dailyData[d].dirty), color: () => c.honey, strokeWidth: 2 },
           ],
           legend: ['Wet', 'Dirty'],
         });
@@ -617,7 +581,7 @@ const DiaperChartCard = ({ babyId }: { babyId: string | null }) => {
     }
   };
 
-  if (loading) return <ChartCard title="Diaper Changes"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (loading) return <ChartCard title="Diaper Changes"><ActivityIndicator color={c.trackFeed} /></ChartCard>;
   if (!data) return (
     <ChartCard title="Diaper Changes">
       <PeriodToggle period={period} onChange={setPeriod} />
@@ -639,6 +603,9 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
   const [period, setPeriod] = useState<ChartPeriod>('daily');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const c = useColors();
+  const chartStyles = useMemo(() => makeChartStyles(c), [c]);
+  const chartConfig = useMemo(() => makeChartConfig(c), [c]);
 
   useEffect(() => {
     loadData();
@@ -684,8 +651,8 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
         setData({
           labels,
           datasets: [
-            { data: sessions.map(p => p.left_breast  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: sessions.map(p => p.right_breast || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: sessions.map(p => p.left_breast  || 0), color: () => c.blush, strokeWidth: 2 },
+            { data: sessions.map(p => p.right_breast || 0), color: () => c.lavender, strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
@@ -709,8 +676,8 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
         setData({
           labels,
           datasets: [
-            { data: days.map(d => buckets[d]?.left  || 0), color: () => '#E8B4B8', strokeWidth: 2 },
-            { data: days.map(d => buckets[d]?.right || 0), color: () => '#B8A9C9', strokeWidth: 2 },
+            { data: days.map(d => buckets[d]?.left  || 0), color: () => c.blush, strokeWidth: 2 },
+            { data: days.map(d => buckets[d]?.right || 0), color: () => c.lavender, strokeWidth: 2 },
           ],
           legend: ['Left', 'Right'],
         });
@@ -723,7 +690,7 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
     }
   };
 
-  if (loading) return <ChartCard title="Pumping Output"><ActivityIndicator color="#B8A9C9" /></ChartCard>;
+  if (loading) return <ChartCard title="Pumping Output"><ActivityIndicator color={c.trackPump} /></ChartCard>;
   if (!data) return (
     <ChartCard title="Pumping Output (ml)">
       <PeriodToggle period={period} onChange={setPeriod} />
@@ -742,6 +709,12 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
 };
 
 export default function Track() {
+  const c = useColors();
+  const styles = useMemo(() => makeStyles(c), [c]);
+  const cal = useMemo(() => makeCalStyles(c), [c]);
+  const det = useMemo(() => makeDetStyles(c), [c]);
+  const pf = useMemo(() => makePfStyles(c), [c]);
+
   const [entries,    setEntries]    = useState<TimelineEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
@@ -1197,6 +1170,7 @@ export default function Track() {
       return next < tomorrow ? next : d;
     });
   }
+
   const isToday = (() => {
     const t = new Date();
     return selectedDate.getDate() === t.getDate() &&
@@ -1319,9 +1293,9 @@ export default function Track() {
   const pumpTotal = (parseFloat(leftBreast) || 0) + (parseFloat(rightBreast) || 0);
 
   const mainButtons = [
-    { type: 'feed'    as EntryType, emoji: '🍼', label: 'Log Feed',    color: '#B8A9C9' },
-    { type: 'diaper'  as EntryType, emoji: '💩', label: 'Log Diaper',  color: '#A8B8A0' },
-    { type: 'pumping' as EntryType, emoji: '🤱', label: 'Log Pumping', color: '#E8B4B8' },
+    { type: 'feed'    as EntryType, emoji: '🍼', label: 'Log Feed',    bgColor: c.cardLavender, accent: c.lavender },
+    { type: 'diaper'  as EntryType, emoji: '💩', label: 'Log Diaper',  bgColor: c.cardSage,     accent: c.sage },
+    { type: 'pumping' as EntryType, emoji: '🤱', label: 'Log Pumping', bgColor: c.cardBlush,    accent: c.blush },
   ];
 
   return (
@@ -1334,11 +1308,11 @@ export default function Track() {
         <View style={styles.buttonGroup}>
           {mainButtons.map(btn => (
             <TouchableOpacity key={btn.type}
-              style={[styles.button, { backgroundColor: btn.color }]}
+              style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
               activeOpacity={0.8} onPress={() => openModal(btn.type)}>
               <Text style={styles.buttonEmoji}>{btn.emoji}</Text>
-              <Text style={styles.buttonLabel}>{btn.label}</Text>
-              <Text style={styles.buttonArrow}>›</Text>
+              <Text style={[styles.buttonLabel, { color: btn.accent }]}>{btn.label}</Text>
+              <Text style={[styles.buttonArrow, { color: btn.accent }]}>›</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -1354,7 +1328,7 @@ export default function Track() {
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>
           <Text style={styles.sectionTitle}>Timeline</Text>
-          {refreshing && <ActivityIndicator size="small" color="#B8A9C9" />}
+          {refreshing && <ActivityIndicator size="small" color={c.trackFeed} />}
         </View>
 
         {/* Date navigation */}
@@ -1382,7 +1356,8 @@ export default function Track() {
           ) : (
             entries.map((entry, i) => (
               <TouchableOpacity key={entry.id} activeOpacity={0.75} onPress={() => openDetail(entry)}
-                style={[styles.entry, i < entries.length - 1 && styles.entryBorder]}>
+                style={[styles.entry, i < entries.length - 1 && styles.entryBorder,
+                  { backgroundColor: entry.type === 'feed' ? c.cardLavender : entry.type === 'diaper' ? c.cardSage : c.cardBlush }]}>
                 <Text style={styles.entryEmoji}>{entry.emoji}</Text>
                 <View style={styles.entryBody}>
                   <Text style={styles.entryLabel}>{entry.label}</Text>
@@ -1416,7 +1391,7 @@ export default function Track() {
               </TouchableOpacity>
             </View>
             {detailLoading ? (
-              <ActivityIndicator color="#B8A9C9" style={{ marginTop: 32, marginBottom: 24 }} />
+              <ActivityIndicator color={c.trackFeed} style={{ marginTop: 32, marginBottom: 24 }} />
             ) : (
               <ScrollView style={det.scroll} contentContainerStyle={det.content}
                 showsVerticalScrollIndicator={false}>
@@ -1442,10 +1417,10 @@ export default function Track() {
 
       {/* ══════════ FEED MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'feed'} onClose={closeModal}
-        title={editingId ? '🍼 Edit Feed' : '🍼 Log Feed'} accent="#B8A9C9" onSave={handleSaveFeed} saving={saving}>
+        title={editingId ? '🍼 Edit Feed' : '🍼 Log Feed'} accent={c.trackFeed} onSave={handleSaveFeed} saving={saving}>
 
         <PickerField label="Feed type" options={FEED_TYPE}
-          value={feedType} onChange={setFeedType} accent="#B8A9C9" />
+          value={feedType} onChange={setFeedType} accent={c.trackFeed} />
 
         {feedType === 'breast' && (
           <>
@@ -1476,22 +1451,22 @@ export default function Track() {
               </TouchableOpacity>
             </View>
 
-            <TimerWidget timer={feedTimer} accent="#B8A9C9"
+            <TimerWidget timer={feedTimer} accent={c.trackFeed}
               useManual={feedUseManual} onToggleManual={() => setFeedUseManual(v => !v)}
               manualValue={feedManualMin} onManualChange={setFeedManualMin} />
             <PickerField label="Position" options={FEED_POSITION}
-              value={feedPosition} onChange={setFeedPosition} accent="#B8A9C9" />
+              value={feedPosition} onChange={setFeedPosition} accent={c.trackFeed} />
             {feedPosition === 'other' && (
               <TextInput
-                style={[ni.input, { marginTop: -10, marginBottom: 20 }]}
+                style={[makeNiStyles(c).input, { marginTop: -10, marginBottom: 20 }]}
                 placeholder="Describe position…"
-                placeholderTextColor="#C4BAB2"
+                placeholderTextColor={c.textMuted}
                 value={feedPositionOther}
                 onChangeText={setFeedPositionOther}
               />
             )}
             <PickerField label="Latch quality" options={FEED_LATCH}
-              value={latchQuality} onChange={setLatchQuality} accent="#B8A9C9" />
+              value={latchQuality} onChange={setLatchQuality} accent={c.trackFeed} />
           </>
         )}
 
@@ -1501,12 +1476,12 @@ export default function Track() {
               <Text style={pf.label}>What's in the bottle?</Text>
               <View style={pf.row}>
                 <TouchableOpacity
-                  style={[pf.chip, bottleSource === 'breastmilk' && { backgroundColor: '#B8A9C9', borderColor: '#B8A9C9' }]}
+                  style={[pf.chip, bottleSource === 'breastmilk' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
                   onPress={() => setBottleSource('breastmilk')} activeOpacity={0.75}>
                   <Text style={[pf.chipText, bottleSource === 'breastmilk' && pf.chipSel]}>🤱 Breastmilk</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[pf.chip, bottleSource === 'formula' && { backgroundColor: '#B8A9C9', borderColor: '#B8A9C9' }]}
+                  style={[pf.chip, bottleSource === 'formula' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
                   onPress={() => setBottleSource('formula')} activeOpacity={0.75}>
                   <Text style={[pf.chipText, bottleSource === 'formula' && pf.chipSel]}>🍶 Formula</Text>
                 </TouchableOpacity>
@@ -1516,7 +1491,7 @@ export default function Track() {
               <Text style={pf.label}>Amount (oz)</Text>
               <View style={styles.breastRow}>
                 <View style={[styles.breastField, { flex: 1 }]}>
-                  <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor="#C4BAB2"
+                  <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
                     value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad" />
                   <Text style={styles.breastUnit}>oz</Text>
                 </View>
@@ -1527,45 +1502,45 @@ export default function Track() {
 
         {(feedType === 'bottle' || feedType === 'solids') && (
           <PickerField label="Fed by" options={CAREGIVER}
-            value={feedCaregiver} onChange={setFeedCaregiver} accent="#B8A9C9" />
+            value={feedCaregiver} onChange={setFeedCaregiver} accent={c.trackFeed} />
         )}
 
         <PickerField label="Baby's mood" options={FEED_MOOD}
-          value={feedMood} onChange={setFeedMood} accent="#B8A9C9" />
+          value={feedMood} onChange={setFeedMood} accent={c.trackFeed} />
         <PickerField label="Spit-up" options={FEED_SPIT_UP}
-          value={spitUp} onChange={setSpitUp} accent="#B8A9C9" />
-        <Stepper label="Burps" value={feedBurps} onChange={setFeedBurps} max={15} accent="#B8A9C9" />
+          value={spitUp} onChange={setSpitUp} accent={c.trackFeed} />
+        <Stepper label="Burps" value={feedBurps} onChange={setFeedBurps} max={15} accent={c.trackFeed} />
         <NotesInput value={feedNotes} onChange={setFeedNotes} />
       </ModalSheet>
 
       {/* ══════════ DIAPER MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'diaper'} onClose={closeModal}
-        title={editingId ? '💩 Edit Diaper' : '💩 Log Diaper'} accent="#A8B8A0" onSave={handleSaveDiaper} saving={saving}>
+        title={editingId ? '💩 Edit Diaper' : '💩 Log Diaper'} accent={c.trackDiaper} onSave={handleSaveDiaper} saving={saving}>
 
         <PickerField label="Type" options={DIAPER_TYPE}
-          value={diaperType} onChange={setDiaperType} accent="#A8B8A0" />
+          value={diaperType} onChange={setDiaperType} accent={c.trackDiaper} />
 
         {showDiaperDetail && (
           <>
             <ColorCirclePicker label="Color" options={DIAPER_COLORS}
               value={diaperColor} onChange={setDiaperColor} />
             <PickerField label="Consistency" options={DIAPER_CONSIST}
-              value={diaperConsist} onChange={setDiaperConsist} accent="#A8B8A0" />
+              value={diaperConsist} onChange={setDiaperConsist} accent={c.trackDiaper} />
             <PickerField label="Amount" options={DIAPER_AMOUNT}
-              value={diaperAmount} onChange={setDiaperAmount} accent="#A8B8A0" />
+              value={diaperAmount} onChange={setDiaperAmount} accent={c.trackDiaper} />
           </>
         )}
 
         <PickerField label="Diaper rash" options={DIAPER_RASH}
-          value={diaperRash} onChange={setDiaperRash} accent="#A8B8A0" />
+          value={diaperRash} onChange={setDiaperRash} accent={c.trackDiaper} />
         <NotesInput value={diaperNotes} onChange={setDiaperNotes} />
       </ModalSheet>
 
       {/* ══════════ PUMPING MODAL ══════════ */}
       <ModalSheet visible={activeModal === 'pumping'} onClose={closeModal}
-        title={editingId ? '🤱 Edit Pumping' : '🤱 Log Pumping'} accent="#E8B4B8" onSave={handleSavePumping} saving={saving}>
+        title={editingId ? '🤱 Edit Pumping' : '🤱 Log Pumping'} accent={c.trackPump} onSave={handleSavePumping} saving={saving}>
 
-        <TimerWidget timer={pumpTimer} accent="#E8B4B8"
+        <TimerWidget timer={pumpTimer} accent={c.trackPump}
           useManual={pumpUseManual} onToggleManual={() => setPumpUseManual(v => !v)}
           manualValue={pumpManualMin} onManualChange={setPumpManualMin} />
 
@@ -1573,14 +1548,14 @@ export default function Track() {
         <View style={styles.breastRow}>
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Left</Text>
-            <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor="#C4BAB2"
+            <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
               value={leftBreast} onChangeText={setLeftBreast} keyboardType="decimal-pad" />
             <Text style={styles.breastUnit}>ml</Text>
           </View>
           <View style={styles.breastDivider} />
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Right</Text>
-            <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor="#C4BAB2"
+            <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
               value={rightBreast} onChangeText={setRightBreast} keyboardType="decimal-pad" />
             <Text style={styles.breastUnit}>ml</Text>
           </View>
@@ -1590,22 +1565,22 @@ export default function Track() {
         )}
 
         <Stepper label="Suction level (1–10)" value={suctionLevel} onChange={setSuctionLevel}
-          min={1} max={10} accent="#E8B4B8" />
+          min={1} max={10} accent={c.trackPump} />
         <ColorCirclePicker label="Milk color" options={MILK_COLORS}
           value={milkColor} onChange={setMilkColor} />
         <PickerField label="How did it feel?" options={PUMP_HOW_FEEL}
-          value={howFeel} onChange={setHowFeel} accent="#E8B4B8" />
+          value={howFeel} onChange={setHowFeel} accent={c.trackPump} />
 
         <View style={pf.wrap}>
           <Text style={pf.label}>Letdown achieved?</Text>
           <View style={pf.row}>
             <TouchableOpacity
-              style={[pf.chip, letdownAchieved && { backgroundColor: '#E8B4B8', borderColor: '#E8B4B8' }]}
+              style={[pf.chip, letdownAchieved && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
               onPress={() => setLetdownAchieved(true)} activeOpacity={0.75}>
               <Text style={[pf.chipText, letdownAchieved && pf.chipSel]}>Yes ✓</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[pf.chip, !letdownAchieved && { backgroundColor: '#E8B4B8', borderColor: '#E8B4B8' }]}
+              style={[pf.chip, !letdownAchieved && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
               onPress={() => setLetdownAchieved(false)} activeOpacity={0.75}>
               <Text style={[pf.chipText, !letdownAchieved && pf.chipSel]}>No</Text>
             </TouchableOpacity>
@@ -1613,7 +1588,7 @@ export default function Track() {
         </View>
 
         <PickerField label="Storage" options={PUMP_STORAGE}
-          value={storageLocation} onChange={setStorageLocation} accent="#E8B4B8" />
+          value={storageLocation} onChange={setStorageLocation} accent={c.trackPump} />
       </ModalSheet>
 
       {/* ══════════ CALENDAR PICKER ══════════ */}
@@ -1704,131 +1679,222 @@ export default function Track() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Style factories ──────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea:      { flex: 1, backgroundColor: '#FEFCF8' },
-  scroll:        { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 40 },
-  heading:       { fontSize: 28, fontWeight: '800', color: '#3D3530', marginBottom: 28 },
+function makePfStyles(c: Colors) {
+  return StyleSheet.create({
+    wrap:    { marginBottom: 20 },
+    label:   { fontSize: 12, fontWeight: '700', color: c.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 },
+    row:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip:    { borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.card },
+    chipText:{ fontSize: 13, fontWeight: '600', color: c.textSecondary },
+    chipSel: { color: '#fff' },
+  });
+}
 
-  buttonGroup: { gap: 14, marginBottom: 36 },
-  button: {
-    flexDirection: 'row', alignItems: 'center', borderRadius: 18,
-    paddingVertical: 20, paddingHorizontal: 22,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
-  },
-  buttonEmoji: { fontSize: 30, marginRight: 14 },
-  buttonLabel: { flex: 1, fontSize: 18, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
-  buttonArrow: { fontSize: 22, color: 'rgba(255,255,255,0.7)', fontWeight: '300' },
+function makeCpStyles(c: Colors) {
+  return StyleSheet.create({
+    wrap:     { marginBottom: 20 },
+    row:      { flexDirection: 'row', gap: 12 },
+    circle:   { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: c.inputBorder, alignItems: 'center', justifyContent: 'center' },
+    selected: { borderColor: c.textSecondary, borderWidth: 2.5 },
+    check:    { fontSize: 16, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  });
+}
 
-  timelineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  sectionTitle:   { fontSize: 18, fontWeight: '700', color: '#3D3530' },
-  timeline:       { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden',
-                    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  empty:          { fontSize: 15, color: '#B0A89E', fontStyle: 'italic', textAlign: 'center', padding: 24 },
-  entry:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18 },
-  entryBorder:    { borderBottomWidth: 1, borderBottomColor: '#F3EFE9' },
-  entryEmoji:     { fontSize: 24, marginRight: 14 },
-  entryBody:      { flex: 1 },
-  entryLabel:     { fontSize: 15, fontWeight: '700', color: '#3D3530' },
-  entryDetail:    { fontSize: 12, color: '#B0A89E', marginTop: 2, textTransform: 'capitalize' },
-  entryTime:      { fontSize: 13, color: '#B0A89E', fontWeight: '600', marginRight: 10 },
-  deleteBtn:      { padding: 6 },
-  deleteIcon:     { fontSize: 16 },
+function makeStStyles(c: Colors) {
+  return StyleSheet.create({
+    wrap:    { marginBottom: 20 },
+    row:     { flexDirection: 'row', alignItems: 'center', gap: 16 },
+    btn:     { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
+    btnText: { fontSize: 22, fontWeight: '600', lineHeight: 26 },
+    val:     { fontSize: 24, fontWeight: '800', color: c.textPrimary, minWidth: 32, textAlign: 'center' },
+  });
+}
 
-  breastToggleRow:       { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  breastToggleBtn:       { flex: 1, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E0D8D0',
-                           borderRadius: 16, paddingVertical: 20, alignItems: 'center',
-                           shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-                           shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
-  breastToggleActive:    { backgroundColor: '#B8A9C9', borderColor: '#B8A9C9' },
-  breastToggleEmoji:     { fontSize: 28, marginBottom: 6 },
-  breastToggleLabel:     { fontSize: 16, fontWeight: '700', color: '#8A7E78' },
-  breastToggleLabelActive:{ color: '#fff' },
-  breastToggleCheck:     { position: 'absolute', top: 8, right: 10, fontSize: 14,
-                           fontWeight: '800', color: '#fff' },
+function makeTwStyles(c: Colors) {
+  return StyleSheet.create({
+    wrap:        { marginBottom: 20 },
+    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+    toggleLink:  { fontSize: 12, fontWeight: '600' },
+    display:     { fontSize: 52, fontWeight: '800', textAlign: 'center', marginBottom: 12, letterSpacing: 2 },
+    btnRow:      { flexDirection: 'row', gap: 10, justifyContent: 'center', marginBottom: 4 },
+    timerBtn:    { borderRadius: 22, paddingVertical: 10, paddingHorizontal: 22 },
+    timerBtnText:{ color: '#fff', fontSize: 14, fontWeight: '700' },
+    outline:     { borderWidth: 1.5, backgroundColor: 'transparent' },
+    outlineText: { fontSize: 14, fontWeight: '700' },
+    danger:      { backgroundColor: '#E57373' },
+    manualRow:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    manualInput: { backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 12,
+                    paddingHorizontal: 14, paddingVertical: 12, fontSize: 28, fontWeight: '800',
+                    color: c.textPrimary, textAlign: 'center', width: 90 },
+    manualUnit:  { fontSize: 16, color: c.textMuted, fontWeight: '600' },
+  });
+}
 
-  breastRow:       { flexDirection: 'row', backgroundColor: '#fff', borderWidth: 1.5,
-                     borderColor: '#E0D8D0', borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
-  breastField:     { flex: 1, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 12 },
-  breastSideLabel: { fontSize: 12, fontWeight: '700', color: '#8A7E78', marginBottom: 8,
-                     textTransform: 'uppercase', letterSpacing: 0.6 },
-  breastInput:     { fontSize: 28, fontWeight: '800', color: '#3D3530', textAlign: 'center', minWidth: 60 },
-  breastUnit:      { fontSize: 13, color: '#B0A89E', marginTop: 4, fontWeight: '600' },
-  breastDivider:   { width: 1, backgroundColor: '#E0D8D0', marginVertical: 16 },
-  totalPreview:    { fontSize: 13, color: '#E8B4B8', fontWeight: '700', textAlign: 'center',
-                     marginBottom: 20, marginTop: 4 },
+function makeMsStyles(c: Colors) {
+  return StyleSheet.create({
+    overlay:    { flex: 1, justifyContent: 'flex-end' },
+    backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(30,27,75,0.4)' },
+    sheet:      { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, maxHeight: '92%' },
+    handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: c.inputBorder, alignSelf: 'center', marginBottom: 18 },
+    content:    { paddingHorizontal: 24, paddingBottom: 8 },
+    title:      { fontSize: 22, fontWeight: '800', color: c.textPrimary, marginBottom: 24 },
+    saveBtn:    { borderRadius: 14, paddingVertical: 17, alignItems: 'center', marginTop: 8, marginBottom: 12 },
+    saveBtnOff: { opacity: 0.65 },
+    saveBtnText:{ color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
+    cancelBtn:  { alignItems: 'center', paddingVertical: 12 },
+    cancelText: { fontSize: 15, color: c.textMuted, fontWeight: '600' },
+  });
+}
 
-  // Date navigation
-  dateNav:             { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  dateNavBtn:          { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  dateNavBtnDisabled:  { opacity: 0.25 },
-  dateNavArrow:        { fontSize: 28, fontWeight: '300', color: '#5A544E', lineHeight: 32 },
-  dateNavArrowDisabled:{ color: '#C4BAB2' },
-  dateNavCenter:       { flex: 1, alignItems: 'center', gap: 2 },
-  dateNavLabel:        { fontSize: 16, fontWeight: '700', color: '#3D3530' },
-  dateNavCal:          { fontSize: 12, color: '#B8A9C9' },
-  dateNavToday:        { fontSize: 12, color: '#B8A9C9', fontWeight: '600' },
-});
+function makeNiStyles(c: Colors) {
+  return StyleSheet.create({
+    input: { backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 12,
+             paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, fontSize: 15, color: c.textPrimary, minHeight: 80 },
+  });
+}
 
-// ── Calendar styles ───────────────────────────────────────────────────────────
-const cal = StyleSheet.create({
-  overlay:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(60,50,45,0.5)' },
-  container:   { backgroundColor: '#FEFCF8', borderRadius: 20, padding: 20, width: 320,
-                 shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-                 shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  headerBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerArrow: { fontSize: 26, color: '#5A544E', fontWeight: '300' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#3D3530', textAlign: 'center' },
-  headerYear:  { color: '#B8A9C9' },
-  dayHeaders:  { flexDirection: 'row', marginBottom: 6 },
-  dayHeader:   { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700',
-                 color: '#B0A89E', textTransform: 'uppercase' },
-  grid:        { flexDirection: 'row', flexWrap: 'wrap' },
-  cell:        { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
-  dayCell:     { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  dayCellSel:  { backgroundColor: '#B8A9C9' },
-  dayCellToday:{ borderWidth: 1.5, borderColor: '#B8A9C9' },
-  dayText:     { fontSize: 14, fontWeight: '500', color: '#3D3530' },
-  dayFuture:   { color: '#D8D0C8' },
-  daySel:      { color: '#fff', fontWeight: '700' },
-  yearGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 4 },
-  yearCell:    { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
-                 backgroundColor: '#F3EFE9', minWidth: 72, alignItems: 'center' },
-  yearCellSel: { backgroundColor: '#B8A9C9' },
-  yearText:    { fontSize: 15, fontWeight: '600', color: '#5A544E' },
-  yearTextSel: { color: '#fff' },
-});
+function makeChartStyles(c: Colors) {
+  return StyleSheet.create({
+    card: { backgroundColor: c.card, borderRadius: 16, padding: 16, marginHorizontal: 16, marginBottom: 12,
+      borderWidth: 1.5, borderColor: c.cardBorder },
+    title: { fontSize: 15, fontWeight: '700', color: c.textSecondary, marginBottom: 12 },
+    toggleContainer: { flexDirection: 'row', backgroundColor: c.inputBg, borderRadius: 8, padding: 3, marginBottom: 12 },
+    toggle: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 6 },
+    toggleActive: { backgroundColor: c.trackFeed },
+    toggleText: { fontSize: 11, color: c.textMuted, fontWeight: '600' },
+    toggleTextActive: { color: '#FFFFFF' },
+    chart: { marginLeft: -16, borderRadius: 12 },
+    noData: { textAlign: 'center', color: c.textMuted, paddingVertical: 40, fontSize: 13 },
+  });
+}
 
-// ── Detail modal styles ────────────────────────────────────────────────────────
-const det = StyleSheet.create({
-  overlay:    { flex: 1, justifyContent: 'flex-end' },
-  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(60,50,45,0.38)' },
-  sheet:      { backgroundColor: '#FEFCF8', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-                paddingTop: 12, maxHeight: '80%' },
-  handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D8D0C8',
-                alignSelf: 'center', marginBottom: 16 },
-  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                paddingHorizontal: 24, marginBottom: 8 },
-  title:      { fontSize: 18, fontWeight: '800', color: '#3D3530' },
-  titleTime:  { fontSize: 14, fontWeight: '500', color: '#B0A89E' },
-  close:      { fontSize: 18, color: '#B0A89E', paddingLeft: 8 },
-  scroll:     { flexGrow: 0 },
-  content:    { paddingHorizontal: 24, paddingBottom: 24 },
-  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-                paddingVertical: 13 },
-  rowBorder:  { borderBottomWidth: 1, borderBottomColor: '#F3EFE9' },
-  rowLabel:   { fontSize: 14, fontWeight: '600', color: '#8A7E78', flex: 1 },
-  rowValue:   { fontSize: 14, color: '#3D3530', fontWeight: '500', flex: 1.5, textAlign: 'right' },
-  editBtn:    { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-                backgroundColor: '#F0F4FF', borderWidth: 1.5, borderColor: '#A0B0E8' },
-  editBtnText:   { fontSize: 15, fontWeight: '700', color: '#3050C0' },
-  deleteBtn:  { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-                backgroundColor: '#FFF0F0', borderWidth: 1.5, borderColor: '#E8A0A0' },
-  deleteBtnText: { fontSize: 15, fontWeight: '700', color: '#C05050' },
-});
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    safeArea:      { flex: 1, backgroundColor: c.bg },
+    scroll:        { flex: 1 },
+    scrollContent: { padding: 24, paddingBottom: 40 },
+    heading:       { fontSize: 28, fontWeight: '800', color: c.textPrimary, marginBottom: 28 },
+
+    buttonGroup: { gap: 14, marginBottom: 36 },
+    button: {
+      flexDirection: 'row', alignItems: 'center', borderRadius: 18,
+      paddingVertical: 20, paddingHorizontal: 22,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    },
+    buttonEmoji: { fontSize: 30, marginRight: 14 },
+    buttonLabel: { flex: 1, fontSize: 18, fontWeight: '700', letterSpacing: 0.2 },
+    buttonArrow: { fontSize: 22, fontWeight: '300' },
+
+    timelineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+    sectionTitle:   { fontSize: 18, fontWeight: '700', color: c.textPrimary },
+    timeline:       { backgroundColor: c.card, borderRadius: 16, overflow: 'hidden',
+                      borderWidth: 1.5, borderColor: c.cardBorder },
+    empty:          { fontSize: 15, color: c.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 24 },
+    entry:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18 },
+    entryBorder:    { borderBottomWidth: 1, borderBottomColor: c.cardBorder },
+    entryEmoji:     { fontSize: 24, marginRight: 14 },
+    entryBody:      { flex: 1 },
+    entryLabel:     { fontSize: 15, fontWeight: '700', color: c.textPrimary },
+    entryDetail:    { fontSize: 12, color: c.textMuted, marginTop: 2, textTransform: 'capitalize' },
+    entryTime:      { fontSize: 13, color: c.textMuted, fontWeight: '600', marginRight: 10 },
+    deleteBtn:      { padding: 6 },
+    deleteIcon:     { fontSize: 16 },
+
+    breastToggleRow:       { flexDirection: 'row', gap: 12, marginBottom: 20 },
+    breastToggleBtn:       { flex: 1, backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder,
+                             borderRadius: 16, paddingVertical: 20, alignItems: 'center',
+                             shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                             shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
+    breastToggleActive:    { backgroundColor: c.cardLavender, borderColor: c.lavender, borderWidth: 2 },
+    breastToggleEmoji:     { fontSize: 28, marginBottom: 6 },
+    breastToggleLabel:     { fontSize: 16, fontWeight: '700', color: c.textMuted },
+    breastToggleLabelActive:{ color: c.lavender },
+    breastToggleCheck:     { position: 'absolute', top: 8, right: 10, fontSize: 14,
+                             fontWeight: '800', color: c.lavender },
+
+    breastRow:       { flexDirection: 'row', backgroundColor: c.card, borderWidth: 1.5,
+                       borderColor: c.inputBorder, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
+    breastField:     { flex: 1, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 12 },
+    breastSideLabel: { fontSize: 12, fontWeight: '700', color: c.textMuted, marginBottom: 8,
+                       textTransform: 'uppercase', letterSpacing: 0.6 },
+    breastInput:     { fontSize: 28, fontWeight: '800', color: c.textPrimary, textAlign: 'center', minWidth: 60 },
+    breastUnit:      { fontSize: 13, color: c.textMuted, marginTop: 4, fontWeight: '600' },
+    breastDivider:   { width: 1, backgroundColor: c.inputBorder, marginVertical: 16 },
+    totalPreview:    { fontSize: 13, color: c.trackPump, fontWeight: '700', textAlign: 'center',
+                       marginBottom: 20, marginTop: 4 },
+
+    dateNav:             { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    dateNavBtn:          { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    dateNavBtnDisabled:  { opacity: 0.25 },
+    dateNavArrow:        { fontSize: 28, fontWeight: '300', color: c.textSecondary, lineHeight: 32 },
+    dateNavArrowDisabled:{ color: c.textMuted },
+    dateNavCenter:       { flex: 1, alignItems: 'center', gap: 2 },
+    dateNavLabel:        { fontSize: 16, fontWeight: '700', color: c.textPrimary },
+    dateNavCal:          { fontSize: 12, color: c.trackFeed },
+    dateNavToday:        { fontSize: 12, color: c.trackFeed, fontWeight: '600' },
+  });
+}
+
+function makeCalStyles(c: Colors) {
+  return StyleSheet.create({
+    overlay:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(30,27,75,0.5)' },
+    container:   { backgroundColor: c.bg, borderRadius: 20, padding: 20, width: 320,
+                   shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+                   shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+    headerBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    headerArrow: { fontSize: 26, color: c.textSecondary, fontWeight: '300' },
+    headerTitle: { fontSize: 16, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
+    headerYear:  { color: c.calSelected },
+    dayHeaders:  { flexDirection: 'row', marginBottom: 6 },
+    dayHeader:   { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700',
+                   color: c.textMuted, textTransform: 'uppercase' },
+    grid:        { flexDirection: 'row', flexWrap: 'wrap' },
+    cell:        { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
+    dayCell:     { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+    dayCellSel:  { backgroundColor: c.calSelected },
+    dayCellToday:{ borderWidth: 1.5, borderColor: c.calToday },
+    dayText:     { fontSize: 14, fontWeight: '500', color: c.textPrimary },
+    dayFuture:   { color: c.calFuture },
+    daySel:      { color: c.calSelectedText, fontWeight: '700' },
+    yearGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 4 },
+    yearCell:    { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
+                   backgroundColor: c.inputBg, minWidth: 72, alignItems: 'center' },
+    yearCellSel: { backgroundColor: c.calSelected },
+    yearText:    { fontSize: 15, fontWeight: '600', color: c.textSecondary },
+    yearTextSel: { color: '#fff' },
+  });
+}
+
+function makeDetStyles(c: Colors) {
+  return StyleSheet.create({
+    overlay:    { flex: 1, justifyContent: 'flex-end' },
+    backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(30,27,75,0.4)' },
+    sheet:      { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                  paddingTop: 12, maxHeight: '80%' },
+    handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: c.inputBorder,
+                  alignSelf: 'center', marginBottom: 16 },
+    header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 24, marginBottom: 8 },
+    title:      { fontSize: 18, fontWeight: '800', color: c.textPrimary },
+    titleTime:  { fontSize: 14, fontWeight: '500', color: c.textMuted },
+    close:      { fontSize: 18, color: c.textMuted, paddingLeft: 8 },
+    scroll:     { flexGrow: 0 },
+    content:    { paddingHorizontal: 24, paddingBottom: 24 },
+    row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+                  paddingVertical: 13 },
+    rowBorder:  { borderBottomWidth: 1, borderBottomColor: c.inputBg },
+    rowLabel:   { fontSize: 14, fontWeight: '600', color: c.textMuted, flex: 1 },
+    rowValue:   { fontSize: 14, color: c.textPrimary, fontWeight: '500', flex: 1.5, textAlign: 'right' },
+    editBtn:    { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                  backgroundColor: c.cardBlue, borderWidth: 1.5, borderColor: c.blue },
+    editBtnText:   { fontSize: 15, fontWeight: '700', color: c.blue },
+    deleteBtn:  { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                  backgroundColor: c.cardBlush, borderWidth: 1.5, borderColor: c.blush },
+    deleteBtnText: { fontSize: 15, fontWeight: '700', color: c.blush },
+  });
+}

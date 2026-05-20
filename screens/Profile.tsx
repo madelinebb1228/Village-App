@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,15 @@ import {
   Alert,
   Image,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { VILLAGE_MAP } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,7 @@ interface UserProfile {
   bio: string | null;
   avatar_url: string | null;
   parent_role: string | null;
+  show_villages: boolean | null;
 }
 
 interface Baby {
@@ -98,6 +102,9 @@ async function uploadAvatar(uri: string, userId: string): Promise<string | null>
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Profile() {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [userCreatedAt, setUserCreatedAt] = useState('');
@@ -107,12 +114,14 @@ export default function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
+  const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
 
   // Edit state
   const [editUsername, setEditUsername] = useState('');
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editParentRole, setEditParentRole] = useState('');
+  const [editShowVillages, setEditShowVillages] = useState(true);
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -125,15 +134,17 @@ export default function Profile() {
       setUserEmail(user.email ?? '');
       setUserCreatedAt(user.created_at ?? '');
 
-      const [profileRes, babyRes, postsRes] = await Promise.all([
+      const [profileRes, babyRes, postsRes, villagesRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
         supabase.from('posts').select('id,content,post_type,created_at,likes').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('user_villages').select('village_id').eq('user_id', user.id),
       ]);
 
       setProfile(profileRes.data ?? null);
       setBaby(babyRes.data ?? null);
       setPosts(postsRes.data ?? []);
+      setMyVillageIds((villagesRes.data ?? []).map((r: any) => r.village_id));
     } catch (err: any) {
       console.warn('Profile loadAll error:', err.message);
     } finally {
@@ -148,6 +159,7 @@ export default function Profile() {
     setEditDisplayName(profile?.display_name ?? '');
     setEditBio(profile?.bio ?? '');
     setEditParentRole(profile?.parent_role ?? '');
+    setEditShowVillages(profile?.show_villages !== false);
     setPendingAvatarUri(null);
     setUsernameError('');
     setSaveError('');
@@ -214,12 +226,13 @@ export default function Profile() {
         bio: editBio.trim() || null,
         avatar_url: avatarUrl,
         parent_role: editParentRole || null,
+        show_villages: editShowVillages,
       };
 
       // Try UPDATE first; if no rows matched, INSERT (handles first-time profile creation)
       const { data: updated, error: updateErr } = await supabase
         .from('profiles')
-        .update(payload)
+        .update(payload as any)
         .eq('id', user.id)
         .select('id');
 
@@ -228,7 +241,7 @@ export default function Profile() {
       if (!updated || updated.length === 0) {
         const { error: insertErr } = await supabase
           .from('profiles')
-          .insert({ id: user.id, ...payload });
+          .insert({ id: user.id, ...payload } as any);
         if (insertErr) throw insertErr;
       }
 
@@ -396,6 +409,20 @@ export default function Profile() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {/* Village privacy toggle */}
+              <View style={s.privacyRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.privacyLabel}>Show my villages on my profile</Text>
+                  <Text style={s.privacyHint}>Others can see which villages you're in</Text>
+                </View>
+                <Switch
+                  value={editShowVillages}
+                  onValueChange={setEditShowVillages}
+                  trackColor={{ false: c.cardSage, true: c.sage }}
+                  thumbColor={editShowVillages ? '#fff' : '#fff'}
+                />
+              </View>
+
               {saveError ? <Text style={s.saveError}>{saveError}</Text> : null}
             </View>
           ) : (
@@ -421,12 +448,40 @@ export default function Profile() {
                 </View>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
+                  <Text style={s.statNum}>{myVillageIds.length}</Text>
+                  <Text style={s.statLbl}>Villages</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statItem}>
                   <Text style={s.statNum} numberOfLines={1} adjustsFontSizeToFit>
                     {userCreatedAt ? memberSince(userCreatedAt) : '–'}
                   </Text>
                   <Text style={s.statLbl}>Member since</Text>
                 </View>
               </View>
+
+              {/* My villages chips — shown only when public */}
+              {myVillageIds.length > 0 && profile?.show_villages !== false && (
+                <View style={s.villageChipsWrap}>
+                  {myVillageIds.slice(0, 6).map(id => {
+                    const v = VILLAGE_MAP[id];
+                    if (!v) return null;
+                    return (
+                      <View key={id} style={s.villageChip}>
+                        <Text style={s.villageChipText}>{v.emoji} {v.name.replace(' Village', '').replace(' Parents', '')}</Text>
+                      </View>
+                    );
+                  })}
+                  {myVillageIds.length > 6 && (
+                    <View style={s.villageChip}>
+                      <Text style={s.villageChipText}>+{myVillageIds.length - 6} more</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+              {profile?.show_villages === false && (
+                <Text style={s.villagesPrivateNote}>Villages set to private</Text>
+              )}
             </View>
           )}
         </View>
@@ -437,8 +492,8 @@ export default function Profile() {
           <TouchableOpacity
             style={[
               s.babyCard,
-              baby.gender?.toLowerCase() === 'girl' && { backgroundColor: '#FFC2C3', borderLeftColor: '#FA92B1', shadowColor: '#FA92B1' },
-              baby.gender?.toLowerCase() === 'boy' && { backgroundColor: '#AEC5F1', borderLeftColor: '#57B2E8', shadowColor: '#57B2E8' },
+              baby.gender?.toLowerCase() === 'girl' && { backgroundColor: c.girlBg, borderLeftColor: c.girlBorder, shadowColor: c.girlBorder },
+              baby.gender?.toLowerCase() === 'boy' && { backgroundColor: c.boyBg, borderLeftColor: c.boyBorder, shadowColor: c.boyBorder },
             ]}
             onPress={() => setShowProfileSheet(true)}
             activeOpacity={0.85}
@@ -449,8 +504,8 @@ export default function Profile() {
               ) : (
                 <View style={[
                   s.babyAvatarCircle,
-                  baby.gender?.toLowerCase() === 'girl' && { backgroundColor: '#FA92B1' },
-                  baby.gender?.toLowerCase() === 'boy' && { backgroundColor: '#57B2E8' },
+                  baby.gender?.toLowerCase() === 'girl' && { backgroundColor: c.girlBorder },
+                  baby.gender?.toLowerCase() === 'boy' && { backgroundColor: c.boyBorder },
                 ]}>
                   <Text style={s.babyAvatarInitial}>{baby.name.charAt(0).toUpperCase()}</Text>
                 </View>
@@ -486,17 +541,17 @@ export default function Profile() {
               s.postCard,
               {
                 borderLeftWidth: 4,
-                borderLeftColor: post.post_type === 'milestone' ? '#F9DE87'
-                  : post.post_type === 'question' ? '#57B2E8'
-                  : '#B1A7F0',
+                borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
+                  : post.post_type === 'question' ? c.postQuestion
+                  : c.postText,
               },
             ]}>
               <View style={s.postCardTop}>
                 <View style={[
                   s.postTypeBadge,
-                  post.post_type === 'milestone' && { backgroundColor: '#F8F3D4' },
-                  post.post_type === 'question' && { backgroundColor: '#AEC5F1' },
-                  post.post_type === 'text' && { backgroundColor: '#FDE4DE' },
+                  post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
+                  post.post_type === 'question' && { backgroundColor: c.cardBlue },
+                  post.post_type === 'text' && { backgroundColor: c.cardBlush },
                 ]}>
                   <Text style={s.postTypeBadgeText}>
                     {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
@@ -533,8 +588,9 @@ export default function Profile() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FEFCF8' },
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: c.bg },
   scroll: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -549,7 +605,7 @@ const s = StyleSheet.create({
   heading: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#5A544E',
+    color: c.textSecondary,
   },
   topBarActions: {
     flexDirection: 'row',
@@ -562,11 +618,11 @@ const s = StyleSheet.create({
   },
   topBarCancelText: {
     fontSize: 15,
-    color: '#B0A89E',
+    color: c.textMuted,
     fontWeight: '600',
   },
   topBarSaveBtn: {
-    backgroundColor: '#B1A7F0',
+    backgroundColor: c.primary,
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 20,
@@ -574,13 +630,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   topBarSaveText: {
-    color: '#fff',
+    color: c.primaryText,
     fontWeight: '700',
     fontSize: 14,
   },
   editProfileBtn: {
     borderWidth: 1.5,
-    borderColor: '#94B58C',
+    borderColor: c.editBtn,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 7,
@@ -588,17 +644,17 @@ const s = StyleSheet.create({
   editProfileBtnText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#94B58C',
+    color: c.editBtn,
   },
 
   // ── Hero
   hero: {
-    backgroundColor: '#FDE4DE',
+    backgroundColor: c.heroBg,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#DBABBF',
+    shadowColor: c.heroShadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.18,
     shadowRadius: 10,
@@ -608,7 +664,7 @@ const s = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: '#FFC2C3',
+    backgroundColor: c.avatarBg,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -622,7 +678,7 @@ const s = StyleSheet.create({
   avatarInitial: {
     fontSize: 34,
     fontWeight: '800',
-    color: '#B1A7F0',
+    color: c.primary,
   },
   cameraBadge: {
     position: 'absolute',
@@ -631,7 +687,7 @@ const s = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#FA92B1',
+    backgroundColor: c.roleBadge,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -642,18 +698,18 @@ const s = StyleSheet.create({
   heroName: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#3D3530',
+    color: c.textPrimary,
     marginBottom: 4,
     textAlign: 'center',
   },
   heroUsername: {
     fontSize: 14,
-    color: '#AEBCB1',
+    color: c.textMuted,
     fontWeight: '600',
     marginBottom: 8,
   },
   roleBadge: {
-    backgroundColor: '#FA92B1',
+    backgroundColor: c.roleBadge,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 12,
@@ -662,11 +718,11 @@ const s = StyleSheet.create({
   roleBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#fff',
+    color: c.primaryText,
   },
   heroBio: {
     fontSize: 14,
-    color: '#8A7E78',
+    color: c.textMuted,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 16,
@@ -676,7 +732,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#C1C89B',
+    borderTopColor: c.sage,
     paddingTop: 14,
     width: '100%',
     marginTop: 4,
@@ -688,18 +744,18 @@ const s = StyleSheet.create({
   statNum: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#5A544E',
+    color: c.textSecondary,
     marginBottom: 2,
   },
   statLbl: {
     fontSize: 11,
-    color: '#B0A89E',
+    color: c.textMuted,
     fontWeight: '500',
   },
   statDivider: {
     width: 1,
     height: 32,
-    backgroundColor: '#D3E5CF',
+    backgroundColor: c.cardSage,
   },
 
   // edit mode
@@ -707,31 +763,31 @@ const s = StyleSheet.create({
   editNameInput: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#3D3530',
+    color: c.textPrimary,
     textAlign: 'center',
     borderBottomWidth: 2,
-    borderBottomColor: '#C1C89B',
+    borderBottomColor: c.sage,
     paddingVertical: 6,
     marginBottom: 2,
   },
   usernameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F5F0',
+    backgroundColor: c.inputBg,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   atSign: {
     fontSize: 15,
-    color: '#AEBCB1',
+    color: c.textMuted,
     fontWeight: '700',
     marginRight: 4,
   },
   editUsernameInput: {
     flex: 1,
     fontSize: 15,
-    color: '#3D3530',
+    color: c.textPrimary,
     fontWeight: '600',
     padding: 0,
   },
@@ -750,18 +806,18 @@ const s = StyleSheet.create({
     paddingHorizontal: 4,
   },
   editBioInput: {
-    backgroundColor: '#F8F5F0',
+    backgroundColor: c.inputBg,
     borderRadius: 10,
     padding: 12,
     fontSize: 14,
-    color: '#3D3530',
+    color: c.textPrimary,
     minHeight: 72,
     textAlignVertical: 'top',
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#9A8E88',
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     paddingHorizontal: 2,
@@ -776,31 +832,31 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 16,
-    backgroundColor: '#F8F3D4',
+    backgroundColor: c.cardHoney,
   },
   roleChipActive: {
-    backgroundColor: '#FA92B1',
+    backgroundColor: c.roleBadge,
   },
   roleChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#8A7E78',
+    color: c.textMuted,
   },
   roleChipTextActive: {
-    color: '#fff',
+    color: c.primaryText,
   },
 
   // ── Section title
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#5A544E',
+    color: c.textSecondary,
     marginBottom: 12,
   },
 
   // ── Baby card
   babyCard: {
-    backgroundColor: '#D3E5CF',
+    backgroundColor: c.cardSage,
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
@@ -808,8 +864,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 4,
     borderLeftWidth: 4,
-    borderLeftColor: '#94B58C',
-    shadowColor: '#94B58C',
+    borderLeftColor: c.editBtn,
+    shadowColor: c.editBtn,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
@@ -829,7 +885,7 @@ const s = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FFC2C3',
+    backgroundColor: c.avatarBg,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -841,7 +897,7 @@ const s = StyleSheet.create({
   babyName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#3D3530',
+    color: c.textPrimary,
     marginBottom: 2,
   },
   babyAge: {
@@ -854,26 +910,26 @@ const s = StyleSheet.create({
   },
   babyChevron: {
     fontSize: 22,
-    color: '#AEBCB1',
+    color: c.textMuted,
   },
   babyCardEmpty: {
-    backgroundColor: '#F8F3D4',
+    backgroundColor: c.cardHoney,
     borderRadius: 16,
     padding: 18,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#94B58C',
+    borderColor: c.editBtn,
     borderStyle: 'dashed',
   },
   babyCardEmptyText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#94B58C',
+    color: c.editBtn,
   },
 
   // ── Posts
   emptyPosts: {
-    backgroundColor: '#fff',
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 28,
     alignItems: 'center',
@@ -885,12 +941,12 @@ const s = StyleSheet.create({
   },
   emptyPostsText: {
     fontSize: 14,
-    color: '#B0A89E',
+    color: c.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },
   postCard: {
-    backgroundColor: '#fff',
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
@@ -914,7 +970,7 @@ const s = StyleSheet.create({
   postTypeBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#5A544E',
+    color: c.textSecondary,
   },
   postDeleteBtn: {
     padding: 4,
@@ -925,7 +981,7 @@ const s = StyleSheet.create({
   postContent: {
     fontSize: 14,
     lineHeight: 21,
-    color: '#5A544E',
+    color: c.textSecondary,
     marginBottom: 10,
   },
   postCardFooter: {
@@ -933,35 +989,86 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#F5F0EA',
+    borderTopColor: c.separator,
     paddingTop: 8,
   },
   postTimestamp: {
     fontSize: 11,
-    color: '#B0A89E',
+    color: c.textMuted,
   },
   postLikes: {
     fontSize: 12,
-    color: '#B0A89E',
+    color: c.textMuted,
     fontWeight: '500',
+  },
+
+  // ── Villages on own profile
+  villageChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 12,
+    justifyContent: 'center',
+  },
+  villageChip: {
+    backgroundColor: c.cardLavender,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: c.lavender,
+  },
+  villageChipText: {
+    fontSize: 12,
+    color: c.textSecondary,
+    fontWeight: '600',
+  },
+  villagesPrivateNote: {
+    fontSize: 12,
+    color: c.textMuted,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+
+  // ── Privacy toggle
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.inputBg,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 4,
+    gap: 12,
+  },
+  privacyLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: c.textSecondary,
+    marginBottom: 2,
+  },
+  privacyHint: {
+    fontSize: 11,
+    color: c.textMuted,
   },
 
   // ── Sign out
   signOutBtn: {
-    backgroundColor: '#FF8BA0',
+    backgroundColor: c.signOut,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 28,
-    shadowColor: '#FF8BA0',
+    shadowColor: c.signOut,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },
   signOutText: {
-    color: '#fff',
+    color: c.primaryText,
     fontSize: 16,
     fontWeight: '700',
   },
-});
+  });
+}

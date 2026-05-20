@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -177,6 +178,9 @@ const STEPS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SupplyInsights({ userId }: { userId: string | null }) {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+
   const [trend,       setTrend]       = useState<Trend | null>(null);
   const [dismissed,   setDismissed]   = useState(false);
   const [showModal,   setShowModal]   = useState(false);
@@ -227,8 +231,8 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
   }
 
   function canAdvance(): boolean {
-    const s = STEPS[step];
-    if (s.type === 'single') return !!(answers as any)[s.key];
+    const st = STEPS[step];
+    if (st.type === 'single') return !!(answers as any)[st.key];
     return answers.changes.length > 0;
   }
 
@@ -378,75 +382,75 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const ACCENT = '#E8B4B8';
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    // Detection card
+    card:         { backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey,
+                    borderRadius: 14, padding: 14, marginBottom: 14 },
+    cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10 },
+    cardIcon:     { fontSize: 22 },
+    cardTitle:    { fontSize: 14, fontWeight: '800', color: c.textPrimary },
+    cardSub:      { fontSize: 12, color: c.textPrimary, marginTop: 2, fontWeight: '600' },
+    cardBody:     { fontSize: 13, color: c.textPrimary, lineHeight: 19, marginBottom: 12 },
+    dismissBtn:   { padding: 4 },
+    dismissText:  { fontSize: 15, color: c.honey },
+    insightBtn:   { backgroundColor: c.honey, borderRadius: 20, paddingVertical: 10,
+                    paddingHorizontal: 18, alignSelf: 'flex-start' },
+    insightBtnText:{ fontSize: 13, fontWeight: '700', color: c.textPrimary },
 
-const s = StyleSheet.create({
-  // Detection card
-  card:         { backgroundColor: '#FFF8EC', borderWidth: 1.5, borderColor: '#E8C060',
-                  borderRadius: 14, padding: 14, marginBottom: 14 },
-  cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10 },
-  cardIcon:     { fontSize: 22 },
-  cardTitle:    { fontSize: 14, fontWeight: '800', color: '#7A5A10' },
-  cardSub:      { fontSize: 12, color: '#A07820', marginTop: 2, fontWeight: '600' },
-  cardBody:     { fontSize: 13, color: '#7A5A10', lineHeight: 19, marginBottom: 12 },
-  dismissBtn:   { padding: 4 },
-  dismissText:  { fontSize: 15, color: '#B0A030' },
-  insightBtn:   { backgroundColor: '#E8C060', borderRadius: 20, paddingVertical: 10,
-                  paddingHorizontal: 18, alignSelf: 'flex-start' },
-  insightBtnText:{ fontSize: 13, fontWeight: '700', color: '#5A3A00' },
+    // Modal shell
+    overlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(60,50,45,0.45)' },
+    sheet:        { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                    paddingTop: 12, maxHeight: '92%' },
+    handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: c.inputBg,
+                    alignSelf: 'center', marginBottom: 16 },
 
-  // Modal shell
-  overlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(60,50,45,0.45)' },
-  sheet:        { backgroundColor: '#FEFCF8', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-                  paddingTop: 12, maxHeight: '92%' },
-  handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D8D0C8',
-                  alignSelf: 'center', marginBottom: 16 },
+    // Questionnaire
+    qContent:     { paddingHorizontal: 24, paddingBottom: 40 },
+    progressRow:  { flexDirection: 'row', gap: 6, marginBottom: 20 },
+    dot:          { flex: 1, height: 4, borderRadius: 2, backgroundColor: c.inputBorder },
+    dotActive:    { backgroundColor: c.blush },
+    stepLabel:    { fontSize: 11, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase',
+                    letterSpacing: 0.6, marginBottom: 6 },
+    question:     { fontSize: 20, fontWeight: '800', color: c.textPrimary, lineHeight: 27, marginBottom: 22 },
 
-  // Questionnaire
-  qContent:     { paddingHorizontal: 24, paddingBottom: 40 },
-  progressRow:  { flexDirection: 'row', gap: 6, marginBottom: 20 },
-  dot:          { flex: 1, height: 4, borderRadius: 2, backgroundColor: '#E0D8D0' },
-  dotActive:    { backgroundColor: ACCENT },
-  stepLabel:    { fontSize: 11, fontWeight: '700', color: '#B0A89E', textTransform: 'uppercase',
-                  letterSpacing: 0.6, marginBottom: 6 },
-  question:     { fontSize: 20, fontWeight: '800', color: '#3D3530', lineHeight: 27, marginBottom: 22 },
+    option:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder,
+                    borderRadius: 14, padding: 16, marginBottom: 10 },
+    optionSel:    { borderColor: c.blush, backgroundColor: c.cardBlush },
+    optionText:   { fontSize: 15, fontWeight: '600', color: c.textSecondary, flex: 1 },
+    optionTextSel:{ color: c.blush },
+    optionCheck:  { fontSize: 15, fontWeight: '800', color: c.blush },
 
-  option:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E0D8D0',
-                  borderRadius: 14, padding: 16, marginBottom: 10 },
-  optionSel:    { borderColor: ACCENT, backgroundColor: '#FFF0F3' },
-  optionText:   { fontSize: 15, fontWeight: '600', color: '#5A544E', flex: 1 },
-  optionTextSel:{ color: '#C05070' },
-  optionCheck:  { fontSize: 15, fontWeight: '800', color: ACCENT },
+    navRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
+    backBtn:      { paddingVertical: 14, paddingHorizontal: 4 },
+    backBtnText:  { fontSize: 15, color: c.textMuted, fontWeight: '600' },
+    nextBtn:      { backgroundColor: c.blush, borderRadius: 14, paddingVertical: 14,
+                    paddingHorizontal: 28 },
+    nextBtnOff:   { opacity: 0.4 },
+    nextBtnText:  { color: c.primaryText, fontWeight: '700', fontSize: 15 },
+    cancelRow:    { alignItems: 'center', paddingVertical: 16 },
+    cancelText:   { fontSize: 14, color: c.textMuted, fontWeight: '600' },
 
-  navRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
-  backBtn:      { paddingVertical: 14, paddingHorizontal: 4 },
-  backBtnText:  { fontSize: 15, color: '#B0A89E', fontWeight: '600' },
-  nextBtn:      { backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 14,
-                  paddingHorizontal: 28 },
-  nextBtnOff:   { opacity: 0.4 },
-  nextBtnText:  { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancelRow:    { alignItems: 'center', paddingVertical: 16 },
-  cancelText:   { fontSize: 14, color: '#B0A89E', fontWeight: '600' },
+    // Results
+    resultsContent:{ paddingHorizontal: 24, paddingBottom: 44 },
+    resultsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+    resultsTitle:  { fontSize: 22, fontWeight: '800', color: c.textPrimary },
+    closeBtn:      { fontSize: 18, color: c.textMuted, padding: 4 },
+    resultsIntro:  { fontSize: 14, color: c.textMuted, marginBottom: 18, lineHeight: 20 },
 
-  // Results
-  resultsContent:{ paddingHorizontal: 24, paddingBottom: 44 },
-  resultsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  resultsTitle:  { fontSize: 22, fontWeight: '800', color: '#3D3530' },
-  closeBtn:      { fontSize: 18, color: '#B0A89E', padding: 4 },
-  resultsIntro:  { fontSize: 14, color: '#8A7E78', marginBottom: 18, lineHeight: 20 },
+    suggCard:     { flexDirection: 'row', gap: 14, backgroundColor: c.card, borderRadius: 14,
+                    padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: c.inputBorder,
+                    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
+    suggEmoji:    { fontSize: 28 },
+    suggTitle:    { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
+    suggBody:     { fontSize: 13, color: c.textSecondary, lineHeight: 19 },
 
-  suggCard:     { flexDirection: 'row', gap: 14, backgroundColor: '#fff', borderRadius: 14,
-                  padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: '#E0D8D0',
-                  shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
-  suggEmoji:    { fontSize: 28 },
-  suggTitle:    { fontSize: 15, fontWeight: '800', color: '#3D3530', marginBottom: 6 },
-  suggBody:     { fontSize: 13, color: '#5A544E', lineHeight: 19 },
-
-  disclaimer:   { fontSize: 11, color: '#B0A89E', lineHeight: 16, marginTop: 8, marginBottom: 20,
-                  textAlign: 'center' },
-  doneBtn:      { backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 16,
-                  alignItems: 'center' },
-  doneBtnText:  { color: '#fff', fontWeight: '700', fontSize: 16 },
-});
+    disclaimer:   { fontSize: 11, color: c.textMuted, lineHeight: 16, marginTop: 8, marginBottom: 20,
+                    textAlign: 'center' },
+    doneBtn:      { backgroundColor: c.blush, borderRadius: 14, paddingVertical: 16,
+                    alignItems: 'center' },
+    doneBtnText:  { color: c.primaryText, fontWeight: '700', fontSize: 16 },
+  });
+}

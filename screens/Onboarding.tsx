@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { AppContext } from '../lib/AppContext';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Option data ──────────────────────────────────────────────────────────────
 
@@ -72,12 +73,15 @@ function CheckCard({
   selected,
   onPress,
   accent,
+  c,
 }: {
   option: Option;
   selected: boolean;
   onPress: () => void;
   accent: string;
+  c: Colors;
 }) {
+  const cc = useMemo(() => makeCheckCardStyles(c), [c]);
   return (
     <TouchableOpacity
       style={[cc.card, selected && { borderColor: accent, backgroundColor: accent + '14' }]}
@@ -85,7 +89,7 @@ function CheckCard({
       activeOpacity={0.75}
     >
       <Text style={cc.emoji}>{option.emoji}</Text>
-      <Text style={[cc.label, selected && { color: '#3D3530' }]}>{option.label}</Text>
+      <Text style={[cc.label, selected && { color: c.textPrimary }]}>{option.label}</Text>
       <View style={[cc.check, selected && { backgroundColor: accent, borderColor: accent }]}>
         {selected && <Text style={cc.checkmark}>✓</Text>}
       </View>
@@ -93,53 +97,56 @@ function CheckCard({
   );
 }
 
-const cc = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E8E3DC',
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  emoji: {
-    fontSize: 22,
-    marginRight: 14,
-  },
-  label: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#8A7E78',
-  },
-  check: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#D8D0C8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
-    lineHeight: 16,
-  },
-});
+function makeCheckCardStyles(c: Colors) {
+  return StyleSheet.create({
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      paddingVertical: 16,
+      paddingHorizontal: 18,
+      marginBottom: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 3,
+      elevation: 1,
+    },
+    emoji: {
+      fontSize: 22,
+      marginRight: 14,
+    },
+    label: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    check: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: c.inputBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkmark: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '800',
+      lineHeight: 16,
+    },
+  });
+}
 
 // ─── Progress dots ────────────────────────────────────────────────────────────
 
-function ProgressDots({ current, total }: { current: number; total: number }) {
+function ProgressDots({ current, total, c }: { current: number; total: number; c: Colors }) {
+  const pd = useMemo(() => makeProgressDotStyles(c), [c]);
   return (
     <View style={pd.row}>
       {Array.from({ length: total }, (_, i) => (
@@ -159,13 +166,15 @@ function ProgressDots({ current, total }: { current: number; total: number }) {
   );
 }
 
-const pd = StyleSheet.create({
-  row:        { flexDirection: 'row', gap: 8, marginBottom: 36 },
-  dot:        { height: 6, borderRadius: 3 },
-  dotActive:  { width: 24, backgroundColor: '#B8A9C9' },
-  dotDone:    { width: 24, backgroundColor: '#B8A9C9', opacity: 0.4 },
-  dotInactive:{ width: 6,  backgroundColor: '#E0D8D0' },
-});
+function makeProgressDotStyles(c: Colors) {
+  return StyleSheet.create({
+    row:        { flexDirection: 'row', gap: 8, marginBottom: 36 },
+    dot:        { height: 6, borderRadius: 3 },
+    dotActive:  { width: 24, backgroundColor: c.lavender },
+    dotDone:    { width: 24, backgroundColor: c.lavender, opacity: 0.4 },
+    dotInactive:{ width: 6,  backgroundColor: c.separator },
+  });
+}
 
 // ─── Onboarding screen ────────────────────────────────────────────────────────
 
@@ -175,6 +184,9 @@ export default function Onboarding() {
   const [stepIndex, setStepIndex] = useState(0);
   const [selections, setSelections] = useState<string[][]>([[], [], []]);
   const [saving, setSaving] = useState(false);
+
+  const c = useColors();
+  const styles = useMemo(() => makeStyles(c), [c]);
 
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
@@ -221,7 +233,7 @@ export default function Onboarding() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.inner}>
-        <ProgressDots current={stepIndex} total={STEPS.length} />
+        <ProgressDots current={stepIndex} total={STEPS.length} c={c} />
 
         <Text style={styles.title}>{step.title}</Text>
         <Text style={styles.subtitle}>{step.subtitle}</Text>
@@ -239,6 +251,7 @@ export default function Onboarding() {
             selected={selections[stepIndex].includes(opt.id)}
             onPress={() => toggleOption(opt.id)}
             accent={step.accent}
+            c={c}
           />
         ))}
         <View style={styles.scrollPad} />
@@ -278,75 +291,77 @@ export default function Onboarding() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FEFCF8',
-  },
-  inner: {
-    paddingHorizontal: 28,
-    paddingTop: 28,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#3D3530',
-    lineHeight: 42,
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#B0A89E',
-    lineHeight: 22,
-    marginBottom: 28,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 28,
-  },
-  scrollPad: {
-    height: 16,
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 20,
-    gap: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#F0EBE4',
-    backgroundColor: '#FEFCF8',
-  },
-  backBtn: {
-    width: 72,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  backBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#B0A89E',
-  },
-  nextBtn: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 17,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  nextBtnOff: {
-    opacity: 0.65,
-  },
-  nextBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-});
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    inner: {
+      paddingHorizontal: 28,
+      paddingTop: 28,
+    },
+    title: {
+      fontSize: 34,
+      fontWeight: '800',
+      color: c.textPrimary,
+      lineHeight: 42,
+      marginBottom: 10,
+    },
+    subtitle: {
+      fontSize: 15,
+      color: c.textMuted,
+      lineHeight: 22,
+      marginBottom: 28,
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: 28,
+    },
+    scrollPad: {
+      height: 16,
+    },
+    footer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 28,
+      paddingVertical: 20,
+      gap: 14,
+      borderTopWidth: 1,
+      borderTopColor: c.separator,
+      backgroundColor: c.bg,
+    },
+    backBtn: {
+      width: 72,
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+    },
+    backBtnText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    nextBtn: {
+      flex: 1,
+      borderRadius: 14,
+      paddingVertical: 17,
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    nextBtnOff: {
+      opacity: 0.65,
+    },
+    nextBtnText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+  });
+}

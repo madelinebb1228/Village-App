@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, Image } from 'react-native'
 import { supabase } from '../lib/supabase'
+import { useColors, Colors } from '../lib/theme'
 
 interface Post {
   id: string
@@ -15,7 +16,10 @@ export default function Home() {
   const [showCreatePost, setShowCreatePost] = useState(false)
   const [postContent, setPostContent] = useState('')
   const [postType, setPostType] = useState<'text' | 'milestone' | 'question'>('text')
-  
+
+  const c = useColors()
+  const styles = useMemo(() => makeStyles(c), [c])
+
   // Mock data - replace with real Supabase queries
   const todayStats = {
     feeds: 6,
@@ -58,7 +62,7 @@ export default function Home() {
 
   function handleCreatePost() {
     if (!postContent.trim()) return
-    
+
     const newPost: Post = {
       id: Date.now().toString(),
       author: 'You',
@@ -67,7 +71,7 @@ export default function Home() {
       likes: 0,
       type: postType
     }
-    
+
     setPosts([newPost, ...posts])
     setPostContent('')
     setShowCreatePost(false)
@@ -100,14 +104,14 @@ export default function Home() {
             <Text style={styles.statLabel}>Feeds</Text>
             <Text style={styles.statSubtext}>Next: {todayStats.nextFeeding}</Text>
           </View>
-          
+
           <View style={[styles.statCard, { backgroundColor: '#fef3c7' }]}>
             <Text style={styles.statIcon}>👶</Text>
             <Text style={styles.statValue}>{todayStats.diapers}</Text>
             <Text style={styles.statLabel}>Diapers</Text>
             <Text style={styles.statSubtext}>Today</Text>
           </View>
-          
+
           <View style={[styles.statCard, { backgroundColor: '#d1fae5' }]}>
             <Text style={styles.statIcon}>😴</Text>
             <Text style={styles.statValue}>{todayStats.sleepHours}h</Text>
@@ -118,7 +122,7 @@ export default function Home() {
 
         {/* Quick Actions */}
         <View style={styles.quickActions}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#6366f1' }]}>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: c.primary }]}>
             <Text style={styles.actionIcon}>🍼</Text>
             <Text style={styles.actionText}>Log Feed</Text>
           </TouchableOpacity>
@@ -135,7 +139,7 @@ export default function Home() {
         {/* Community Feed Header */}
         <View style={styles.feedHeader}>
           <Text style={styles.feedTitle}>Village Feed</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.createPostButton}
             onPress={() => setShowCreatePost(!showCreatePost)}
           >
@@ -168,8 +172,8 @@ export default function Home() {
             <TextInput
               style={styles.postInput}
               placeholder={
-                postType === 'milestone' 
-                  ? 'Share a milestone...' 
+                postType === 'milestone'
+                  ? 'Share a milestone...'
                   : postType === 'question'
                   ? 'Ask the village...'
                   : 'What\'s on your mind?'
@@ -184,13 +188,13 @@ export default function Home() {
                 <Text style={styles.attachButtonText}>📷 Photo</Text>
               </TouchableOpacity>
               <View style={styles.postButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.cancelButton}
                   onPress={() => setShowCreatePost(false)}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
                     styles.submitButton,
                     !postContent.trim() && styles.submitButtonDisabled
@@ -255,289 +259,291 @@ export default function Home() {
   )
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  profileHeader: {
-    backgroundColor: '#fff',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  profileInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#ede9fe',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 24,
-  },
-  babyName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  babyAge: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  editButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-  },
-  editButtonText: {
-    fontSize: 14,
-    color: '#4b5563',
-    fontWeight: '500',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-  },
-  statIcon: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#4b5563',
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  statSubtext: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 6,
-  },
-  actionIcon: {
-    fontSize: 16,
-  },
-  actionText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  feedHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  feedTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  createPostButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  createPostText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  createPostContainer: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  postTypeSelector: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  postTypeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#f3f4f6',
-  },
-  postTypeButtonActive: {
-    backgroundColor: '#ede9fe',
-  },
-  postTypeText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  postTypeTextActive: {
-    color: '#7c3aed',
-  },
-  postInput: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 12,
-  },
-  postActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  attachButton: {
-    paddingVertical: 8,
-  },
-  attachButtonText: {
-    fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '500',
-  },
-  postButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  cancelButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  submitButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  feed: {
-    paddingTop: 8,
-  },
-  postCard: {
-    backgroundColor: '#fff',
-    marginBottom: 8,
-    padding: 16,
-  },
-  postHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  postAuthor: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  postAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e0e7ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  postAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4338ca',
-  },
-  postAuthorName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  postTimestamp: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 1,
-  },
-  postBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  postBadgeText: {
-    fontSize: 12,
-  },
-  postContent: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#374151',
-    marginBottom: 12,
-  },
-  postFooter: {
-    flexDirection: 'row',
-    gap: 20,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-  },
-  postAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  postActionText: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-})
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.inputBg,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    profileHeader: {
+      backgroundColor: c.card,
+      paddingTop: 60,
+      paddingBottom: 20,
+      paddingHorizontal: 20,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: c.inputBorder,
+    },
+    profileInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    avatar: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: c.cardLavender,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarText: {
+      fontSize: 24,
+    },
+    babyName: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: c.textPrimary,
+    },
+    babyAge: {
+      fontSize: 14,
+      color: c.textMuted,
+      marginTop: 2,
+    },
+    editButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: c.inputBg,
+    },
+    editButtonText: {
+      fontSize: 14,
+      color: c.textSecondary,
+      fontWeight: '500',
+    },
+    statsContainer: {
+      flexDirection: 'row',
+      padding: 16,
+      gap: 12,
+    },
+    statCard: {
+      flex: 1,
+      borderRadius: 16,
+      padding: 16,
+      alignItems: 'center',
+    },
+    statIcon: {
+      fontSize: 24,
+      marginBottom: 8,
+    },
+    statValue: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: c.textPrimary,
+    },
+    statLabel: {
+      fontSize: 12,
+      color: c.textSecondary,
+      marginTop: 2,
+      fontWeight: '600',
+    },
+    statSubtext: {
+      fontSize: 10,
+      color: c.textMuted,
+      marginTop: 4,
+    },
+    quickActions: {
+      flexDirection: 'row',
+      paddingHorizontal: 16,
+      paddingBottom: 16,
+      gap: 8,
+    },
+    actionButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: 12,
+      gap: 6,
+    },
+    actionIcon: {
+      fontSize: 16,
+    },
+    actionText: {
+      color: c.primaryText,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    feedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      backgroundColor: c.card,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: c.inputBorder,
+    },
+    feedTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: c.textPrimary,
+    },
+    createPostButton: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    createPostText: {
+      color: c.primaryText,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    createPostContainer: {
+      backgroundColor: c.card,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.inputBorder,
+    },
+    postTypeSelector: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 12,
+    },
+    postTypeButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      backgroundColor: c.inputBg,
+    },
+    postTypeButtonActive: {
+      backgroundColor: c.cardLavender,
+    },
+    postTypeText: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    postTypeTextActive: {
+      color: c.primary,
+    },
+    postInput: {
+      backgroundColor: c.inputBg,
+      borderRadius: 12,
+      padding: 12,
+      fontSize: 15,
+      minHeight: 80,
+      textAlignVertical: 'top',
+      marginBottom: 12,
+    },
+    postActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    attachButton: {
+      paddingVertical: 8,
+    },
+    attachButtonText: {
+      fontSize: 14,
+      color: c.primary,
+      fontWeight: '500',
+    },
+    postButtons: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    cancelButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    cancelButtonText: {
+      fontSize: 14,
+      color: c.textMuted,
+    },
+    submitButton: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 20,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    submitButtonDisabled: {
+      backgroundColor: c.primaryDisabled,
+    },
+    submitButtonText: {
+      color: c.primaryText,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    feed: {
+      paddingTop: 8,
+    },
+    postCard: {
+      backgroundColor: c.card,
+      marginBottom: 8,
+      padding: 16,
+    },
+    postHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 12,
+    },
+    postAuthor: {
+      flexDirection: 'row',
+      gap: 10,
+      alignItems: 'center',
+    },
+    postAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.cardBlue,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    postAvatarText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.primary,
+    },
+    postAuthorName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.textPrimary,
+    },
+    postTimestamp: {
+      fontSize: 12,
+      color: c.textMuted,
+      marginTop: 1,
+    },
+    postBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    postBadgeText: {
+      fontSize: 12,
+    },
+    postContent: {
+      fontSize: 15,
+      lineHeight: 21,
+      color: c.textSecondary,
+      marginBottom: 12,
+    },
+    postFooter: {
+      flexDirection: 'row',
+      gap: 20,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: c.inputBg,
+    },
+    postAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    postActionText: {
+      fontSize: 13,
+      color: c.textMuted,
+    },
+  })
+}

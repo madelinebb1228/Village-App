@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Text } from 'react-native';
+import { useColors } from './lib/theme';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -20,20 +21,21 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 function MainTabs() {
+  const c = useColors();
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#5A544E',
-        tabBarInactiveTintColor: '#AEBCB1',
+        tabBarActiveTintColor: c.textPrimary,
+        tabBarInactiveTintColor: c.textMuted,
         tabBarStyle: {
-          backgroundColor: '#FEFEE2',
-          borderTopColor: '#C1C89B',
+          backgroundColor: c.card,
+          borderTopColor: c.separator,
           borderTopWidth: 1.5,
           paddingTop: 8,
           paddingBottom: 8,
           height: 64,
-          shadowColor: '#5A544E',
+          shadowColor: c.heroShadow,
           shadowOffset: { width: 0, height: -3 },
           shadowOpacity: 0.10,
           shadowRadius: 8,
@@ -51,7 +53,7 @@ function MainTabs() {
         component={HomeScreen}
         options={{
           tabBarLabel: 'Home',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏡</Text>
           ),
@@ -62,7 +64,7 @@ function MainTabs() {
         component={TrackScreen}
         options={{
           tabBarLabel: 'Track',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📋</Text>
           ),
@@ -73,7 +75,7 @@ function MainTabs() {
         component={VillageScreen}
         options={{
           tabBarLabel: 'Village',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: '#C1C89B' },
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏘️</Text>
           ),

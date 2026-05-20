@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,9 @@ export default function BabyProfileSheet({
   visible: boolean;
   onClose: () => void;
 }) {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+
   const [baby, setBaby] = useState<BabyFull | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -390,7 +394,7 @@ export default function BabyProfileSheet({
               disabled={saving}
             >
               {saving
-                ? <ActivityIndicator size="small" color="#B8A9C9" />
+                ? <ActivityIndicator size="small" color={c.primary} />
                 : <Text style={[s.topBarBtnText, s.editBtnText]}>{editing ? 'Save' : 'Edit'}</Text>
               }
             </TouchableOpacity>
@@ -402,7 +406,7 @@ export default function BabyProfileSheet({
         {/* ── Body ─────────────────────────────────────────────────────── */}
         {loading ? (
           <View style={s.center}>
-            <ActivityIndicator size="large" color="#B8A9C9" />
+            <ActivityIndicator size="large" color={c.primary} />
           </View>
         ) : !baby ? (
           <View style={s.center}>
@@ -445,7 +449,7 @@ export default function BabyProfileSheet({
                     onChangeText={setEditName}
                     placeholder="Baby's name"
                     autoCapitalize="words"
-                    placeholderTextColor="#C4BAB2"
+                    placeholderTextColor={c.textMuted}
                   />
                 ) : (
                   <Text style={s.heroName}>{baby.name}</Text>
@@ -484,7 +488,7 @@ export default function BabyProfileSheet({
                           onChangeText={setEditBirthDate}
                           placeholder="MM/DD/YYYY"
                           keyboardType="numbers-and-punctuation"
-                          placeholderTextColor="#C4BAB2"
+                          placeholderTextColor={c.textMuted}
                         />
                       </View>
                     )}
@@ -505,8 +509,8 @@ export default function BabyProfileSheet({
                   </>
                 ) : (
                   <>
-                    <Row label="Birthday" value={baby.birth_date ? formatDate(baby.birth_date) : '–'} />
-                    <Row label="Gender" value={baby.gender ?? '–'} last />
+                    <Row label="Birthday" value={baby.birth_date ? formatDate(baby.birth_date) : '–'} styles={s} />
+                    <Row label="Gender" value={baby.gender ?? '–'} last styles={s} />
                   </>
                 )}
               </View>
@@ -519,12 +523,12 @@ export default function BabyProfileSheet({
                     <View style={s.row}>
                       <Text style={s.rowLabel}>Weight (lbs)</Text>
                       <TextInput style={s.inlineInput} value={editWeight} onChangeText={setEditWeight}
-                        placeholder="e.g. 12.5" keyboardType="decimal-pad" placeholderTextColor="#C4BAB2" />
+                        placeholder="e.g. 12.5" keyboardType="decimal-pad" placeholderTextColor={c.textMuted} />
                     </View>
                     <View style={[s.row, s.rowLast]}>
                       <Text style={s.rowLabel}>Height (in)</Text>
                       <TextInput style={s.inlineInput} value={editHeight} onChangeText={setEditHeight}
-                        placeholder="e.g. 24" keyboardType="decimal-pad" placeholderTextColor="#C4BAB2" />
+                        placeholder="e.g. 24" keyboardType="decimal-pad" placeholderTextColor={c.textMuted} />
                     </View>
                   </>
                 ) : (
@@ -566,21 +570,21 @@ export default function BabyProfileSheet({
                           <Text style={s.rowLabel}>Birth weight (lbs)</Text>
                           <TextInput style={s.inlineInput} value={editBirthWeight}
                             onChangeText={setEditBirthWeight} placeholder="e.g. 7.25"
-                            keyboardType="decimal-pad" placeholderTextColor="#C4BAB2" />
+                            keyboardType="decimal-pad" placeholderTextColor={c.textMuted} />
                         </View>
                         <View style={[s.row, s.rowLast]}>
                           <Text style={s.rowLabel}>Birth length (in)</Text>
                           <TextInput style={s.inlineInput} value={editBirthLength}
                             onChangeText={setEditBirthLength} placeholder="e.g. 20.5"
-                            keyboardType="decimal-pad" placeholderTextColor="#C4BAB2" />
+                            keyboardType="decimal-pad" placeholderTextColor={c.textMuted} />
                         </View>
                       </>
                     ) : (
                       <>
                         <Row label="Birth weight"
-                          value={baby.birth_weight != null ? displayWeight(baby.birth_weight) : '–'} />
+                          value={baby.birth_weight != null ? displayWeight(baby.birth_weight) : '–'} styles={s} />
                         <Row label="Birth length"
-                          value={baby.birth_length != null ? `${baby.birth_length} in` : '–'} last />
+                          value={baby.birth_length != null ? `${baby.birth_length} in` : '–'} last styles={s} />
                       </>
                     )}
                   </View>
@@ -595,18 +599,18 @@ export default function BabyProfileSheet({
                     <View style={s.row}>
                       <Text style={s.rowLabel}>Name</Text>
                       <TextInput style={s.inlineInput} value={editPedName} onChangeText={setEditPedName}
-                        placeholder="Dr. Smith" autoCapitalize="words" placeholderTextColor="#C4BAB2" />
+                        placeholder="Dr. Smith" autoCapitalize="words" placeholderTextColor={c.textMuted} />
                     </View>
                     <View style={[s.row, s.rowLast]}>
                       <Text style={s.rowLabel}>Phone</Text>
                       <TextInput style={s.inlineInput} value={editPedPhone} onChangeText={setEditPedPhone}
-                        placeholder="(555) 123-4567" keyboardType="phone-pad" placeholderTextColor="#C4BAB2" />
+                        placeholder="(555) 123-4567" keyboardType="phone-pad" placeholderTextColor={c.textMuted} />
                     </View>
                   </>
                 ) : (
                   <>
-                    <Row label="Name" value={baby.pediatrician_name ?? '–'} />
-                    <Row label="Phone" value={baby.pediatrician_phone ?? '–'} last />
+                    <Row label="Name" value={baby.pediatrician_name ?? '–'} styles={s} />
+                    <Row label="Phone" value={baby.pediatrician_phone ?? '–'} last styles={s} />
                   </>
                 )}
               </View>
@@ -638,13 +642,13 @@ export default function BabyProfileSheet({
                     ))}
                   </ScrollView>
                   <TextInput style={s.formInput} value={milestoneTitle} onChangeText={setMilestoneTitle}
-                    placeholder="Milestone name" placeholderTextColor="#C4BAB2" />
+                    placeholder="Milestone name" placeholderTextColor={c.textMuted} />
                   <TextInput style={s.formInput} value={milestoneDate}
                     onChangeText={(t) => setMilestoneDate(autoFormatDate(t))}
                     placeholder="Date: MM/DD/YYYY (blank = today)" keyboardType="numeric"
-                    placeholderTextColor="#C4BAB2" maxLength={10} />
+                    placeholderTextColor={c.textMuted} maxLength={10} />
                   <TextInput style={s.formInput} value={milestoneNotes} onChangeText={setMilestoneNotes}
-                    placeholder="Notes (optional)" placeholderTextColor="#C4BAB2" />
+                    placeholder="Notes (optional)" placeholderTextColor={c.textMuted} />
                   <TouchableOpacity
                     style={[s.saveBtn, !milestoneTitle.trim() && s.saveBtnDisabled]}
                     onPress={addMilestone}
@@ -711,7 +715,7 @@ export default function BabyProfileSheet({
                 }}
               >
                 {sharePosting
-                  ? <ActivityIndicator color="#fff" />
+                  ? <ActivityIndicator color={c.primaryText} />
                   : <Text style={s.promptShareBtnText}>Post to your profile</Text>
                 }
               </TouchableOpacity>
@@ -731,447 +735,449 @@ export default function BabyProfileSheet({
 
 // ─── Row helper ───────────────────────────────────────────────────────────────
 
-function Row({ label, value, last }: { label: string; value: string; last?: boolean }) {
+function Row({ label, value, last, styles }: { label: string; value: string; last?: boolean; styles: any }) {
   return (
-    <View style={[s.row, last && s.rowLast]}>
-      <Text style={s.rowLabel}>{label}</Text>
-      <Text style={s.rowValue}>{value}</Text>
+    <View style={[styles.row, last && styles.rowLast]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#FEFCF8',
-  },
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
 
-  // ── Top bar
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: '#FEFCF8',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EAE5DF',
-  },
-  topBarBtn: {
-    width: 64,
-    alignItems: 'flex-start',
-  },
-  topBarBtnText: {
-    fontSize: 16,
-    color: '#B0A89E',
-    fontWeight: '500',
-  },
-  topBarTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#5A544E',
-  },
-  editBtnText: {
-    color: '#B1A7F0',
-    fontWeight: '700',
-    textAlign: 'right',
-  },
+    // ── Top bar
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      backgroundColor: c.bg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
+    },
+    topBarBtn: {
+      width: 64,
+      alignItems: 'flex-start',
+    },
+    topBarBtnText: {
+      fontSize: 16,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    topBarTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    editBtnText: {
+      color: c.primary,
+      fontWeight: '700',
+      textAlign: 'right',
+    },
 
-  // ── States
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#B0A89E',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+    // ── States
+    center: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 32,
+    },
+    emptyText: {
+      fontSize: 15,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
 
-  // ── Scroll
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20 },
+    // ── Scroll
+    scroll: { flex: 1 },
+    scrollContent: { padding: 20 },
 
-  // ── Hero
-  hero: {
-    alignItems: 'center',
-    paddingVertical: 24,
-  },
-  photoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#FFC2C3',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  photoImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-  },
-  photoInitial: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#B1A7F0',
-  },
-  photoBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#B1A7F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoBadgeText: {
-    fontSize: 14,
-  },
-  heroName: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#3D3530',
-    marginBottom: 4,
-  },
-  heroAge: {
-    fontSize: 15,
-    color: '#8A7E78',
-    fontWeight: '500',
-  },
-  nameInput: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#3D3530',
-    textAlign: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: '#B1A7F0',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    marginBottom: 4,
-    minWidth: 160,
-  },
+    // ── Hero
+    hero: {
+      alignItems: 'center',
+      paddingVertical: 24,
+    },
+    photoCircle: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      backgroundColor: c.avatarBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 14,
+      overflow: 'hidden',
+    },
+    photoImage: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+    },
+    photoInitial: {
+      fontSize: 36,
+      fontWeight: '800',
+      color: c.primary,
+    },
+    photoBadge: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: c.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    photoBadgeText: {
+      fontSize: 14,
+    },
+    heroName: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: c.textPrimary,
+      marginBottom: 4,
+    },
+    heroAge: {
+      fontSize: 15,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    nameInput: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: c.textPrimary,
+      textAlign: 'center',
+      borderBottomWidth: 2,
+      borderBottomColor: c.primary,
+      paddingVertical: 4,
+      paddingHorizontal: 12,
+      marginBottom: 4,
+      minWidth: 160,
+    },
 
-  // ── Section labels
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#9A8E88',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginTop: 20,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  sectionLabelInline: {
-    marginTop: 0,
-    marginBottom: 0,
-  },
+    // ── Section labels
+    sectionLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginTop: 20,
+      marginBottom: 8,
+      paddingHorizontal: 4,
+    },
+    sectionLabelInline: {
+      marginTop: 0,
+      marginBottom: 0,
+    },
 
-  // ── Card
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
+    // ── Card
+    card: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
 
-  // ── Row
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F0EA',
-    minHeight: 52,
-  },
-  rowLast: {
-    borderBottomWidth: 0,
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: '#9A8E88',
-    width: 120,
-    fontWeight: '500',
-    flexShrink: 0,
-  },
-  rowValue: {
-    flex: 1,
-    fontSize: 14,
-    color: '#3D3530',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  rowValueGroup: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 6,
-  },
-  rowSub: {
-    fontSize: 12,
-    color: '#B0A89E',
-  },
-  inlineInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#3D3530',
-    fontWeight: '600',
-    textAlign: 'right',
-    padding: 0,
-  },
+    // ── Row
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.inputBg,
+      minHeight: 52,
+    },
+    rowLast: {
+      borderBottomWidth: 0,
+    },
+    rowLabel: {
+      fontSize: 14,
+      color: c.textMuted,
+      width: 120,
+      fontWeight: '500',
+      flexShrink: 0,
+    },
+    rowValue: {
+      flex: 1,
+      fontSize: 14,
+      color: c.textPrimary,
+      fontWeight: '600',
+      textAlign: 'right',
+    },
+    rowValueGroup: {
+      flex: 1,
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 6,
+    },
+    rowSub: {
+      fontSize: 12,
+      color: c.textMuted,
+    },
+    inlineInput: {
+      flex: 1,
+      fontSize: 14,
+      color: c.textPrimary,
+      fontWeight: '600',
+      textAlign: 'right',
+      padding: 0,
+    },
 
-  // ── Toggle pill (is_expecting)
-  togglePill: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: '#F8F3D4',
-  },
-  togglePillOn: {
-    backgroundColor: '#B1A7F0',
-  },
-  togglePillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#8A7E78',
-  },
-  togglePillTextOn: {
-    color: '#ffffff',
-  },
+    // ── Toggle pill (is_expecting)
+    togglePill: {
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+      borderRadius: 14,
+      backgroundColor: c.cardHoney,
+    },
+    togglePillOn: {
+      backgroundColor: c.primary,
+    },
+    togglePillText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textMuted,
+    },
+    togglePillTextOn: {
+      color: c.primaryText,
+    },
 
-  // ── Gender picker
-  genderRow: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  genderChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: '#F8F3D4',
-  },
-  genderChipActive: {
-    backgroundColor: '#B1A7F0',
-  },
-  genderChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#8A7E78',
-  },
-  genderChipTextActive: {
-    color: '#ffffff',
-  },
+    // ── Gender picker
+    genderRow: {
+      flex: 1,
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 6,
+    },
+    genderChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 14,
+      backgroundColor: c.cardHoney,
+    },
+    genderChipActive: {
+      backgroundColor: c.primary,
+    },
+    genderChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    genderChipTextActive: {
+      color: c.primaryText,
+    },
 
-  // ── Milestones header
-  milestonesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  addBtn: {
-    backgroundColor: '#B1A7F0',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 14,
-  },
-  addBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
+    // ── Milestones header
+    milestonesHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 20,
+      marginBottom: 8,
+      paddingHorizontal: 4,
+    },
+    addBtn: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: 14,
+    },
+    addBtnText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.primaryText,
+    },
 
-  // ── Milestone form
-  milestoneForm: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  presetRow: {
-    marginBottom: 10,
-  },
-  presetChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F8F3D4',
-    marginRight: 8,
-  },
-  presetChipActive: {
-    backgroundColor: '#B1A7F0',
-  },
-  presetChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#8A7E78',
-  },
-  presetChipTextActive: {
-    color: '#ffffff',
-  },
-  formInput: {
-    backgroundColor: '#F8F5F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#3D3530',
-    marginBottom: 8,
-  },
-  saveBtn: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  saveBtnDisabled: {
-    backgroundColor: '#D8D0C8',
-  },
-  saveBtnText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+    // ── Milestone form
+    milestoneForm: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    presetRow: {
+      marginBottom: 10,
+    },
+    presetChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      backgroundColor: c.cardHoney,
+      marginRight: 8,
+    },
+    presetChipActive: {
+      backgroundColor: c.primary,
+    },
+    presetChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    presetChipTextActive: {
+      color: c.primaryText,
+    },
+    formInput: {
+      backgroundColor: c.inputBg,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: c.textPrimary,
+      marginBottom: 8,
+    },
+    saveBtn: {
+      backgroundColor: c.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    saveBtnDisabled: {
+      backgroundColor: c.primaryDisabled,
+    },
+    saveBtnText: {
+      color: c.primaryText,
+      fontWeight: '700',
+      fontSize: 14,
+    },
 
-  // ── Milestone rows
-  milestoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F0EA',
-    gap: 10,
-  },
-  milestoneEmoji: {
-    fontSize: 18,
-  },
-  milestoneInfo: {
-    flex: 1,
-  },
-  milestoneTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3D3530',
-  },
-  milestoneNotes: {
-    fontSize: 12,
-    color: '#B0A89E',
-    marginTop: 1,
-  },
-  milestoneDate: {
-    fontSize: 12,
-    color: '#B0A89E',
-    fontWeight: '500',
-    flexShrink: 0,
-  },
-  deleteBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  deleteBtnText: {
-    fontSize: 18,
-    color: '#C4BAB2',
-    fontWeight: '600',
-  },
-  emptyMilestone: {
-    fontSize: 13,
-    color: '#B0A89E',
-    textAlign: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-  },
+    // ── Milestone rows
+    milestoneRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.inputBg,
+      gap: 10,
+    },
+    milestoneEmoji: {
+      fontSize: 18,
+    },
+    milestoneInfo: {
+      flex: 1,
+    },
+    milestoneTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.textPrimary,
+    },
+    milestoneNotes: {
+      fontSize: 12,
+      color: c.textMuted,
+      marginTop: 1,
+    },
+    milestoneDate: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '500',
+      flexShrink: 0,
+    },
+    deleteBtn: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    deleteBtnText: {
+      fontSize: 18,
+      color: c.textMuted,
+      fontWeight: '600',
+    },
+    emptyMilestone: {
+      fontSize: 13,
+      color: c.textMuted,
+      textAlign: 'center',
+      paddingVertical: 20,
+      paddingHorizontal: 16,
+    },
 
-  // ── Share milestone prompt
-  promptOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(60,50,45,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    zIndex: 100,
-  },
-  promptCard: {
-    backgroundColor: '#FEFCF8',
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  promptEmoji: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-  promptTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#3D3530',
-    marginBottom: 8,
-  },
-  promptBody: {
-    fontSize: 14,
-    color: '#8A7E78',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  promptError: {
-    fontSize: 13,
-    color: '#DC2626',
-    textAlign: 'center',
-    marginBottom: 12,
-    lineHeight: 18,
-  },
-  promptShareBtn: {
-    backgroundColor: '#FA92B1',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  promptShareBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  promptSkipBtn: {
-    paddingVertical: 10,
-  },
-  promptSkipBtnText: {
-    fontSize: 14,
-    color: '#B0A89E',
-    fontWeight: '600',
-  },
-});
+    // ── Share milestone prompt
+    promptOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: c.bg === '#FEFCF8' ? 'rgba(60,50,45,0.5)' : 'rgba(0,0,0,0.7)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 32,
+      zIndex: 100,
+    },
+    promptCard: {
+      backgroundColor: c.bg,
+      borderRadius: 20,
+      padding: 28,
+      alignItems: 'center',
+      width: '100%',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      elevation: 10,
+    },
+    promptEmoji: {
+      fontSize: 40,
+      marginBottom: 12,
+    },
+    promptTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: c.textPrimary,
+      marginBottom: 8,
+    },
+    promptBody: {
+      fontSize: 14,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 20,
+      marginBottom: 24,
+    },
+    promptError: {
+      fontSize: 13,
+      color: '#DC2626',
+      textAlign: 'center',
+      marginBottom: 12,
+      lineHeight: 18,
+    },
+    promptShareBtn: {
+      backgroundColor: c.blush,
+      borderRadius: 14,
+      paddingVertical: 14,
+      paddingHorizontal: 28,
+      width: '100%',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    promptShareBtnText: {
+      color: c.primaryText,
+      fontWeight: '700',
+      fontSize: 15,
+    },
+    promptSkipBtn: {
+      paddingVertical: 10,
+    },
+    promptSkipBtnText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontWeight: '600',
+    },
+  });
+}

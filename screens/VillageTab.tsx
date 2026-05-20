@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,819 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { useColors, Colors } from '../lib/theme';
 
-// ─── Village list ─────────────────────────────────────────────────────────────
-// TODO: Replace / extend this list once the final villages are confirmed
+import { Village, VILLAGES, CHILD_AGES, DUE_DATE_MONTHS, toVillageId, COUNTRIES, STATES_BY_COUNTRY, CITIES_BY_STATE } from '../lib/villageData';
 
-interface Village {
-  id: string;
-  name: string;
-  emoji: string;
-  description: string;
-  hidden?: boolean; // hidden from Discover list; accessible via quiz or search only
-}
-
-// ─── Location data ────────────────────────────────────────────────────────────
-
-function toVillageId(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-}
-
-const COUNTRIES = [
-  'United States', 'Canada', 'United Kingdom', 'Australia', 'New Zealand',
-  'Ireland', 'India', 'Philippines', 'South Africa', 'Nigeria', 'Ghana',
-  'Kenya', 'Germany', 'France', 'Mexico', 'Brazil', 'Jamaica',
-  'Trinidad and Tobago', 'Singapore', 'Other',
-];
-
-const STATES_BY_COUNTRY: Record<string, string[]> = {
-  'United States': [
-    'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
-    'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
-    'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
-    'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada',
-    'New Hampshire','New Jersey','New Mexico','New York','North Carolina',
-    'North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island',
-    'South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont',
-    'Virginia','Washington','West Virginia','Wisconsin','Wyoming','Washington D.C.',
-  ],
-  'Canada': [
-    'Alberta','British Columbia','Manitoba','New Brunswick',
-    'Newfoundland and Labrador','Nova Scotia','Ontario','Prince Edward Island',
-    'Quebec','Saskatchewan','Northwest Territories','Nunavut','Yukon',
-  ],
-};
-
-const CITIES_BY_STATE: Record<string, string[]> = {
-  'Alabama': ['Birmingham','Montgomery','Huntsville','Mobile'],
-  'Alaska': ['Anchorage','Fairbanks','Juneau'],
-  'Arizona': ['Phoenix','Tucson','Mesa','Scottsdale','Chandler'],
-  'Arkansas': ['Little Rock','Fort Smith','Fayetteville'],
-  'California': ['Los Angeles','San Francisco','San Diego','San Jose','Sacramento','Oakland','Fresno','Long Beach','Anaheim'],
-  'Colorado': ['Denver','Colorado Springs','Aurora','Boulder','Fort Collins'],
-  'Connecticut': ['Bridgeport','New Haven','Hartford','Stamford'],
-  'Delaware': ['Wilmington','Dover','Newark'],
-  'Florida': ['Miami','Orlando','Tampa','Jacksonville','Fort Lauderdale','St. Petersburg','Tallahassee'],
-  'Georgia': ['Atlanta','Augusta','Columbus','Savannah','Athens'],
-  'Hawaii': ['Honolulu','Pearl City','Hilo','Kailua'],
-  'Idaho': ['Boise','Nampa','Meridian','Idaho Falls'],
-  'Illinois': ['Chicago','Aurora','Naperville','Rockford','Joliet'],
-  'Indiana': ['Indianapolis','Fort Wayne','Evansville','South Bend'],
-  'Iowa': ['Des Moines','Cedar Rapids','Davenport','Sioux City'],
-  'Kansas': ['Wichita','Overland Park','Kansas City','Topeka'],
-  'Kentucky': ['Louisville','Lexington','Bowling Green'],
-  'Louisiana': ['New Orleans','Baton Rouge','Shreveport','Lafayette'],
-  'Maine': ['Portland','Lewiston','Bangor'],
-  'Maryland': ['Baltimore','Frederick','Gaithersburg','Silver Spring'],
-  'Massachusetts': ['Boston','Worcester','Springfield','Cambridge','Lowell'],
-  'Michigan': ['Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor'],
-  'Minnesota': ['Minneapolis','St. Paul','Rochester','Bloomington','Duluth'],
-  'Mississippi': ['Jackson','Gulfport','Southaven'],
-  'Missouri': ['Kansas City','St. Louis','Springfield','Columbia'],
-  'Montana': ['Billings','Missoula','Great Falls','Bozeman'],
-  'Nebraska': ['Omaha','Lincoln','Bellevue'],
-  'Nevada': ['Las Vegas','Henderson','Reno','North Las Vegas'],
-  'New Hampshire': ['Manchester','Nashua','Concord'],
-  'New Jersey': ['Newark','Jersey City','Paterson','Elizabeth','Trenton'],
-  'New Mexico': ['Albuquerque','Las Cruces','Rio Rancho','Santa Fe'],
-  'New York': ['New York City','Buffalo','Rochester','Yonkers','Syracuse','Albany'],
-  'North Carolina': ['Charlotte','Raleigh','Greensboro','Durham','Winston-Salem'],
-  'North Dakota': ['Fargo','Bismarck','Grand Forks'],
-  'Ohio': ['Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton'],
-  'Oklahoma': ['Oklahoma City','Tulsa','Norman','Broken Arrow'],
-  'Oregon': ['Portland','Eugene','Salem','Gresham','Hillsboro'],
-  'Pennsylvania': ['Philadelphia','Pittsburgh','Allentown','Erie'],
-  'Rhode Island': ['Providence','Cranston','Warwick'],
-  'South Carolina': ['Columbia','Charleston','North Charleston','Greenville'],
-  'South Dakota': ['Sioux Falls','Rapid City','Aberdeen'],
-  'Tennessee': ['Nashville','Memphis','Knoxville','Chattanooga','Clarksville'],
-  'Texas': ['Houston','San Antonio','Dallas','Austin','Fort Worth','El Paso','Arlington','Corpus Christi','Plano'],
-  'Utah': ['Salt Lake City','West Valley City','Provo','West Jordan','Orem'],
-  'Vermont': ['Burlington','Essex','South Burlington'],
-  'Virginia': ['Virginia Beach','Norfolk','Chesapeake','Richmond','Arlington','Alexandria'],
-  'Washington': ['Seattle','Spokane','Tacoma','Vancouver','Bellevue','Kirkland'],
-  'West Virginia': ['Charleston','Huntington','Morgantown'],
-  'Wisconsin': ['Milwaukee','Madison','Green Bay','Kenosha'],
-  'Wyoming': ['Cheyenne','Casper','Laramie'],
-  'Washington D.C.': ['Washington D.C.'],
-  'Ontario': ['Toronto','Ottawa','Mississauga','Brampton','Hamilton','London'],
-  'Quebec': ['Montreal','Quebec City','Laval','Gatineau','Longueuil'],
-  'British Columbia': ['Vancouver','Surrey','Burnaby','Richmond','Victoria','Kelowna'],
-  'Alberta': ['Calgary','Edmonton','Red Deer','Lethbridge'],
-  'Manitoba': ['Winnipeg','Brandon'],
-  'Saskatchewan': ['Saskatoon','Regina'],
-  'Nova Scotia': ['Halifax','Sydney','Dartmouth'],
-  'New Brunswick': ['Moncton','Saint John','Fredericton'],
-  'Newfoundland and Labrador': ["St. John's",'Mount Pearl','Corner Brook'],
-  'Prince Edward Island': ['Charlottetown','Summerside'],
-  'Northwest Territories': ['Yellowknife'],
-  'Nunavut': ['Iqaluit'],
-  'Yukon': ['Whitehorse'],
-};
-
-// ─── Due date villages ────────────────────────────────────────────────────────
-
-const DUE_DATE_MONTHS = [
-  'June 2026','July 2026','August 2026','September 2026','October 2026',
-  'November 2026','December 2026','January 2027','February 2027','March 2027',
-  'April 2027','May 2027','June 2027','July 2027','August 2027',
-  'September 2027','October 2027','November 2027',
-];
-
-const DUE_DATE_VILLAGES: Village[] = DUE_DATE_MONTHS.map(m => ({
-  id: `due_${toVillageId(m)}`,
-  name: `${m} Moms`,
-  emoji: '🤰',
-  description: `Connect with moms due in ${m}`,
-}));
-
-// ─── Child age data ───────────────────────────────────────────────────────────
-
-// Stage village IDs for each age band
-const S = {
-  newborn:       'stage_newborn',
-  infant:        'stage_infant',
-  toddler:       'stage_toddler',
-  preschool:     'stage_preschool',
-  school_age:    'stage_school_age',
-  teen:          'stage_teen',
-  adult:         'stage_adult_children',
-} as const;
-
-const CHILD_AGES: { label: string; id: string; name: string; emoji: string; stage: string }[] = [
-  { label: 'Newborn (0–1 month)',  id: 'age_newborn', name: 'Newborn Parents',          emoji: '🍼', stage: S.newborn    },
-  { label: '1 month',             id: 'age_1m',      name: '1 Month Old Parents',       emoji: '👶', stage: S.newborn    },
-  { label: '2 months',            id: 'age_2m',      name: '2 Month Old Parents',       emoji: '👶', stage: S.newborn    },
-  { label: '3 months',            id: 'age_3m',      name: '3 Month Old Parents',       emoji: '👶', stage: S.newborn    },
-  { label: '4 months',            id: 'age_4m',      name: '4 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '5 months',            id: 'age_5m',      name: '5 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '6 months',            id: 'age_6m',      name: '6 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '7 months',            id: 'age_7m',      name: '7 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '8 months',            id: 'age_8m',      name: '8 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '9 months',            id: 'age_9m',      name: '9 Month Old Parents',       emoji: '👶', stage: S.infant     },
-  { label: '10 months',           id: 'age_10m',     name: '10 Month Old Parents',      emoji: '👶', stage: S.infant     },
-  { label: '11 months',           id: 'age_11m',     name: '11 Month Old Parents',      emoji: '👶', stage: S.infant     },
-  { label: '12 months (1 year)',   id: 'age_12m',     name: '1 Year Old Parents',        emoji: '🎂', stage: S.infant     },
-  { label: '15 months',           id: 'age_15m',     name: '15 Month Old Parents',      emoji: '🧒', stage: S.toddler    },
-  { label: '18 months',           id: 'age_18m',     name: '18 Month Old Parents',      emoji: '🧒', stage: S.toddler    },
-  { label: '21 months',           id: 'age_21m',     name: '21 Month Old Parents',      emoji: '🧒', stage: S.toddler    },
-  { label: '2 years',             id: 'age_2y',      name: '2 Year Old Parents',        emoji: '🧒', stage: S.toddler    },
-  { label: '2.5 years',           id: 'age_2_5y',    name: '2.5 Year Old Parents',      emoji: '🧒', stage: S.toddler    },
-  { label: '3 years',             id: 'age_3y',      name: '3 Year Old Parents',        emoji: '🧒', stage: S.toddler    },
-  { label: '4 years',             id: 'age_4y',      name: '4 Year Old Parents',        emoji: '🧒', stage: S.preschool  },
-  { label: '5 years',             id: 'age_5y',      name: '5 Year Old Parents',        emoji: '🎒', stage: S.preschool  },
-  { label: '6 years',             id: 'age_6y',      name: '6 Year Old Parents',        emoji: '🎒', stage: S.school_age },
-  { label: '7 years',             id: 'age_7y',      name: '7 Year Old Parents',        emoji: '🎒', stage: S.school_age },
-  { label: '8 years',             id: 'age_8y',      name: '8 Year Old Parents',        emoji: '🎒', stage: S.school_age },
-  { label: '9 years',             id: 'age_9y',      name: '9 Year Old Parents',        emoji: '🎒', stage: S.school_age },
-  { label: '10 years',            id: 'age_10y',     name: '10 Year Old Parents',       emoji: '🎒', stage: S.school_age },
-  { label: '11 years',            id: 'age_11y',     name: '11 Year Old Parents',       emoji: '🎒', stage: S.school_age },
-  { label: '12 years',            id: 'age_12y',     name: '12 Year Old Parents',       emoji: '📚', stage: S.school_age },
-  { label: '13 years',            id: 'age_13y',     name: '13 Year Old Parents',       emoji: '📚', stage: S.teen       },
-  { label: '14 years',            id: 'age_14y',     name: '14 Year Old Parents',       emoji: '📚', stage: S.teen       },
-  { label: '15 years',            id: 'age_15y',     name: '15 Year Old Parents',       emoji: '📚', stage: S.teen       },
-  { label: '16 years',            id: 'age_16y',     name: '16 Year Old Parents',       emoji: '📚', stage: S.teen       },
-  { label: '17 years',            id: 'age_17y',     name: '17 Year Old Parents',       emoji: '📚', stage: S.teen       },
-  { label: '18 years',            id: 'age_18y',     name: '18 Year Old Parents',       emoji: '🎓', stage: S.teen       },
-  { label: 'Adult (18+)',         id: 'age_adult',   name: 'Parents of Adult Children', emoji: '🎓', stage: S.adult      },
-];
-
-const CHILD_AGE_VILLAGES: Village[] = CHILD_AGES.map(a => ({
-  id: a.id, name: a.name, emoji: a.emoji,
-  description: `Connect with parents of ${a.label.toLowerCase()}s`,
-  hidden: true,
-}));
-
-const LOCATION_VILLAGES: Village[] = [
-  ...COUNTRIES.filter(c => c !== 'Other').map(c => ({
-    id: `country_${toVillageId(c)}`, name: `${c} Village`,
-    emoji: '🌍', description: `Connect with parents from ${c}`, hidden: true,
-  })),
-  ...Object.values(STATES_BY_COUNTRY).flat().map(s => ({
-    id: `state_${toVillageId(s)}`, name: `${s} Village`,
-    emoji: '📍', description: `Connect with parents across ${s}`, hidden: true,
-  })),
-  ...Object.entries(CITIES_BY_STATE).flatMap(([, cities]) =>
-    cities.map(city => ({
-      id: `city_${toVillageId(city)}`, name: `${city} Village`,
-      emoji: '🏙️', description: `Connect with parents in ${city}`, hidden: true,
-    }))
-  ),
-];
-
-const VILLAGES: Village[] = [
-  // ── Loss parent villages
-  { id: 'bereaved_parents',      name: 'Bereaved Parents Village',                   emoji: '🕊️', description: 'A safe, compassionate space for parents who have experienced the loss of a child or pregnancy' },
-  { id: 'pregnancy_loss',        name: 'Pregnancy Loss Village',                     emoji: '🌸', description: 'Support for parents who have experienced any form of pregnancy loss' },
-  { id: 'miscarriage_parents',   name: 'Miscarriage Parents Village',                emoji: '💜', description: '1 in 4 pregnancies end in miscarriage — you are not alone' },
-  { id: 'ectopic_loss',          name: 'Ectopic & Molar Pregnancy Loss',             emoji: '🌸', description: 'Support for parents who experienced ectopic or molar pregnancy loss', hidden: true },
-  { id: 'tfmr_parents',          name: 'TFMR Parents Village',                       emoji: '💙', description: 'A safe and judgment-free space for parents who experienced termination for medical reasons', hidden: true },
-  { id: 'stillbirth_parents',    name: 'Stillbirth Parents Village',                 emoji: '🕊️', description: 'Support and community for stillbirth parents' },
-  { id: 'infant_loss',           name: 'Infant Loss Village',                        emoji: '💙', description: 'Support for parents who have lost an infant' },
-  { id: 'sids_parents',          name: 'SIDS Parents Village',                       emoji: '💙', description: 'Community for families affected by Sudden Infant Death Syndrome' },
-  { id: 'sudc_parents',          name: 'SUDC Parents Village',                       emoji: '💙', description: 'Community for families affected by Sudden Unexplained Death in Childhood', hidden: true },
-  { id: 'sads_parents',          name: 'SADS Parents Village',                       emoji: '💙', description: 'Community for families affected by Sudden Arrhythmia Death Syndrome', hidden: true },
-  { id: 'pediatric_cancer_loss', name: 'Pediatric Cancer Loss Village',              emoji: '💛', description: 'A community for parents who have lost a child to cancer', hidden: true },
-  { id: 'child_loss',            name: 'Child Loss Village',                         emoji: '🕊️', description: 'Support for parents who have lost a child at any age' },
-  { id: 'boy_parents',  name: "Parents of Boys Village",   emoji: '💙', description: 'A community for parents raising baby boys' },
-  { id: 'girl_parents', name: "Parents of Girls Village",  emoji: '🩷', description: 'A community for parents raising baby girls' },
-  { id: 'twins',           name: 'Parents of Twins',           emoji: '👯', description: 'Double the love, double the fun' },
-  { id: 'identical_twins', name: 'Parents of Identical Twins',  emoji: '🪞', description: 'Two of a kind — raising identical twins' },
-  { id: 'fraternal_twins', name: 'Parents of Fraternal Twins',  emoji: '👫', description: 'Two unique souls, one pregnancy' },
-  { id: 'triplets',        name: 'Parents of Triplets',         emoji: '🎉', description: 'Triple the chaos, triple the joy' },
-  { id: 'quadruplets',     name: 'Parents of Quadruplets',      emoji: '🍀', description: 'Four at once — you are superhuman' },
-  { id: 'quintuplets',     name: 'Parents of Quintuplets',      emoji: '⭐', description: 'Five at once — an absolute legend' },
-  { id: 'kids_1',  name: 'Parent of 1 Kid',   emoji: '1️⃣', description: 'Raising your one and only' },
-  { id: 'kids_2',  name: 'Parent of 2 Kids',  emoji: '2️⃣', description: 'Life with two little ones' },
-  { id: 'kids_3',  name: 'Parent of 3 Kids',  emoji: '3️⃣', description: 'The wonderful chaos of three' },
-  { id: 'kids_4',  name: 'Parent of 4 Kids',  emoji: '4️⃣', description: 'A full and busy household of four' },
-  { id: 'kids_5',  name: 'Parent of 5 Kids',  emoji: '5️⃣', description: 'Five is a party' },
-  { id: 'kids_6',  name: 'Parent of 6 Kids',  emoji: '6️⃣', description: 'Six and thriving' },
-  { id: 'kids_7',  name: 'Parent of 7 Kids',  emoji: '7️⃣', description: 'Lucky number seven' },
-  { id: 'kids_8',  name: 'Parent of 8 Kids',  emoji: '8️⃣', description: 'A household of eight' },
-  { id: 'kids_9',  name: 'Parent of 9 Kids',  emoji: '9️⃣', description: 'Nine strong' },
-  { id: 'kids_10',       name: 'Parent of 10 Kids',     emoji: '🔟', description: 'Ten kids and counting — you are a legend' },
-  { id: 'large_family',  name: 'Large Family Village',   emoji: '🏠', description: 'For families with 11 or more children' },
-  { id: 'super_multiples', name: 'Parents of Sextuplets+', emoji: '🌟', description: 'Sextuplets and beyond — an extraordinary journey' },
-  { id: 'stage_newborn',        name: 'Newborn Stage Village',       emoji: '🍼', description: 'Parents in the newborn stage (0–3 months)' },
-  { id: 'stage_infant',         name: 'Infant Stage Village',        emoji: '👶', description: 'Parents of infants (4–12 months)' },
-  { id: 'stage_toddler',        name: 'Toddler Stage Village',       emoji: '🧒', description: 'Parents of toddlers (1–3 years)' },
-  { id: 'stage_preschool',      name: 'Preschool Stage Village',     emoji: '🎨', description: 'Parents of preschoolers (4–5 years)' },
-  { id: 'stage_school_age',     name: 'School-Age Stage Village',    emoji: '🎒', description: 'Parents of school-age children (6–12 years)' },
-  { id: 'stage_teen',           name: 'Teenager Stage Village',      emoji: '📚', description: 'Parents of teenagers (13–18 years)' },
-  { id: 'stage_adult_children', name: 'Parents of Adult Children',   emoji: '🎓', description: 'Parenting doesn\'t stop at 18' },
-  { id: 'due_date',    name: 'Due Date Moms',         emoji: '🤰', description: 'Connect with parents due the same month' },
-  { id: 'first_time',        name: 'First Time Parents',        emoji: '⭐', description: 'Navigating parenthood for the first time' },
-  { id: 'one_and_done',      name: 'One and Done Village',      emoji: '1️⃣', description: 'Intentionally raising an only child — loving every moment of it' },
-  { id: 'family_complete',   name: 'Family Complete Village',   emoji: '✅', description: 'Our family is exactly the size it\'s meant to be — done and loving it' },
-  { id: 'only_child_parents', name: 'Only Child Parents Village', emoji: '⭐', description: 'Raising an only child — the unique joys and questions that come with it', hidden: true },
-  { id: 'single_mom',  name: 'Single Moms',            emoji: '💪', description: 'Support for single mothers' },
-  { id: 'working_mom', name: 'Working Moms',           emoji: '👩‍💼', description: 'Balancing career and parenthood' },
-  { id: 'autism',      name: 'Autism Parents',         emoji: '🧩', description: 'Support and resources for autism families' },
-  { id: 'nicu',        name: 'NICU Warriors',          emoji: '🏥', description: 'For families who have been through the NICU' },
-  { id: 'postpartum',  name: 'Postpartum Support',     emoji: '💛', description: 'Mental health and recovery after birth' },
-  { id: 'ppd_parents',                  name: 'Postpartum Depression (PPD) Village',         emoji: '💛', description: 'PPD is real, common, and treatable — a safe, non-judgmental space for every stage of the journey' },
-  { id: 'ppa_parents',                  name: 'Postpartum Anxiety (PPA) Village',            emoji: '💛', description: 'The racing thoughts, the what-ifs, the constant worry — PPA is real and you are not alone' },
-  { id: 'pmad_parents',                 name: 'Perinatal Mood & Anxiety Disorders Village',  emoji: '💛', description: 'PMAD parents — PPD, PPA, PPOCD, and all perinatal mental health experiences' },
-  { id: 'postpartum_ocd_parents',       name: 'Postpartum OCD Village',                      emoji: '💛', description: 'Postpartum OCD — intrusive thoughts, compulsions, and the courage it takes to talk about it', hidden: true },
-  { id: 'postpartum_rage_parents',      name: 'Postpartum Rage Village',                     emoji: '🔥', description: 'The anger nobody talks about — postpartum rage is real and you are not a bad parent', hidden: true },
-  { id: 'postpartum_psychosis_survivors', name: 'Postpartum Psychosis Survivors Village',    emoji: '💙', description: 'Survivors of postpartum psychosis — healing, recovery, and a community that understands', hidden: true },
-  { id: 'prenatal_depression_parents',  name: 'Prenatal Depression & Anxiety Village',       emoji: '💛', description: 'Mental health challenges during pregnancy — you don\'t have to wait until postpartum to get support', hidden: true },
-  { id: 'paternal_ppd_parents',         name: 'Paternal & Partner PPD Village',              emoji: '💙', description: 'Postpartum depression in dads, co-parents, and non-birthing partners — it\'s real and it matters', hidden: true },
-  { id: 'parent_mental_health_parents', name: 'Parental Mental Health Village',              emoji: '💛', description: 'Parents navigating anxiety, depression, or mental health challenges — supporting yourself to support your family' },
-  { id: 'chronic_mental_health_parents', name: 'Parenting With a Chronic Mental Health Condition', emoji: '💙', description: 'Managing a pre-existing or chronic mental health condition while raising children', hidden: true },
-  { id: 'military',    name: 'Military Families',      emoji: '🎖️', description: 'Parenting through deployments and military life' },
-  { id: 'multiples',   name: 'Twins & Multiples',      emoji: '👯', description: 'Double (or triple!) the love' },
-  { id: 'teen_parent', name: 'Teen Parents',           emoji: '🌟', description: 'Young parents supporting each other' },
-  { id: 'lgbtq',       name: 'LGBTQ+ Families',        emoji: '🌈', description: 'Pride and joy in every family form' },
-  { id: 'grandparent',       name: 'Grandparent Caregivers',      emoji: '🌻', description: 'Grandparents raising grandchildren' },
-  { id: 'ivf_parents',       name: 'IVF & Fertility Journey',      emoji: '🔬', description: 'Parents who walked the fertility treatment path' },
-  { id: 'adoptive_parents',  name: 'Adoptive Parents',             emoji: '💛', description: 'Families built through the gift of adoption' },
-  { id: 'foster_parents',    name: 'Foster Parents',               emoji: '🏠', description: 'Opening your home and heart through foster care' },
-  { id: 'surrogacy_parents', name: 'Surrogacy Parents',            emoji: '🤝', description: 'Families created with the help of a surrogate' },
-  { id: 'donor_conception',  name: 'Donor Conception Parents',     emoji: '🧬', description: 'Families formed through egg, sperm, or embryo donation' },
-  { id: 'step_parents',      name: 'Step Parents',                 emoji: '⭐', description: 'Navigating the beautiful journey of step-parenting' },
-  { id: 'blended_family',        name: 'Blended Family Village',                      emoji: '🧩', description: 'Two families becoming one' },
-  { id: 'iui_parents',           name: 'IUI Parents Village',                         emoji: '🔬', description: 'Parents who conceived through intrauterine insemination' },
-  { id: 'intended_parents',      name: 'Intended Parents Village',                    emoji: '🤝', description: 'Families created through surrogacy — intended parents together' },
-  { id: 'aunt_uncle_raising',    name: 'Aunt / Uncle Raising Nieces & Nephews',       emoji: '💛', description: 'Aunts and uncles stepping up to raise family' },
-  { id: 'kinship_family',        name: 'Kinship Family Village',                      emoji: '🏠', description: 'Family members raising children in kinship care arrangements' },
-  // ── Feeding method villages
-  { id: 'breastfeeding',               name: 'Breastfeeding Village',                       emoji: '🤱', description: 'Support and solidarity for breastfeeding parents' },
-  { id: 'breastfeeding_oversupply',    name: 'Oversupply Breastfeeding Village',            emoji: '🤱', description: 'Navigating an oversupply of breast milk', hidden: true },
-  { id: 'breastfeeding_just_enough',   name: 'Just Enougher Breastfeeding Village',         emoji: '🤱', description: 'Making exactly enough — the just enoughers community', hidden: true },
-  { id: 'breastfeeding_low_supply',    name: 'Low Supply Breastfeeding Village',            emoji: '🤱', description: 'Navigating low milk supply together', hidden: true },
-  { id: 'extended_breastfeeding',      name: 'Extended Breastfeeding Village',              emoji: '🤱', description: 'Breastfeeding beyond one year — a supportive space', hidden: true },
-  { id: 'weaning',                     name: 'Weaning Village',                             emoji: '🌱', description: 'Parents navigating the weaning journey', hidden: true },
-  { id: 'nursing_strike',              name: 'Nursing Strike Village',                      emoji: '🤱', description: 'Surviving and navigating nursing strikes', hidden: true },
-  { id: 'formula_feeding',             name: 'Formula Feeding Village',                     emoji: '🍼', description: 'Fed is best — a community for formula feeding parents' },
-  { id: 'specialty_formula',           name: 'Specialty Formula Parents',                   emoji: '🍼', description: 'Parents using specialty formula for allergies or intolerances', hidden: true },
-  { id: 'hypoallergenic_formula',      name: 'Hypoallergenic Formula Parents',              emoji: '🍼', description: 'Nutramigen, Alimentum and other hypoallergenic formula families', hidden: true },
-  { id: 'amino_acid_formula',          name: 'Amino Acid Formula Parents',                  emoji: '🍼', description: 'Elecare, Neocate, and amino acid formula families', hidden: true },
-  { id: 'donor_milk',                  name: 'Donor Milk Village',                          emoji: '🤱', description: 'Families using donor breast milk', hidden: true },
-  { id: 'exclusive_pumping',           name: 'Exclusive Pumping Village',                   emoji: '🫙', description: 'The EP community — exclusively pumping parents' },
-  { id: 'ep_oversupply',               name: 'EP Oversupply Village',                       emoji: '🫙', description: 'Exclusive pumpers with an oversupply', hidden: true },
-  { id: 'ep_just_enough',              name: 'EP Just Enougher Village',                    emoji: '🫙', description: 'Exclusive pumpers making just enough', hidden: true },
-  { id: 'ep_low_supply',               name: 'EP Low Supply Village',                       emoji: '🫙', description: 'Exclusive pumpers navigating low supply', hidden: true },
-  { id: 'combination_feeding',         name: 'Combination Feeding Village',                 emoji: '🍼', description: 'Breastfeeding and formula — a community for combo feeders' },
-  { id: 'gtube_parents',               name: 'G-Tube Parents Village',                      emoji: '💊', description: 'Parents of children with a gastrostomy tube', hidden: true },
-  { id: 'gjtube_parents',              name: 'GJ-Tube Parents Village',                     emoji: '💊', description: 'Parents of children with a gastrojejunostomy tube', hidden: true },
-  { id: 'ngtube_parents',              name: 'NG-Tube Parents Village',                     emoji: '💊', description: 'Parents of children with a nasogastric tube', hidden: true },
-  { id: 'tube_transitioning',          name: 'Transitioning Off Tube Feeding',              emoji: '🌱', description: 'Families working toward oral feeding after tube dependence', hidden: true },
-  { id: 'starting_solids',             name: 'Starting Solids Village',                     emoji: '🥄', description: 'The exciting and messy world of starting solid foods', hidden: true },
-  { id: 'baby_led_weaning',            name: 'Baby-Led Weaning Village',                    emoji: '🥦', description: 'BLW families — letting babies lead the way with food' },
-  { id: 'puree_feeding',               name: 'Puree Feeding Village',                       emoji: '🥣', description: 'Spoon feeding and puree parents', hidden: true },
-  { id: 'food_allergies',              name: 'Food Allergy Parents Village',                emoji: '⚠️', description: 'Navigating childhood food allergies together' },
-  // ── Feeding challenges
-  { id: 'feeding_therapy',      name: 'Feeding Therapy Village',                      emoji: '🥄', description: 'Parents navigating feeding therapy with their child' },
-  { id: 'tube_feeding',         name: 'Tube Feeding Village',                         emoji: '💊', description: 'G-tube, NG-tube, and tube feeding families' },
-  { id: 'oral_aversion',        name: 'Oral Aversion & Food Refusal Village',         emoji: '😮', description: 'Navigating oral aversion and extreme food refusal together' },
-  { id: 'failure_to_thrive',    name: 'Failure to Thrive Village',                    emoji: '📈', description: 'Support for families dealing with failure to thrive' },
-  { id: 'picky_eater',          name: 'Picky Eater Parents Village',                  emoji: '🥦', description: 'You are not alone in the picky eater struggle' },
-  // ── Sleep challenges
-  { id: 'sleep_training',       name: 'Sleep Training Village',                       emoji: '😴', description: 'Methods, support, and solidarity for sleep training parents' },
-  { id: 'night_waking',         name: 'Night Waking Village',                         emoji: '🌙', description: 'For the parents up at 2am — you have company' },
-  { id: 'sleep_regression',     name: 'Sleep Regression Village',                     emoji: '😩', description: 'Surviving sleep regressions together' },
-  { id: 'cosleeping',           name: 'Co-sleeping & Bedsharing Village',             emoji: '🛏️', description: 'Community for co-sleeping and bedsharing families' },
-  { id: 'early_rising',         name: 'Early Riser Parents Village',                  emoji: '🌅', description: 'For the parents whose toddler is up at 5am' },
-  { id: 'sleep_onset_parents',  name: 'Sleep Onset Struggles Village',                emoji: '🌙', description: 'Kids who fight bedtime, take forever to fall asleep, or won\'t settle — solidarity here', hidden: true },
-  { id: 'nap_refusal_parents',  name: 'Nap Refusal & Short Nap Village',              emoji: '😴', description: 'The nap strike is real — parents navigating nap refusal and the 30-minute intruder', hidden: true },
-  { id: 'ferber_parents',       name: 'Ferber Method Parents Village',                emoji: '😴', description: 'Families using or who used graduated extinction / the Ferber method', hidden: true },
-  { id: 'cio_parents',          name: 'Cry It Out (CIO) Parents Village',             emoji: '😴', description: 'Full extinction / CIO families — judgment-free support', hidden: true },
-  { id: 'gentle_sleep_parents', name: 'Gentle Sleep Training Parents Village',        emoji: '🌿', description: 'No-cry, gentle, and attachment-based sleep approaches', hidden: true },
-  { id: 'sleep_consultant_parents', name: 'Sleep Consultant Parents Village',         emoji: '💤', description: 'Working with a sleep consultant — the investment, the plan, and the results', hidden: true },
-  { id: 'bedsharing_parents',   name: 'Intentional Bedsharing Village',               emoji: '🛏️', description: 'Families who choose informed, intentional bedsharing — safe sleep and community', hidden: true },
-  { id: 'room_sharing_parents', name: 'Room Sharing Parents Village',                 emoji: '🛏️', description: 'Baby in your room but on a separate surface — navigating the transition', hidden: true },
-  // ── Behavioral & developmental challenges
-  { id: 'behavior_support',     name: 'Behavior Support Village',                     emoji: '🤝', description: 'Support for parents navigating behavioral challenges' },
-  { id: 'tantrum_support',      name: 'Tantrums & Meltdowns Village',                 emoji: '🌊', description: 'Riding the waves of big emotions together' },
-  { id: 'odd_parents',          name: 'ODD Parents Village',                          emoji: '💪', description: 'Parenting children with Oppositional Defiant Disorder' },
-  { id: 'aba_parents',          name: 'ABA Therapy Parents Village',                  emoji: '🧩', description: 'Parents navigating the ABA therapy journey', hidden: true },
-  { id: 'self_injury_parents',  name: 'Self-Injurious Behavior Parents Village',      emoji: '💙', description: 'Parents supporting children who engage in self-injurious behavior', hidden: true },
-  { id: 'night_terrors',        name: 'Night Terrors & Nightmares Village',           emoji: '🌙', description: 'Parents navigating night terrors and nightmares', hidden: true },
-  { id: 'speech_delay',         name: 'Speech Delay Village',                         emoji: '💬', description: 'Parents supporting children with speech and language delays' },
-  { id: 'developmental_delay',  name: 'Developmental Delay Village',                  emoji: '🌱', description: 'Every child grows at their own pace — support for delay families' },
-  { id: 'potty_training',       name: 'Potty Training Village',                       emoji: '🚽', description: 'The highs, lows, and everything in between of potty training' },
-  { id: 'child_anxiety',        name: 'Child Anxiety & Mental Health Village',        emoji: '💛', description: "Supporting children's mental health and anxiety" },
-  { id: 'school_refusal',       name: 'School Refusal Village',                       emoji: '🎒', description: 'Families navigating school refusal and avoidance' },
-  { id: 'gifted_parents',       name: 'Gifted Child Parents Village',                 emoji: '⭐', description: 'Raising gifted and twice-exceptional children' },
-  // ── Challenge-specific support villages
-  { id: 'arfid_parents',        name: 'ARFID Parents Village',                        emoji: '🥄', description: 'Parents navigating Avoidant / Restrictive Food Intake Disorder' },
-  { id: 'tube_weaning',         name: 'Tube Weaning Village',                         emoji: '🌱', description: 'Families working toward oral eating after tube feeding', hidden: true },
-  { id: 'high_medical_needs',   name: 'High Medical Needs Parents',                   emoji: '🏥', description: 'Parents managing a high volume of medical appointments and care' },
-  { id: 'multiple_therapies',   name: 'Multiple Therapies Parents',                   emoji: '🗓️', description: 'Families juggling OT, PT, SLP, and more', hidden: true },
-  { id: 'pending_diagnosis',    name: 'Awaiting Diagnosis Parents',                   emoji: '🔍', description: 'Parents in the diagnostic waiting room — you are not alone' },
-  { id: 'medically_complex',    name: 'Medically Complex Child Village',              emoji: '💙', description: 'Parents of medically complex or medically fragile children', hidden: true },
-  { id: 'home_health_nursing',  name: 'Home Health Nursing Families',                 emoji: '🏠', description: 'Families with home health nurses involved in their child\'s care', hidden: true },
-  { id: 'childcare_waitlist',   name: 'Childcare Waitlist Parents',                   emoji: '⏳', description: 'Parents navigating long childcare waitlists and availability struggles', hidden: true },
-  { id: 'gross_motor_delay',    name: 'Gross Motor Delay Parents Village',            emoji: '🌱', description: 'Parents supporting children with gross motor and walking delays', hidden: true },
-  { id: 'special_needs_childcare', name: 'Special Needs Childcare Search Village',   emoji: '🏫', description: 'Parents searching for childcare that meets their child\'s needs', hidden: true },
-  { id: 'inclusive_childcare',  name: 'Inclusive Childcare & School Search',          emoji: '🏫', description: 'Finding inclusive daycare and school environments', hidden: true },
-  { id: 'caregiver_burnout',    name: 'Caregiver Burnout Village',                    emoji: '🌿', description: 'Parents experiencing caregiver burnout — you deserve support too' },
-  { id: 'financial_strain_parents', name: 'Financial Strain Parents Village',         emoji: '💸', description: 'Navigating the financial weight of raising a child' },
-  { id: 'insurance_navigation', name: 'Insurance & Benefits Navigation Village',      emoji: '📋', description: 'Navigating SSI, insurance denials, and disability benefits' },
-  { id: 'isolated_parents',     name: 'Isolated Parents Village',                     emoji: '🌍', description: 'Parents who feel alone in their journey — you\'ve found your people' },
-  { id: 'iep_parents',          name: 'IEP Parents Village',                          emoji: '📚', description: 'Navigating IEPs and special education together' },
-  { id: 'systems_navigation',   name: 'Systems Navigation Village',                   emoji: '🗺️', description: 'Parents navigating school systems, medical systems, and insurance' },
-  { id: 'autism_l1_girls',         name: 'Autism Level 1 Girls Village',           emoji: '💜', description: 'Support for girls diagnosed with Autism Level 1' },
-  { id: 'autism_l1_late_diagnosis', name: 'Autism Level 1 — Late / Missed Diagnosis', emoji: '💜', description: 'For parents whose child received a late or missed Autism Level 1 diagnosis' },
-  { id: 'autism_l1_boys',          name: 'Autism Level 1 Boys',                      emoji: '💙', description: 'Support for boys diagnosed with Autism Level 1' },
-  // ── Birth type villages
-  { id: 'vaginal_birth_parents',     name: 'Vaginal Birth Parents Village',            emoji: '👶', description: 'Parents who gave birth vaginally — sharing experiences, recovery, and support', hidden: true },
-  { id: 'unmedicated_birth_parents', name: 'Unmedicated Birth Village',                emoji: '🌿', description: 'Unmedicated and natural birth parents — the experience, the recovery, and the community', hidden: true },
-  { id: 'home_birth_parents',        name: 'Home Birth Parents Village',               emoji: '🏠', description: 'Families who chose or are planning a home birth — midwives, preparation, and community' },
-  { id: 'birth_center_parents',      name: 'Birth Center Parents Village',             emoji: '🌸', description: 'Families who birthed or are planning to birth at a birth center', hidden: true },
-  { id: 'water_birth_parents',       name: 'Water Birth Village',                      emoji: '💧', description: 'Water birth parents — the experience, preparation, and recovery', hidden: true },
-  { id: 'induced_labor_parents',     name: 'Induced Labor Parents Village',            emoji: '⏰', description: 'Parents who experienced an induction — the waiting, the process, and the arrival', hidden: true },
-  { id: 'csection_parents',          name: 'C-Section Parents Village',                emoji: '💙', description: 'C-section parents — recovery, advocacy, and community for all cesarean families' },
-  { id: 'planned_csection_parents',  name: 'Planned C-Section Parents Village',        emoji: '📅', description: 'Families who planned their C-section — preparation, recovery, and solidarity', hidden: true },
-  { id: 'emergency_csection_parents', name: 'Emergency C-Section Parents Village',    emoji: '🚨', description: 'Parents who experienced an emergency C-section — processing, healing, and community' },
-  { id: 'vbac_parents',              name: 'VBAC Parents Village',                     emoji: '💪', description: 'Vaginal Birth After Cesarean — the journey, the decision, and the community' },
-  { id: 'vbac_planning_parents',     name: 'Planning a VBAC Village',                 emoji: '💪', description: 'Preparing for a VBAC — finding providers, navigating hospital policies, and building confidence', hidden: true },
-  { id: 'birth_trauma_parents',      name: 'Birth Trauma Village',                    emoji: '💛', description: 'Parents processing a traumatic birth experience — you are not alone and your experience is valid' },
-  { id: 'birth_ptsd_parents',        name: 'Birth-Related PTSD & Anxiety Village',    emoji: '💛', description: 'Navigating PTSD, anxiety, and fear following a traumatic birth', hidden: true },
-  { id: 'postpartum_hemorrhage_parents', name: 'Postpartum Hemorrhage Survivors Village', emoji: '❤️', description: 'Parents who survived a postpartum hemorrhage — healing, processing, and finding community', hidden: true },
-  { id: 'preemie_periviable',    name: 'Periviable Preemie Village',                        emoji: '🌟', description: 'Families navigating birth under 22 weeks' },
-  { id: 'preemie_extreme',       name: 'Extreme Prematurity Village (22–24 weeks)',          emoji: '🏥', description: 'For families of babies born at 22–24 weeks' },
-  { id: 'preemie_moderate',      name: 'Moderate Prematurity Village (25–32 weeks)',         emoji: '🏥', description: 'For families of babies born at 25–32 weeks' },
-  { id: 'preemie_late',          name: 'Late Preterm Village (33–36 weeks)',                 emoji: '🏥', description: 'For families of babies born at 33–36 weeks' },
-  // ── CP general + subtypes
-  { id: 'chd_general',           name: 'CHD Warriors Village',                              emoji: '❤️', description: 'A community for all congenital heart defect families' },
-  { id: 'spina_bifida',          name: 'Spina Bifida Village',                              emoji: '🦋', description: 'Support and community for spina bifida families' },
-  { id: 'hydrocephalus',         name: 'Hydrocephalus Village',                             emoji: '🧠', description: 'Families navigating hydrocephalus together' },
-  { id: 'epilepsy',              name: 'Epilepsy & Seizure Parents Village',                emoji: '⚡', description: 'Support for families managing epilepsy and seizure disorders' },
-  { id: 't1d_parents',           name: 'Type 1 Diabetes Parents Village',                  emoji: '💉', description: 'Raising kids with T1D — you are not alone' },
-  { id: 'cystic_fibrosis',       name: 'Cystic Fibrosis Families Village',                 emoji: '🫁', description: 'Strength and support for CF families' },
-  { id: 'sma_parents',           name: 'SMA Parents Village',                              emoji: '💪', description: 'Families navigating Spinal Muscular Atrophy' },
-  { id: 'muscular_dystrophy',    name: 'Muscular Dystrophy Families Village',              emoji: '💙', description: 'United in strength — MD families together' },
-  { id: 'sickle_cell',           name: 'Sickle Cell Disease Village',                      emoji: '🩸', description: 'Community for sickle cell disease families' },
-  { id: 'fragile_x',             name: 'Fragile X Syndrome Village',                       emoji: '🧬', description: 'Support for Fragile X families' },
-  { id: 'rett_syndrome',         name: 'Rett Syndrome Village',                            emoji: '💜', description: 'Community for Rett Syndrome families' },
-  { id: 'prader_willi',          name: 'Prader-Willi Syndrome Village',                    emoji: '🌟', description: 'Support and resources for PWS families' },
-  { id: 'angelman',              name: 'Angelman Syndrome Village',                        emoji: '😊', description: 'Happy hearts — Angelman Syndrome families together' },
-  { id: 'tuberous_sclerosis',    name: 'Tuberous Sclerosis Village',                       emoji: '🌿', description: 'TSC families supporting each other' },
-  { id: 'digeorge_22q',          name: '22q11.2 Deletion / DiGeorge Village',             emoji: '🧩', description: 'Community for 22q11.2 deletion families' },
-  { id: 'williams_syndrome',     name: 'Williams Syndrome Village',                        emoji: '🎵', description: 'Williams Syndrome families — music in every heart' },
-  { id: 'eds_parents',           name: 'Ehlers-Danlos Syndrome Families',                  emoji: '🦓', description: 'EDS families navigating life with connective tissue differences' },
-  { id: 'charge_syndrome',       name: 'CHARGE Syndrome Village',                          emoji: '💛', description: 'CHARGE Syndrome families united' },
-  { id: 'cleft_lip_palate',      name: 'Cleft Lip & Palate Village',                      emoji: '💬', description: 'Community for cleft lip and palate families' },
-  { id: 'osteogenesis_imperfecta', name: 'Osteogenesis Imperfecta Village',               emoji: '🦴', description: 'Brittle bone disease families — stronger together' },
-  // ── CP subtypes (hidden — found via quiz or search)
-  { id: 'cp_hemiplegia_left',    name: 'CP Hemiplegia — Left Side Village',               emoji: '🧠', description: 'Parents of children with left-side hemiplegia CP', hidden: true },
-  { id: 'cp_hemiplegia_right',   name: 'CP Hemiplegia — Right Side Village',              emoji: '🧠', description: 'Parents of children with right-side hemiplegia CP', hidden: true },
-  { id: 'cp_diplegia',           name: 'CP Diplegia Village',                             emoji: '🧠', description: 'Parents of children with diplegic cerebral palsy', hidden: true },
-  { id: 'cp_quadriplegia',       name: 'CP Quadriplegia Village',                         emoji: '🧠', description: 'Parents of children with quadriplegic cerebral palsy', hidden: true },
-  { id: 'cp_ataxic',             name: 'Ataxic CP Village',                               emoji: '🧠', description: 'Parents of children with ataxic cerebral palsy', hidden: true },
-  { id: 'cp_dyskinetic',         name: 'Dyskinetic / Athetoid CP Village',                emoji: '🧠', description: 'Parents of children with dyskinetic cerebral palsy', hidden: true },
-  // ── CHD subtypes (hidden — found via quiz or search)
-  { id: 'chd_hlhs',              name: 'HLHS Village',                                    emoji: '❤️', description: 'Hypoplastic Left Heart Syndrome families', hidden: true },
-  { id: 'chd_tof',               name: 'Tetralogy of Fallot Village',                     emoji: '❤️', description: 'TOF families supporting each other', hidden: true },
-  { id: 'chd_tga',               name: 'TGA Village',                                     emoji: '❤️', description: 'Transposition of the Great Arteries families', hidden: true },
-  { id: 'chd_vsd',               name: 'VSD Village',                                     emoji: '❤️', description: 'Ventricular Septal Defect families', hidden: true },
-  { id: 'chd_asd_heart',         name: 'ASD (Heart) Village',                             emoji: '❤️', description: 'Atrial Septal Defect families', hidden: true },
-  { id: 'chd_coarctation',       name: 'Coarctation of the Aorta Village',               emoji: '❤️', description: 'Families navigating aortic coarctation', hidden: true },
-  { id: 'chd_pulmonary_atresia', name: 'Pulmonary Atresia Village',                       emoji: '❤️', description: 'Pulmonary Atresia families', hidden: true },
-  { id: 'chd_avsd',              name: 'AVSD Village',                                    emoji: '❤️', description: 'Atrioventricular Septal Defect families', hidden: true },
-  { id: 'chd_other',             name: 'Congenital Heart Defect Village',                 emoji: '❤️', description: 'Other congenital heart defect families', hidden: true },
-  { id: 'autism_l2',            name: 'Autism Level 2 — Intellectual Disability',    emoji: '💜', description: 'Navigating Autism Level 2 with intellectual disability' },
-  { id: 'autism_l3',            name: 'Autism Level 3 — Self-Injury Support',        emoji: '💜', description: 'Support for families navigating Autism Level 3 with self-injury' },
-  { id: 'ds_general',           name: 'Down Syndrome Parents',                       emoji: '💛', description: 'A community for all Down Syndrome families' },
-  { id: 'ds_trisomy21',         name: 'Trisomy 21 Village',                          emoji: '💛', description: 'Families navigating standard Trisomy 21 Down Syndrome' },
-  { id: 'ds_translocation',     name: 'Translocation Down Syndrome Village',         emoji: '💛', description: 'Families with Translocation Down Syndrome' },
-  { id: 'ds_mosaic',            name: 'Mosaic Down Syndrome Village',                emoji: '💛', description: 'Families with Mosaic Down Syndrome' },
-  { id: 'ds_dual_diagnosis',    name: 'Dual Diagnosis Down Syndrome Village',        emoji: '💛', description: 'Navigating Down Syndrome alongside another diagnosis' },
-  { id: 'adhd_parents',         name: 'ADHD Parents Village',                        emoji: '⚡', description: 'Raising children with ADHD together' },
-  { id: 'adhd_inattentive',     name: 'Inattentive ADHD (ADD) Parents',              emoji: '⚡', description: 'Parents of children with inattentive-type ADHD', hidden: true },
-  { id: 'adhd_hyperactive',     name: 'Hyperactive-Impulsive ADHD Parents',          emoji: '⚡', description: 'Parents of children with hyperactive-impulsive ADHD', hidden: true },
-  { id: 'adhd_combined',        name: 'Combined ADHD Parents',                       emoji: '⚡', description: 'Parents of children with combined-type ADHD', hidden: true },
-  { id: 'spd_parents',          name: 'Sensory Processing Parents',                  emoji: '🌈', description: 'Support for families navigating sensory processing differences' },
-  { id: 'spd_tactile',          name: 'Tactile Sensitivity Parents',                 emoji: '🤚', description: 'Parents of children with tactile sensitivity to touch and textures', hidden: true },
-  { id: 'spd_auditory',         name: 'Auditory Sensitivity Parents',                emoji: '👂', description: 'Parents of children with sound sensitivity', hidden: true },
-  { id: 'spd_visual',           name: 'Visual Sensitivity Parents',                  emoji: '👁️', description: 'Parents of children with sensitivity to light and visual motion', hidden: true },
-  { id: 'spd_oral',             name: 'Oral / Gustatory Sensitivity Parents',        emoji: '👅', description: 'Parents navigating taste and food texture sensitivities', hidden: true },
-  { id: 'spd_olfactory',        name: 'Olfactory Sensitivity Parents',               emoji: '👃', description: 'Parents of children with smell sensitivities', hidden: true },
-  { id: 'spd_proprioception',   name: 'Proprioceptive Differences Parents',          emoji: '🧠', description: 'Parents of children with proprioceptive processing differences', hidden: true },
-  { id: 'spd_vestibular',       name: 'Vestibular Differences Parents',              emoji: '🌀', description: 'Parents of children with balance and movement processing differences', hidden: true },
-  { id: 'spd_interoception',    name: 'Interoceptive Differences Parents',           emoji: '💓', description: 'Parents of children with internal body sensation differences', hidden: true },
-  { id: 'spd_seeking',          name: 'Sensory-Seeking Parents',                     emoji: '🏃', description: 'Parents of sensory-seeking children', hidden: true },
-  { id: 'spd_avoidance',        name: 'Sensory-Avoidant Parents',                    emoji: '🛡️', description: 'Parents of sensory-avoidant children', hidden: true },
-  { id: 'ld_general',           name: 'Learning Disability Parents Village',         emoji: '📚', description: 'A community for parents of children with learning disabilities' },
-  { id: 'dyslexia_parents',     name: 'Dyslexia Parents Village',                    emoji: '📖', description: 'Parents of children with dyslexia supporting each other', hidden: true },
-  { id: 'dyscalculia_parents',  name: 'Dyscalculia Parents Village',                 emoji: '🔢', description: 'Parents of children with dyscalculia', hidden: true },
-  { id: 'dysgraphia_parents',   name: 'Dysgraphia Parents Village',                  emoji: '✏️', description: 'Parents of children with dysgraphia', hidden: true },
-  { id: 'dyspraxia_parents',    name: 'Dyspraxia / DCD Parents Village',             emoji: '🤸', description: 'Parents of children with dyspraxia or developmental coordination disorder', hidden: true },
-  { id: 'apd_parents',          name: 'Auditory Processing Disorder Parents',        emoji: '👂', description: 'Parents of children with auditory processing disorder', hidden: true },
-  { id: 'nvld_parents',         name: 'NVLD Parents Village',                        emoji: '🧩', description: 'Parents of children with nonverbal learning disability', hidden: true },
-  { id: 'ld_other',             name: 'Other Learning Disability Parents',           emoji: '📚', description: 'Parents navigating other learning disabilities', hidden: true },
-  { id: 'cerebral_palsy',       name: 'Cerebral Palsy Parents',                      emoji: '💪', description: 'Strength and support for CP families' },
-  { id: 'rare_genetic',         name: 'Rare Genetic Condition Parents',              emoji: '🧬', description: 'You are not alone — rare diagnosis families united' },
-  { id: 'special_needs_other',  name: 'Special Needs Parents Village',               emoji: '💙', description: 'A welcoming community for all special needs families' },
-  // ── Gender identity villages (hidden — found via quiz or search)
-  { id: 'nonbinary_child_parents',    name: 'Parents of Non-Binary Children',        emoji: '🌈', description: 'Supporting parents of non-binary kids', hidden: true },
-  { id: 'trans_boy_parents',          name: 'Parents of Transgender Boys',           emoji: '💙', description: 'Community for parents of transgender boys (FTM)', hidden: true },
-  { id: 'trans_girl_parents',         name: 'Parents of Transgender Girls',          emoji: '💗', description: 'Community for parents of transgender girls (MTF)', hidden: true },
-  { id: 'gender_fluid_child_parents', name: 'Parents of Gender Fluid Children',      emoji: '🌊', description: 'Supporting parents of gender fluid kids', hidden: true },
-  { id: 'gender_questioning_parents', name: 'Parents of Gender Questioning Children',emoji: '💜', description: 'A safe space while your child explores their identity', hidden: true },
-  // ── Single-parent villages
-  { id: 'single_mom_choice',       name: 'Single Moms by Choice',                   emoji: '💪', description: 'Women who chose single motherhood — you are not alone' },
-  { id: 'single_dad_choice',       name: 'Single Dads by Choice',                   emoji: '💪', description: 'Men who chose single fatherhood — strong and capable' },
-  { id: 'single_mom_circumstance', name: 'Single Moms by Circumstance',             emoji: '🌸', description: 'Single mothers navigating parenthood after life changed course' },
-  { id: 'single_dad_circumstance', name: 'Single Dads by Circumstance',             emoji: '🌟', description: 'Single fathers navigating parenthood after life changed course' },
-  { id: 'single_mom_loss',         name: 'Widowed Moms Village',                    emoji: '🕊️', description: 'Single mothers parenting through grief and loss' },
-  { id: 'single_dad_loss',         name: 'Widowed Dads Village',                    emoji: '🕊️', description: 'Single fathers parenting through grief and loss' },
-  { id: 'coparenting',             name: 'Co-Parenting Village',                    emoji: '🤝', description: 'Navigating co-parenting together' },
-  // ── LGBTQ+ family villages
-  { id: 'gay_dads',                name: 'Gay Dads Village',                        emoji: '🏳️‍🌈', description: 'A community for gay fathers' },
-  { id: 'lesbian_moms',            name: 'Lesbian Moms Village',                    emoji: '🏳️‍🌈', description: 'A community for lesbian mothers' },
-  { id: 'queer_parents',           name: 'Queer & Non-Binary Parents',              emoji: '🏳️‍🌈', description: 'Queer and non-binary parents supporting each other' },
-  { id: 'same_sex_parents',        name: 'Same-Sex Parents Village',                emoji: '🏳️‍🌈', description: 'Same-sex couples raising children together' },
-  { id: 'trans_parents',           name: 'Transgender Parents Village',             emoji: '🏳️‍⚧️', description: 'Transgender parents supporting one another' },
-  // ── Military family villages
-  { id: 'military_mom',            name: 'Military Moms Village',                   emoji: '🎖️', description: 'Mothers serving in the armed forces' },
-  { id: 'military_dad',            name: 'Military Dads Village',                   emoji: '🎖️', description: 'Fathers serving in the armed forces' },
-  { id: 'military_spouse_parent',  name: 'Military Spouse Parents',                 emoji: '🏠', description: 'Parents whose partner serves in the military' },
-  { id: 'veteran_parent',          name: 'Veteran Parents Village',                 emoji: '🦅', description: 'Veterans raising children — strength in service and family' },
-  { id: 'national_guard_parent',   name: 'National Guard & Reserve Parents',        emoji: '🛡️', description: 'Parents in the National Guard or Reserves' },
-  // ── Work situation villages
-  { id: 'night_shift_parents',              name: 'Night Shift Parents Village',                emoji: '🌙', description: 'Parents working the overnight shift — solidarity at 3am' },
-  { id: 'night_shift_healthcare',           name: 'Night Shift Healthcare Workers',             emoji: '🏥', description: 'Healthcare parents on the overnight grind', hidden: true },
-  { id: 'healthcare_worker_parents',        name: 'Healthcare Worker Parents Village',          emoji: '🩺', description: 'Raising kids while saving lives — a community for healthcare parents' },
-  { id: 'nurse_parents',                    name: 'Nurse Parents Village',                      emoji: '💉', description: 'Nurses who are also parents — the double shift is real', hidden: true },
-  { id: 'doctor_parents',                   name: 'Doctor / Physician Parents Village',         emoji: '🩺', description: 'Physician parents navigating demanding careers and family life', hidden: true },
-  { id: 'paramedic_parents',                name: 'Paramedic & First Responder Parents',        emoji: '🚑', description: 'First responder parents — the bravest at work and at home', hidden: true },
-  { id: 'mental_health_pro_parents',        name: 'Mental Health Professional Parents',         emoji: '🧠', description: 'Therapists, counselors, and psychologists who are also parents', hidden: true },
-  { id: 'therapist_parents',                name: 'PT / OT / SLP Parents Village',              emoji: '🏋️', description: 'Physical, occupational, and speech therapist parents', hidden: true },
-  { id: 'teacher_parents',                  name: 'Teacher Parents Village',                    emoji: '🍎', description: 'Educators raising their own little learners' },
-  { id: 'early_childhood_educator_parents', name: 'Early Childhood Educator Parents',           emoji: '🧸', description: 'Preschool and early childhood teachers who are also parents', hidden: true },
-  { id: 'special_ed_teacher_parents',       name: 'Special Education Teacher Parents',          emoji: '📚', description: 'Special ed teachers — you know this journey from both sides', hidden: true },
-  { id: 'wfh_parents',                      name: 'Work From Home Parents Village',             emoji: '💻', description: 'Balancing deadlines and diapers under the same roof' },
-  { id: 'entrepreneur_parents',             name: 'Entrepreneur Parents Village',               emoji: '🚀', description: 'Building a business while raising a family' },
-  { id: 'small_business_parents',           name: 'Small Business Owner Parents Village',         emoji: '🏪', description: 'Running a local business and raising a family — the hustle is real on both fronts', hidden: true },
-  { id: 'part_time_working_parents',        name: 'Part Time Working Parents Village',            emoji: '⏰', description: 'Part time work, full time parent — navigating the balance between both worlds' },
-  { id: 'on_leave_parents',                 name: 'On Parental or Medical Leave Parents Village', emoji: '🌿', description: 'On maternity, paternity, medical, or family leave — a season to be present' },
-  { id: 'sahp_childcare_cost_parents',      name: 'SAHP — Childcare Too Expensive Village',      emoji: '💸', description: 'When the cost of childcare doesn\'t make going back to work worth it — you\'re not alone', hidden: true },
-  { id: 'freelance_parents',                name: 'Freelance & Contractor Parents',             emoji: '🖥️', description: 'Freelancers navigating feast-or-famine with kids in tow', hidden: true },
-  { id: 'content_creator_parents',          name: 'Content Creator Parents Village',            emoji: '🎬', description: 'Parents building audiences while raising humans', hidden: true },
-  { id: 'sahp',                             name: 'Stay at Home Parents Village',               emoji: '🏠', description: 'SAHM / SAHD — the job that never clocks out' },
-  { id: 'sahp_special_needs',               name: 'SAHP — Child\'s Special Needs',             emoji: '💙', description: 'Stay-at-home parents whose child\'s needs require full-time presence', hidden: true },
-  { id: 'sahp_returning_to_work',           name: 'SAHP Returning to Work',                    emoji: '💼', description: 'Stay-at-home parents navigating the return-to-work transition', hidden: true },
-  { id: 'multiple_jobs_parents',            name: 'Multiple Jobs Parents Village',              emoji: '⏰', description: 'Working more than one job while raising kids — incredibly hard, incredibly real' },
-  { id: 'gig_economy_parents',              name: 'Gig Economy Parents Village',                emoji: '🚗', description: 'Rideshare, delivery, and gig workers who are also parents', hidden: true },
-  // ── Insurance villages
-  { id: 'medicaid_families',        name: 'Medicaid Families Village',                  emoji: '🏥', description: 'Navigating Medicaid and CHIP together' },
-  { id: 'chip_families',            name: 'CHIP Families Village',                      emoji: '🏥', description: 'Families with children on CHIP coverage', hidden: true },
-  { id: 'medicaid_transitions',     name: 'Medicaid Transition Parents',                emoji: '🔄', description: 'Navigating income changes, renewals, and transitioning off Medicaid', hidden: true },
-  { id: 'medicaid_waiver_families', name: 'Medicaid Waiver Families Village',           emoji: '📋', description: 'Families navigating Medicaid waivers for long-term services and supports' },
-  { id: 'hcbs_waiver_families',     name: 'HCBS Waiver Families Village',               emoji: '🏠', description: 'Families using Home and Community-Based Services waivers', hidden: true },
-  { id: 'katie_beckett_families',   name: 'Katie Beckett / TEFRA Families',             emoji: '💙', description: 'Families navigating the Katie Beckett or TEFRA Medicaid waiver', hidden: true },
-  { id: 'dd_waiver_families',       name: 'DD Waiver Families Village',                 emoji: '🧩', description: 'Families navigating Developmental Disabilities Medicaid waivers', hidden: true },
-  { id: 'autism_waiver_families',   name: 'Autism Waiver Families Village',             emoji: '🧩', description: 'Families navigating state autism Medicaid waivers', hidden: true },
-  { id: 'waiver_waitlist_families', name: 'Waiver Waitlist Parents',                    emoji: '⏳', description: 'Families on the Medicaid waiver waitlist — you are not forgotten', hidden: true },
-  { id: 'private_insurance_parents', name: 'Private Insurance Navigation Village',      emoji: '📄', description: 'Navigating employer and marketplace insurance as a parent', hidden: true },
-  { id: 'aca_marketplace_parents',  name: 'ACA Marketplace Parents Village',            emoji: '🏛️', description: 'Parents on ACA / Marketplace health plans', hidden: true },
-  { id: 'cobra_parents',            name: 'COBRA & Coverage Gap Parents',               emoji: '🔗', description: 'Parents navigating COBRA or gaps in coverage between jobs', hidden: true },
-  { id: 'tricare_families',         name: 'TRICARE Families Village',                   emoji: '🎖️', description: 'Military families navigating TRICARE health coverage' },
-  { id: 'tricare_echo_families',    name: 'TRICARE ECHO Families Village',              emoji: '🎖️', description: 'Military families using TRICARE Extended Care Health Option for special needs', hidden: true },
-  { id: 'uninsured_parents',        name: 'Uninsured Families Village',                 emoji: '🤝', description: 'Finding resources and support without health coverage', hidden: true },
-  { id: 'community_health_parents', name: 'Community Health & Free Clinic Parents',     emoji: '🏥', description: 'Families relying on community health centers and free clinics', hidden: true },
-  // ── Support network villages
-  { id: 'chosen_family_parents',       name: 'Friends Are My Village',                   emoji: '💛', description: 'When your village is made of friends, not family — and that\'s everything' },
-  { id: 'long_distance_family_parents', name: 'Long-Distance Family Parents Village',    emoji: '✈️', description: 'Raising kids far from family — navigating love, guilt, and FaceTime calls' },
-  { id: 'recently_relocated_parents',  name: 'Recently Relocated Parents Village',       emoji: '📦', description: 'New to the area and building your parenting village from scratch', hidden: true },
-  { id: 'estranged_family_parents',    name: 'Estranged From Family Parents Village',    emoji: '💙', description: 'Parenting without family — by circumstance or by choice', hidden: true },
-  { id: 'family_doesnt_get_it_parents', name: '"My Family Doesn\'t Get It" Parents',    emoji: '😔', description: 'When your family can\'t understand your child\'s needs or your journey', hidden: true },
-  { id: 'rural_parents',               name: 'Rural Parents Village',                    emoji: '🌾', description: 'Parenting in rural and remote areas — long drives, limited resources, tight community', hidden: true },
-  { id: 'immigrant_expat_parents',     name: 'Immigrant & Expat Parents Village',        emoji: '🌍', description: 'Raising kids far from your home country — navigating two worlds at once', hidden: true },
-  { id: 'virtual_support_parents',     name: 'Online-Only Support Parents Village',      emoji: '💻', description: 'When your primary support system lives in your phone — and that\'s okay', hidden: true },
-  // ── Faith & cultural background villages
-  { id: 'christian_parents',           name: 'Christian Parents Village',                 emoji: '✝️',  description: 'Raising children in the Christian faith together' },
-  { id: 'catholic_parents',            name: 'Catholic Parents Village',                  emoji: '✝️',  description: 'Catholic families navigating parenthood in faith' },
-  { id: 'jewish_parents',              name: 'Jewish Parents Village',                    emoji: '✡️',  description: 'Raising Jewish children and navigating Jewish family life' },
-  { id: 'muslim_parents',              name: 'Muslim Parents Village',                    emoji: '☪️',  description: 'Muslim families raising children in their faith' },
-  { id: 'hindu_parents',               name: 'Hindu Parents Village',                     emoji: '🕉️',  description: 'Hindu families passing down faith and culture to their children' },
-  { id: 'buddhist_parents',            name: 'Buddhist Parents Village',                  emoji: '☸️',  description: 'Raising children with Buddhist values and mindfulness' },
-  { id: 'sikh_parents',                name: 'Sikh Parents Village',                      emoji: '🪯',  description: 'Sikh families raising children in their faith and culture' },
-  { id: 'lds_parents',                 name: 'Latter-day Saint Parents Village',          emoji: '📖', description: 'LDS / Mormon parents navigating faith and family life' },
-  { id: 'orthodox_christian_parents',  name: 'Orthodox Christian Parents Village',        emoji: '☦️',  description: 'Eastern and Oriental Orthodox families raising children in the faith' },
-  { id: 'pagan_parents',               name: 'Pagan & Earth-Based Spirituality Parents',  emoji: '🌙', description: 'Pagan, Wiccan, and earth-based spirituality families' },
-  { id: 'spiritual_nr_parents',        name: 'Spiritual But Not Religious Parents',       emoji: '🌟', description: 'Raising spiritually aware kids outside of organized religion' },
-  { id: 'secular_parents',             name: 'Secular & Non-Religious Parents Village',   emoji: '🌍', description: 'Atheist, agnostic, and secular humanist parents' },
-  { id: 'interfaith_parents',          name: 'Interfaith Household Parents Village',      emoji: '🕊️', description: 'Navigating two (or more) faiths under one roof' },
-  // ── Faith subtypes (hidden — found via quiz or search)
-  { id: 'jw_parents',                  name: 'Jehovah\'s Witness Parents Village',        emoji: '📖', description: 'JW families raising children in their faith', hidden: true },
-  { id: 'evangelical_parents',         name: 'Evangelical Christian Parents Village',     emoji: '✝️',  description: 'Evangelical parents raising children in the faith', hidden: true },
-  { id: 'baptist_parents',             name: 'Baptist Parents Village',                   emoji: '✝️',  description: 'Baptist families navigating parenthood together', hidden: true },
-  { id: 'pentecostal_parents',         name: 'Pentecostal & Charismatic Parents',         emoji: '🔥', description: 'Pentecostal and charismatic Christian parents', hidden: true },
-  { id: 'nondenominational_parents',   name: 'Non-Denominational Christian Parents',      emoji: '✝️',  description: 'Non-denom church families raising children in faith', hidden: true },
-  { id: 'methodist_parents',           name: 'Methodist & Wesleyan Parents Village',      emoji: '✝️',  description: 'Methodist and Wesleyan families raising children together', hidden: true },
-  { id: 'lutheran_parents',            name: 'Lutheran Parents Village',                  emoji: '✝️',  description: 'Lutheran families navigating parenthood in faith', hidden: true },
-  { id: 'episcopal_parents',           name: 'Episcopal & Anglican Parents Village',      emoji: '✝️',  description: 'Episcopal and Anglican families raising children together', hidden: true },
-  { id: 'sda_parents',                 name: 'Seventh-day Adventist Parents Village',     emoji: '✝️',  description: 'SDA families raising children with their faith values', hidden: true },
-  { id: 'traditional_catholic_parents', name: 'Traditional Catholic Parents Village',    emoji: '✝️',  description: 'Traditional and Latin Mass Catholic families', hidden: true },
-  { id: 'faith_transition_parents',    name: 'Faith Transition Parents Village',          emoji: '🌱', description: 'Parents navigating leaving or changing their faith tradition', hidden: true },
-  { id: 'orthodox_jewish_parents',     name: 'Orthodox Jewish Parents Village',           emoji: '✡️',  description: 'Orthodox Jewish families navigating modern parenthood', hidden: true },
-  { id: 'reform_jewish_parents',       name: 'Reform Jewish Parents Village',             emoji: '✡️',  description: 'Reform Jewish families raising children in their tradition', hidden: true },
-  { id: 'cultural_jewish_parents',     name: 'Cultural & Secular Jewish Parents',         emoji: '✡️',  description: 'Jewish by culture and heritage — raising kids with identity and tradition', hidden: true },
-  { id: 'sunni_parents',               name: 'Sunni Muslim Parents Village',              emoji: '☪️',  description: 'Sunni Muslim families raising children in their faith', hidden: true },
-  { id: 'shia_parents',                name: 'Shia Muslim Parents Village',               emoji: '☪️',  description: 'Shia Muslim families raising children together', hidden: true },
-  { id: 'coptic_parents',              name: 'Coptic Orthodox Parents Village',           emoji: '☦️',  description: 'Coptic Orthodox families navigating parenthood in faith', hidden: true },
-  { id: 'ethiopian_orthodox_parents',  name: 'Ethiopian Orthodox Parents Village',        emoji: '☦️',  description: 'Ethiopian Orthodox families raising children in their faith', hidden: true },
-  { id: 'lds_faith_transition_parents', name: 'LDS Faith Transition Parents Village',    emoji: '🌱', description: 'Parents navigating a faith transition within or away from the LDS church', hidden: true },
-  // ── Language villages
-  { id: 'bilingual_multilingual_parents', name: 'Bilingual & Multilingual Families Village', emoji: '🌐', description: 'Intentionally raising children who speak more than one language' },
-  { id: 'spanish_speaking_parents',     name: 'Spanish-Speaking Parents Village',         emoji: '🇪🇸', description: 'Criando a nuestros hijos juntos — a community for Spanish-speaking families' },
-  { id: 'mandarin_speaking_parents',    name: 'Mandarin-Speaking Parents Village',        emoji: '🇨🇳', description: 'Raising children in Mandarin-speaking households', hidden: true },
-  { id: 'cantonese_speaking_parents',   name: 'Cantonese-Speaking Parents Village',       emoji: '🇭🇰', description: 'Raising children in Cantonese-speaking households', hidden: true },
-  { id: 'arabic_speaking_parents',      name: 'Arabic-Speaking Parents Village',          emoji: '🌙', description: 'Raising children in Arabic-speaking households', hidden: true },
-  { id: 'hindi_speaking_parents',       name: 'Hindi-Speaking Parents Village',           emoji: '🇮🇳', description: 'Raising children in Hindi-speaking households', hidden: true },
-  { id: 'french_speaking_parents',      name: 'French-Speaking Parents Village',          emoji: '🇫🇷', description: 'Raising children in French-speaking households', hidden: true },
-  { id: 'portuguese_speaking_parents',  name: 'Portuguese-Speaking Parents Village',      emoji: '🇧🇷', description: 'Raising children in Portuguese-speaking households', hidden: true },
-  { id: 'tagalog_speaking_parents',     name: 'Filipino / Tagalog-Speaking Parents',      emoji: '🇵🇭', description: 'Raising children in Tagalog and Filipino-speaking households', hidden: true },
-  { id: 'vietnamese_speaking_parents',  name: 'Vietnamese-Speaking Parents Village',      emoji: '🇻🇳', description: 'Raising children in Vietnamese-speaking households', hidden: true },
-  { id: 'korean_speaking_parents',      name: 'Korean-Speaking Parents Village',          emoji: '🇰🇷', description: 'Raising children in Korean-speaking households', hidden: true },
-  { id: 'japanese_speaking_parents',    name: 'Japanese-Speaking Parents Village',        emoji: '🇯🇵', description: 'Raising children in Japanese-speaking households', hidden: true },
-  { id: 'russian_speaking_parents',     name: 'Russian-Speaking Parents Village',         emoji: '🇷🇺', description: 'Raising children in Russian-speaking households', hidden: true },
-  { id: 'asl_parents',                  name: 'ASL / Deaf Community Parents Village',     emoji: '🤟', description: 'Deaf, hard of hearing, and signing families raising children in ASL', hidden: true },
-  // ── Spanish dialect villages (hidden)
-  { id: 'mexican_american_parents',     name: 'Mexican & Mexican-American Parents',       emoji: '🇲🇽', description: 'Mexican and Mexican-American families raising the next generation', hidden: true },
-  { id: 'puerto_rican_parents',         name: 'Puerto Rican Parents Village',             emoji: '🇵🇷', description: 'Boricua families — raising children between two worlds', hidden: true },
-  { id: 'cuban_parents',               name: 'Cuban Parents Village',                    emoji: '🇨🇺', description: 'Cuban families raising children and preserving culture', hidden: true },
-  { id: 'dominican_parents',            name: 'Dominican Parents Village',                emoji: '🇩🇴', description: 'Dominican families raising children with pride and culture', hidden: true },
-  { id: 'central_american_parents',     name: 'Central American Parents Village',         emoji: '🌎', description: 'Guatemalan, Salvadoran, Honduran, and other Central American families', hidden: true },
-  // ── Arabic dialect villages (hidden)
-  { id: 'arabic_levantine_parents',     name: 'Levantine Arab Parents Village',           emoji: '🌙', description: 'Syrian, Lebanese, Palestinian, and Jordanian families', hidden: true },
-  { id: 'arabic_egyptian_parents',      name: 'Egyptian Parents Village',                 emoji: '🇪🇬', description: 'Egyptian families raising children and passing on culture', hidden: true },
-  { id: 'arabic_gulf_parents',          name: 'Gulf Arab Parents Village',                emoji: '🌙', description: 'Saudi, Emirati, Kuwaiti, Qatari, and Gulf families', hidden: true },
-  { id: 'arabic_maghrebi_parents',      name: 'Maghrebi / North African Parents',         emoji: '🇲🇦', description: 'Moroccan, Algerian, Tunisian, and Libyan families', hidden: true },
-  // ── Portuguese dialect village (hidden)
-  { id: 'brazilian_portuguese_parents', name: 'Brazilian Parents Village',                emoji: '🇧🇷', description: 'Brazilian families raising children and passing on culture', hidden: true },
-  // ── Housing situation villages
-  { id: 'apartment_parents',           name: 'Raising Kids in an Apartment Village',    emoji: '🏢', description: 'No backyard, neighbors below, limited space — apartment parenting is its own adventure' },
-  { id: 'multigenerational_parents',   name: 'Multigenerational Household Village',      emoji: '🏠', description: 'Three or more generations under one roof — a unique and beautifully complicated life' },
-  { id: 'tiny_home_parents',           name: 'Tiny Home & Alternative Housing Families', emoji: '🏡', description: 'Van life, tiny homes, skoolies — raising kids intentionally in small spaces' },
-  { id: 'housing_instability_parents', name: 'Housing Instability Families Village',     emoji: '🤝', description: 'Navigating housing challenges while raising children — you deserve community and support' },
-  { id: 'homeowner_parents',           name: 'New Homeowner Parents Village',            emoji: '🔑', description: 'Figuring out homeownership and parenthood at the same time — welcome to the club', hidden: true },
-  { id: 'suburban_parents',            name: 'Suburban Parents Village',                 emoji: '🏘️', description: 'Raising kids in the suburbs — school districts, cul-de-sacs, and minivans', hidden: true },
-  { id: 'urban_parents',               name: 'Urban / City Parents Village',             emoji: '🌆', description: 'City parents raising kids — playgrounds, public transit, and tight square footage', hidden: true },
-  { id: 'condo_townhouse_parents',     name: 'Condo & Townhouse Parents Village',        emoji: '🏙️', description: 'HOAs, shared walls, and no yard — navigating condo and townhouse life with kids', hidden: true },
-  { id: 'renting_parents',             name: 'Renting Parents Village',                  emoji: '🏠', description: 'Raising kids in a rental — leases, landlords, and making it home anyway', hidden: true },
-  { id: 'inlaws_parents',              name: 'Living With In-Laws Parents Village',      emoji: '👨‍👩‍👧', description: 'Navigating the joys and challenges of living with your partner\'s family', hidden: true },
-  { id: 'van_life_parents',            name: 'Van Life Families Village',                emoji: '🚐', description: 'Raising kids on the road in a van — freedom, adventure, and creative family life', hidden: true },
-  { id: 'rv_parents',                  name: 'Full-Time RV Families Village',            emoji: '🚌', description: 'Full-time RV families raising children wherever the road takes them', hidden: true },
-  { id: 'farm_parents',                name: 'Farm & Agricultural Families Village',     emoji: '🌾', description: 'Raising kids on a farm — the chores, the animals, the early mornings', hidden: true },
-  { id: 'new_construction_parents',    name: 'New Construction Home Parents',            emoji: '🔨', description: 'Navigating a new build — delays, walkthroughs, and raising kids through it all', hidden: true },
-  // ── Work situation (additional subtypes)
-  { id: 'pharmacist_parents',              name: 'Pharmacist Parents Village',                   emoji: '💊', description: 'Pharmacists who are also parents — dispensing knowledge at home and at work', hidden: true },
-  { id: 'medical_admin_parents',           name: 'Medical Admin & Support Staff Parents',        emoji: '🏥', description: 'The backbone of healthcare — medical admin and support staff parents', hidden: true },
-  { id: 'elementary_teacher_parents',      name: 'Elementary School Teacher Parents',            emoji: '🍎', description: 'Teaching K–5 and raising your own — double duty educators', hidden: true },
-  { id: 'middle_school_teacher_parents',   name: 'Middle School Teacher Parents Village',        emoji: '📚', description: 'Middle school teachers raising kids — brave on both fronts', hidden: true },
-  { id: 'high_school_teacher_parents',     name: 'High School Teacher Parents Village',          emoji: '🎓', description: 'High school educators raising their own teens or little ones', hidden: true },
-  { id: 'college_educator_parents',        name: 'College & University Educator Parents',        emoji: '🎓', description: 'Professors, lecturers, and college educators navigating academia and parenthood', hidden: true },
-  { id: 'paraprofessional_parents',        name: 'Instructional Aide & Paraprofessional Parents', emoji: '🤝', description: 'Paraprofessionals and instructional aides who are also parents', hidden: true },
-  { id: 'remote_employee_parents',         name: 'Remote Employee Parents Village',              emoji: '💻', description: 'Working a company job from home — balancing Zoom calls and toddlers', hidden: true },
-  { id: 'home_daycare_parents',            name: 'Home Daycare Provider Parents Village',        emoji: '🏠', description: 'Running a home daycare while raising your own — the ultimate multi-task', hidden: true },
-  { id: 'sahp_by_choice',                  name: 'SAHP by Choice Village',                       emoji: '🌸', description: 'Stay-at-home parents who chose this path — loving every (chaotic) moment', hidden: true },
-  { id: 'night_shift_hospitality',         name: 'Night Shift Hospitality & Service Parents',    emoji: '🌙', description: 'Restaurant, hotel, and hospitality workers on the overnight shift raising kids', hidden: true },
-  { id: 'law_enforcement_parents',         name: 'Law Enforcement & Security Parents Village',   emoji: '🚔', description: 'Law enforcement officers and security professionals who are also parents', hidden: true },
-  { id: 'night_shift_transport',           name: 'Night Shift Transport & Logistics Parents',    emoji: '🚛', description: 'Truck drivers, delivery, and logistics workers on overnight shifts raising kids', hidden: true },
-  { id: 'night_shift_factory',             name: 'Night Shift Factory & Warehouse Parents',      emoji: '🏭', description: 'Factory and warehouse workers on the overnight grind who are also parents', hidden: true },
-  // ── Insurance (additional subtypes)
-  { id: 'tech_assisted_waiver_families',   name: 'Technology-Assisted Waiver Families',          emoji: '🩺', description: 'Families navigating vent, trach, and technology-assisted Medicaid waivers', hidden: true },
-  // ── Support network (additional subtypes)
-  { id: 'strong_support_parents',          name: 'Strong Support Network Parents',               emoji: '🌟', description: 'Parents with a solid local village — sharing what works and paying it forward', hidden: true },
-  { id: 'schedule_conflict_parents',       name: '"Everyone\'s Too Busy" Parents Village',       emoji: '📅', description: 'Your support is there — but schedules never align. You are not alone.', hidden: true },
-  { id: 'ppd_isolation_parents',           name: 'Postpartum Depression & Isolation Village',    emoji: '💛', description: 'Navigating PPD or mental health challenges while feeling isolated — a safe, gentle space', hidden: true },
-  { id: 'partner_travels_parents',         name: 'Partner Works Away Parents Village',           emoji: '✈️', description: 'Parenting solo when your partner travels frequently for work', hidden: true },
-  { id: 'grief_transition_parents',        name: 'Grief & Major Life Transition Parents',        emoji: '🕊️', description: 'Parents navigating grief, loss, or a major life change while raising children', hidden: true },
-  // ── Religion (additional subtypes)
-  { id: 'reformed_parents',               name: 'Reformed & Presbyterian Parents Village',      emoji: '✝️',  description: 'Reformed, Presbyterian, and Calvinist parents raising children in the faith', hidden: true },
-  { id: 'cultural_catholic_parents',      name: 'Cultural Catholic Parents Village',            emoji: '✝️',  description: 'Catholic by culture and heritage — navigating faith, family, and identity', hidden: true },
-  { id: 'questioning_catholic_parents',   name: 'Questioning Catholic Parents Village',         emoji: '✝️',  description: 'Navigating disagreements with the Church while raising a family', hidden: true },
-  { id: 'conservative_jewish_parents',    name: 'Conservative / Masorti Jewish Parents',       emoji: '✡️',  description: 'Conservative and Masorti Jewish families navigating modern parenthood', hidden: true },
-  { id: 'reconstructionist_jewish_parents', name: 'Reconstructionist & Renewal Jewish Parents', emoji: '✡️', description: 'Reconstructionist and Jewish Renewal families raising children with evolving traditions', hidden: true },
-  { id: 'sufi_parents',                   name: 'Sufi Parents Village',                         emoji: '☪️',  description: 'Sufi Muslim families raising children with spiritual depth and tradition', hidden: true },
-  { id: 'ahmadiyya_parents',              name: 'Ahmadiyya Parents Village',                    emoji: '☪️',  description: 'Ahmadiyya Muslim families navigating parenthood in faith', hidden: true },
-  { id: 'cultural_muslim_parents',        name: 'Cultural & Non-Practicing Muslim Parents',     emoji: '☪️',  description: 'Muslim by culture and identity — raising children with heritage and connection', hidden: true },
-  { id: 'greek_orthodox_parents',         name: 'Greek Orthodox Parents Village',               emoji: '☦️',  description: 'Greek Orthodox families raising children in their faith and culture', hidden: true },
-  { id: 'russian_orthodox_parents',       name: 'Russian Orthodox Parents Village',             emoji: '☦️',  description: 'Russian Orthodox families raising children in their faith', hidden: true },
-  { id: 'antiochian_orthodox_parents',    name: 'Antiochian Orthodox Parents Village',          emoji: '☦️',  description: 'Antiochian Orthodox families navigating parenthood in faith', hidden: true },
-  { id: 'slavic_orthodox_parents',        name: 'Serbian / Bulgarian / Romanian Orthodox Parents', emoji: '☦️', description: 'Serbian, Bulgarian, Romanian, and Slavic Orthodox families raising children together', hidden: true },
-  { id: 'cultural_lds_parents',           name: 'Cultural / Less Active LDS Parents Village',  emoji: '📖', description: 'LDS by background — navigating faith, family, and your own path', hidden: true },
-  // ── Language (additional villages)
-  { id: 'italian_speaking_parents',       name: 'Italian-Speaking Parents Village',             emoji: '🇮🇹', description: 'Raising children in Italian-speaking households', hidden: true },
-  { id: 'german_speaking_parents',        name: 'German-Speaking Parents Village',              emoji: '🇩🇪', description: 'Raising children in German-speaking households', hidden: true },
-  { id: 'haitian_creole_parents',         name: 'Haitian Creole–Speaking Parents Village',     emoji: '🇭🇹', description: 'Haitian and Haitian-American families raising children in Haitian Creole', hidden: true },
-  { id: 'punjabi_speaking_parents',       name: 'Punjabi-Speaking Parents Village',             emoji: '🌾', description: 'Raising children in Punjabi-speaking households', hidden: true },
-  { id: 'urdu_speaking_parents',          name: 'Urdu-Speaking Parents Village',                emoji: '🌙', description: 'Raising children in Urdu-speaking households', hidden: true },
-  { id: 'bengali_speaking_parents',       name: 'Bengali-Speaking Parents Village',             emoji: '🌺', description: 'Raising children in Bengali-speaking households', hidden: true },
-  { id: 'tamil_speaking_parents',         name: 'Tamil-Speaking Parents Village',               emoji: '🌺', description: 'Raising children in Tamil-speaking households', hidden: true },
-  { id: 'farsi_speaking_parents',         name: 'Farsi / Persian–Speaking Parents Village',    emoji: '🌙', description: 'Raising children in Farsi and Persian-speaking households', hidden: true },
-  { id: 'polish_speaking_parents',        name: 'Polish-Speaking Parents Village',              emoji: '🦅', description: 'Raising children in Polish-speaking households', hidden: true },
-  { id: 'ukrainian_speaking_parents',     name: 'Ukrainian-Speaking Parents Village',           emoji: '🌻', description: 'Raising children in Ukrainian-speaking households', hidden: true },
-  { id: 'swahili_speaking_parents',       name: 'Swahili-Speaking Parents Village',             emoji: '🌍', description: 'Raising children in Swahili-speaking households', hidden: true },
-  { id: 'yoruba_speaking_parents',        name: 'Yoruba-Speaking Parents Village',              emoji: '🌍', description: 'Raising children in Yoruba-speaking households', hidden: true },
-  { id: 'amharic_speaking_parents',       name: 'Amharic-Speaking Parents Village',             emoji: '🇪🇹', description: 'Raising children in Amharic-speaking households', hidden: true },
-  // ── Spanish dialect villages (additional)
-  { id: 'south_american_parents',         name: 'Colombian / Venezuelan / South American Parents', emoji: '🌎', description: 'Colombian, Venezuelan, and South American families raising children and preserving culture', hidden: true },
-  { id: 'spain_spanish_parents',          name: 'Parents from Spain (Castilian Spanish)',       emoji: '🇪🇸', description: 'Families from Spain raising children in Castilian Spanish tradition', hidden: true },
-  // ── Arabic dialect villages (additional)
-  { id: 'iraqi_parents',                  name: 'Iraqi Parents Village',                         emoji: '🌙', description: 'Iraqi families raising children and passing on culture', hidden: true },
-  { id: 'sudanese_parents',               name: 'Sudanese & East African Arabic–Speaking Parents', emoji: '🌍', description: 'Sudanese and East African Arabic-speaking families raising children together', hidden: true },
-  // ── Portuguese dialect villages (additional)
-  { id: 'european_portuguese_parents',    name: 'Portuguese (Portugal) Parents Village',         emoji: '🇵🇹', description: 'Families from Portugal raising children in their language and culture', hidden: true },
-  { id: 'african_portuguese_parents',     name: 'African Portuguese–Speaking Parents Village',   emoji: '🌍', description: 'Cape Verdean, Mozambican, Angolan, and other African Portuguese-speaking families', hidden: true },
-  // ── Housing (additional subtypes)
-  { id: 'saving_to_buy_parents',          name: 'Saving to Buy Parents Village',                 emoji: '🏠', description: 'Renting now, saving for later — the hustle of working toward homeownership with kids', hidden: true },
-  { id: 'house_rental_parents',           name: 'House & Townhouse Rental Parents Village',      emoji: '🏡', description: 'Renting a house or townhouse — more space, same landlord', hidden: true },
-  { id: 'living_with_own_family_parents', name: 'Living With My Own Family Parents Village',     emoji: '🏠', description: 'Living with your own parents or family — navigating boundaries, help, and love under one roof', hidden: true },
-  { id: 'three_gen_household_parents',    name: 'Three-Generation Household Parents Village',    emoji: '🏠', description: 'Grandparents, parents, and children all under one roof — rich, complicated, and full of love', hidden: true },
-  { id: 'adu_parents',                    name: 'ADU & In-Law Suite Families Village',           emoji: '🏡', description: 'Family in the attached unit or backyard ADU — close but with a door', hidden: true },
-  { id: 'skoolie_parents',                name: 'Skoolie Parents Village',                       emoji: '🚌', description: 'Converted school bus families raising kids on the road — the coolest classroom ever', hidden: true },
-  { id: 'off_grid_parents',               name: 'Off-Grid & Earthship / Yurt Families',         emoji: '🌿', description: 'Off-grid, earthship, and yurt families raising children intentionally off the beaten path', hidden: true },
-  { id: 'eviction_risk_parents',          name: 'Eviction Risk Parents Village',                 emoji: '🤝', description: 'Facing eviction while raising children — a judgment-free space for resources and community', hidden: true },
-  { id: 'foreclosure_parents',            name: 'Facing Foreclosure Parents Village',            emoji: '🏠', description: 'Navigating foreclosure with kids at home — you deserve support, not shame', hidden: true },
-  { id: 'couch_surfing_parents',          name: 'Temporarily Staying with Others — Parents',    emoji: '🤝', description: 'Couch surfing or staying with others temporarily while raising children', hidden: true },
-  { id: 'shelter_parents',                name: 'In Shelter / Transitional Housing Parents',    emoji: '🏠', description: 'Parents in shelters or transitional housing — you are doing what it takes for your family', hidden: true },
-  { id: 'housing_assistance_parents',     name: 'Housing Assistance Navigation Parents',         emoji: '📋', description: 'Navigating Section 8, housing vouchers, and housing assistance programs as a parent', hidden: true },
-  // ── TTC (Trying to Conceive) villages
-  { id: 'ttc_village',               name: 'Trying to Conceive (TTC) Village',         emoji: '🌸', description: 'The TTC journey — hope, patience, and community for those working toward parenthood' },
-  { id: 'ttc_after_loss',            name: 'TTC After Pregnancy Loss Village',          emoji: '💜', description: 'Trying again after a loss — holding grief and hope at the same time', hidden: true },
-  { id: 'ttc_infertility',           name: 'Infertility Journey Village',               emoji: '🌿', description: 'Navigating an infertility diagnosis — the appointments, the emotions, the resilience', hidden: true },
-  { id: 'ttc_pcos',                  name: 'PCOS & TTC Village',                        emoji: '🌸', description: 'Trying to conceive with PCOS — tracking cycles, managing symptoms, and staying hopeful', hidden: true },
-  { id: 'ttc_unexplained',           name: 'Unexplained Infertility Village',           emoji: '🔍', description: 'When the tests don\'t give answers — navigating unexplained infertility together', hidden: true },
-  { id: 'ttc_long_journey',          name: 'Long TTC Journey Village (1+ Year)',        emoji: '⏳', description: 'Still on the journey after a year or more — your persistence is extraordinary', hidden: true },
-  { id: 'ttc_secondary_infertility', name: 'Secondary Infertility Village',            emoji: '💙', description: 'Trying to conceive again when it\'s not happening as expected — you are not alone', hidden: true },
-  { id: 'ttc_treatments',            name: 'Fertility Treatment Journey Village',       emoji: '🔬', description: 'In the thick of IVF, IUI, or other treatments — the injections, the waits, the hope', hidden: true },
-  { id: 'ttc_lgbtq_family_building', name: 'LGBTQ+ Family Building Village',           emoji: '🌈', description: 'Building your family as an LGBTQ+ person or couple — navigating the unique path to parenthood', hidden: true },
-  // ── IEP / 504 villages
-  { id: '504_plan_parents',             name: '504 Plan Parents Village',                    emoji: '📋', description: 'Navigating 504 accommodations — advocating for your child\'s access and success at school' },
-  { id: 'iep_process_parents',          name: 'IEP Evaluation Process Parents Village',      emoji: '🔍', description: 'In the thick of getting an IEP — evaluations, eligibility, and advocating hard for your child' },
-  { id: 'early_intervention_parents',   name: 'Early Intervention Parents Village',           emoji: '🌱', description: 'Part C / Early Intervention families — therapies, IFSP, and navigating services under age 3' },
-  { id: 'iep_denial_parents',           name: 'Fighting for an IEP — Parents Village',       emoji: '💪', description: 'Your child was denied — and you\'re not giving up. A space for parents fighting for services', hidden: true },
-  { id: 'iep_speech_parents',           name: 'IEP: Speech & Language Services Parents',     emoji: '💬', description: 'Parents whose child\'s IEP includes speech-language therapy services', hidden: true },
-  { id: 'iep_ot_parents',               name: 'IEP: Occupational Therapy Parents',           emoji: '✋', description: 'Parents whose child\'s IEP includes occupational therapy services', hidden: true },
-  { id: 'iep_pt_parents',               name: 'IEP: Physical Therapy Parents',               emoji: '🦵', description: 'Parents whose child\'s IEP includes physical therapy services', hidden: true },
-  { id: 'iep_behavioral_parents',       name: 'IEP: Behavioral Support & BIP Parents',       emoji: '🧠', description: 'Families navigating IEP behavioral goals and Behavior Intervention Plans', hidden: true },
-  { id: 'iep_autism_services_parents',  name: 'Autism IEP Services Parents Village',         emoji: '🧩', description: 'Parents navigating an IEP specifically written around their child\'s autism needs', hidden: true },
-  { id: '504_adhd_parents',             name: '504 for ADHD Parents Village',                emoji: '⚡', description: 'Families with a 504 plan for ADHD — extra time, movement breaks, and advocating for access', hidden: true },
-  { id: '504_anxiety_parents',          name: '504 for Anxiety & Mental Health Parents',     emoji: '💛', description: 'Parents navigating a 504 plan for anxiety or mental health needs at school', hidden: true },
-  { id: '504_medical_parents',          name: '504 for Medical Needs Parents Village',        emoji: '🏥', description: 'Families with a 504 for medical conditions — diabetes, seizures, allergies, and more', hidden: true },
-  { id: 'gen_ed_parents',               name: 'General Education Parents Village',            emoji: '📚', description: 'Parents navigating general education — no IEP or 504, just figuring out school together', hidden: true },
-  // ── School & childcare villages
-  { id: 'public_school_parents',          name: 'Public School Parents Village',               emoji: '🏫', description: 'Navigating the public school system — a community for public school families' },
-  { id: 'private_school_parents',         name: 'Private School Parents Village',              emoji: '🎒', description: 'Private school families — tuition, community, and all the decisions that come with it' },
-  { id: 'homeschool_parents',             name: 'Homeschool Parents Village',                  emoji: '📚', description: 'Homeschooling families supporting each other — curriculum, co-ops, and learning at home' },
-  { id: 'daycare_parents',               name: 'Daycare & Childcare Parents Village',          emoji: '🧸', description: 'Navigating daycare, drop-offs, and finding the right childcare for your child' },
-  { id: 'preschool_parents',             name: 'Preschool & Pre-K Parents Village',            emoji: '🎨', description: 'The preschool years — navigating programs, readiness, and those first school moments' },
-  { id: 'charter_school_parents',        name: 'Charter School Parents Village',               emoji: '🏫', description: 'Charter school families — lotteries, programs, and navigating an alternative path', hidden: true },
-  { id: 'magnet_school_parents',         name: 'Magnet School Parents Village',                emoji: '🧲', description: 'Magnet school families — specialized programs and the application process', hidden: true },
-  { id: 'title_one_school_parents',      name: 'Title I School Families Village',              emoji: '🏫', description: 'Families at Title I schools — advocating for resources and navigating high-need environments', hidden: true },
-  { id: 'virtual_school_parents',        name: 'Virtual & Online School Parents Village',      emoji: '💻', description: 'Families doing school fully online — schedules, screens, and making it work at home', hidden: true },
-  { id: 'faith_based_school_parents',    name: 'Faith-Based School Parents Village',           emoji: '✝️',  description: 'Religious and faith-based school families — education rooted in faith', hidden: true },
-  { id: 'montessori_parents',            name: 'Montessori Parents Village',                   emoji: '🌱', description: 'Montessori families — child-led learning, mixed ages, and the Montessori philosophy', hidden: true },
-  { id: 'waldorf_parents',              name: 'Waldorf School Parents Village',                emoji: '🎭', description: 'Waldorf families — seasonal rhythms, imaginative learning, and holistic education', hidden: true },
-  { id: 'private_sped_school_parents',  name: 'Private Special Education School Parents',     emoji: '📋', description: 'Families who chose a private special education school — navigating placement, cost, and advocacy', hidden: true },
-  { id: 'classical_homeschool_parents', name: 'Classical Homeschool Parents Village',          emoji: '📜', description: 'Classical homeschooling families — trivium, great books, and rigorous academics at home', hidden: true },
-  { id: 'charlotte_mason_parents',      name: 'Charlotte Mason Homeschool Parents',           emoji: '🌿', description: 'Charlotte Mason families — living books, nature study, and narration at home', hidden: true },
-  { id: 'unschooling_parents',          name: 'Unschooling & Child-Led Learning Parents',     emoji: '🌍', description: 'Unschooling families — trust, curiosity, and learning on your child\'s terms', hidden: true },
-  { id: 'homeschool_coop_parents',      name: 'Homeschool Co-op Parents Village',             emoji: '🤝', description: 'Co-op homeschooling families — community, shared classes, and learning together', hidden: true },
-  { id: 'homeschool_special_needs_parents', name: 'Homeschooling for Special Needs Parents',  emoji: '💙', description: 'Parents who chose to homeschool because of their child\'s special needs or medical needs', hidden: true },
-  { id: 'head_start_parents',           name: 'Head Start Parents Village',                   emoji: '⭐', description: 'Head Start and Early Head Start families — early learning, family support, and community', hidden: true },
-  { id: 'family_daycare_parents',       name: 'Home Daycare & Family Childcare Parents',      emoji: '🏠', description: 'Families using a home daycare or family childcare provider — the cozy alternative to centers', hidden: true },
-  { id: 'faith_based_childcare_parents', name: 'Faith-Based Childcare Parents Village',       emoji: '🙏', description: 'Families using faith-based daycare or preschool programs', hidden: true },
-  { id: 'military_cdc_parents',         name: 'Military CDC Parents Village',                 emoji: '🎖️', description: 'Military families using on-base Child Development Centers', hidden: true },
-  { id: 'nanny_aupair_parents',         name: 'Nanny & Au Pair Families Village',             emoji: '🏠', description: 'Families with a nanny, au pair, or in-home caregiver — navigating a unique childcare arrangement', hidden: true },
-  { id: 'home_with_parent_parents',     name: 'Home with Parent — Not in School Yet',         emoji: '🏡', description: 'Children not yet in school or childcare — parents who are home with little ones full-time', hidden: true },
-  // ── Medical equipment villages
-  { id: 'wheelchair_parents',          name: 'Wheelchair User Parents Village',              emoji: '♿', description: 'Raising a child who uses a wheelchair — adaptive living, advocacy, and community' },
-  { id: 'manual_wheelchair_parents',   name: 'Manual Wheelchair Parents Village',            emoji: '♿', description: 'Families navigating manual wheelchairs — ramps, terrain, and daily life', hidden: true },
-  { id: 'power_chair_parents',         name: 'Power Chair Parents Village',                  emoji: '⚡', description: 'Power wheelchair families — tech, access, and independence for your child', hidden: true },
-  { id: 'gait_trainer_parents',        name: 'Gait Trainer & Walker Parents Village',        emoji: '🚶', description: 'Parents of children using gait trainers, walkers, and adaptive mobility devices', hidden: true },
-  { id: 'hearing_loss_parents',        name: 'Hearing Loss Parents Village',                 emoji: '👂', description: 'Raising a child with hearing loss — audiologists, accommodations, and community' },
-  { id: 'hearing_aids_parents',        name: 'Hearing Aids Parents Village',                 emoji: '👂', description: 'Families navigating hearing aids — fittings, upkeep, and raising your child with confidence', hidden: true },
-  { id: 'cochlear_implant_parents',    name: 'Cochlear Implant Parents Village',             emoji: '🔊', description: 'Parents navigating cochlear implants — surgery, mapping, and the journey toward sound', hidden: true },
-  { id: 'baha_parents',                name: 'BAHA & Bone Anchored Hearing Aid Parents',    emoji: '🔊', description: 'Families using bone anchored hearing aids (BAHA / Osia)', hidden: true },
-  { id: 'deaf_child_parents',          name: 'Deaf Child Parents Village',                   emoji: '🤟', description: 'Raising a Deaf child — navigating identity, language, education, and community', hidden: true },
-  { id: 'hard_of_hearing_parents',     name: 'Hard of Hearing Child Parents Village',        emoji: '👂', description: 'Parenting a hard of hearing child — between two worlds and advocating every step', hidden: true },
-  { id: 'oxygen_dependent_parents',    name: 'Oxygen-Dependent Child Parents Village',       emoji: '🫁', description: 'Raising a child on supplemental oxygen — monitors, tanks, and loving every breath', hidden: true },
-  { id: 'vent_dependent_parents',      name: 'Ventilator-Dependent Child Parents Village',   emoji: '🫁', description: 'Families navigating life with a child on a ventilator — the most dedicated caregivers', hidden: true },
-  { id: 'trach_parents',               name: 'Trach Parents Village',                        emoji: '🩺', description: 'Parents of children with a tracheostomy — trach care, suctioning, and the love that powers it all', hidden: true },
-  { id: 'aac_parents',                 name: 'AAC User Parents Village',                     emoji: '💬', description: 'Raising a child who communicates with AAC — a device, a voice, a world opened up' },
-  { id: 'orthotics_parents',           name: 'Orthotics & AFO Parents Village',              emoji: '🦿', description: 'Families navigating orthotics, AFOs, leg braces, and prosthetics', hidden: true },
-  { id: 'cpap_bipap_parents',          name: 'CPAP / BiPAP Parents Village',                 emoji: '😴', description: 'Parents of children using CPAP or BiPAP — nights, masks, and sleep support', hidden: true },
-  { id: 'cgm_pump_parents',            name: 'CGM & Insulin Pump Parents Village',           emoji: '💉', description: 'Parents managing a child\'s diabetes with a CGM or insulin pump', hidden: true },
-  // ── Surgery villages
-  { id: 'pediatric_surgery_parents',      name: 'Pediatric Surgery Parents Village',             emoji: '🏥', description: 'Parents navigating pediatric surgery — before, during, and after the OR' },
-  { id: 'upcoming_surgery_parents',       name: 'Pre-Surgery Parents Village',                   emoji: '⏳', description: 'Preparing for your child\'s upcoming surgery — the anxiety, the questions, the waiting', hidden: true },
-  { id: 'open_heart_surgery_parents',     name: 'Open Heart Surgery Parents Village',            emoji: '❤️', description: 'Parents of children who have had open heart surgery — the journey, recovery, and life after', hidden: true },
-  { id: 'pediatric_neurosurgery_parents', name: 'Pediatric Neurosurgery Parents Village',        emoji: '🧠', description: 'Parents navigating brain and spinal surgeries for their children', hidden: true },
-  { id: 'organ_transplant_parents',       name: 'Pediatric Organ Transplant Parents Village',    emoji: '💚', description: 'Families navigating a child\'s organ transplant — the wait, the surgery, and life after', hidden: true },
-  // ── Pediatric cancer villages
-  { id: 'pediatric_cancer_parents',       name: 'Pediatric Cancer Parents Village',              emoji: '💛', description: 'Parents navigating a child\'s cancer diagnosis — treatment, advocacy, and community' },
-  { id: 'childhood_leukemia_parents',     name: 'Childhood Leukemia Parents Village',            emoji: '💛', description: 'ALL, AML, and leukemia families — the treatment journey and life after', hidden: true },
-  { id: 'brain_tumor_parents',            name: 'Pediatric Brain Tumor Parents Village',         emoji: '🧠', description: 'Navigating a child\'s brain tumor diagnosis, surgery, and treatment', hidden: true },
-  { id: 'neuroblastoma_parents',          name: 'Neuroblastoma Parents Village',                 emoji: '💛', description: 'Neuroblastoma families — diagnosis, treatment, and hope', hidden: true },
-  { id: 'childhood_cancer_survivors',     name: 'Childhood Cancer Survivor Parents Village',     emoji: '🌟', description: 'Life after treatment — parents of childhood cancer survivors', hidden: true },
-  // ── Kidney / urological condition villages
-  { id: 'kidney_condition_parents',       name: 'Pediatric Kidney Condition Parents Village',    emoji: '🫘', description: 'Parents navigating a child\'s kidney or urological condition', hidden: true },
-  { id: 'pkd_parents',                    name: 'Polycystic Kidney Disease (PKD) Parents',       emoji: '🫘', description: 'Families navigating polycystic kidney disease in children', hidden: true },
-  { id: 'nephrotic_syndrome_parents',     name: 'Nephrotic Syndrome Parents Village',            emoji: '🫘', description: 'Parents navigating childhood nephrotic syndrome', hidden: true },
-  // ── Surgical condition villages
-  { id: 'craniosynostosis_parents',       name: 'Craniosynostosis Parents Village',              emoji: '🧠', description: 'Navigating craniosynostosis — diagnosis, skull surgery, and recovery', hidden: true },
-  { id: 'esophageal_atresia_parents',     name: 'Esophageal Atresia & TEF Parents Village',     emoji: '🏥', description: 'EA/TEF families — the surgeries, the feeding challenges, and the community', hidden: true },
-  { id: 'hirschsprung_parents',           name: "Hirschsprung's Disease Parents Village",        emoji: '🏥', description: "Hirschsprung's families — surgery, recovery, and bowel management", hidden: true },
-  { id: 'biliary_atresia_parents',        name: 'Biliary Atresia Parents Village',               emoji: '🏥', description: 'Biliary atresia families — Kasai procedures, liver transplants, and life after', hidden: true },
-  { id: 'short_bowel_parents',            name: 'Short Bowel Syndrome Parents Village',          emoji: '🏥', description: 'Short bowel syndrome and intestinal failure families — the TPN journey and beyond', hidden: true },
-  { id: 'scoliosis_parents',              name: 'Pediatric Scoliosis Parents Village',           emoji: '🦴', description: 'Parents navigating childhood scoliosis — bracing, surgery, and monitoring', hidden: true },
-  { id: 'hip_dysplasia_parents',          name: 'Hip Dysplasia & DDH Parents Village',           emoji: '🦴', description: 'DDH families — Pavlik harnesses, surgery, and recovery', hidden: true },
-  // ── ADHD (pending diagnosis)
-  { id: 'adhd_pending_diagnosis',         name: 'ADHD Awaiting Diagnosis Parents Village',       emoji: '⚡', description: 'Waiting for an ADHD diagnosis — navigating the process while raising your child', hidden: true },
-  // ── Private therapy villages
-  { id: 'private_therapy_parents',      name: 'Private Therapy Parents Village',           emoji: '🗓️', description: 'Navigating private therapy — scheduling, costs, and driving across town for your child' },
-  { id: 'slp_therapy_parents',          name: 'Speech Therapy Parents Village',            emoji: '💬', description: 'Private SLP families — home programs, progress notes, and cheering every word', hidden: true },
-  { id: 'ot_therapy_parents',           name: 'OT Parents Village',                        emoji: '✋', description: 'Private occupational therapy families — sensory diets, fine motor goals, and the journey', hidden: true },
-  { id: 'pt_therapy_parents',           name: 'PT Parents Village',                        emoji: '🦵', description: 'Private physical therapy families — milestones, exercises, and watching them move', hidden: true },
-  { id: 'vision_therapy_parents',       name: 'Vision Therapy Parents Village',            emoji: '👁️', description: 'Parents navigating vision therapy for their child', hidden: true },
-  { id: 'child_mental_health_therapy',  name: 'Child Mental Health Therapy Parents',       emoji: '💛', description: 'Parents supporting a child in therapy — psychologists, counselors, and play therapy', hidden: true },
-  { id: 'social_skills_therapy_parents', name: 'Social Skills Group Parents Village',      emoji: '🤝', description: 'Parents whose child attends social skills groups or group therapy', hidden: true },
-  { id: 'aquatic_hippotherapy_parents', name: 'Aquatic & Equine Therapy Parents Village',  emoji: '🐴', description: 'Aquatic therapy and hippotherapy families — alternative therapy that changes everything', hidden: true },
-  { id: 'school_services_only_parents', name: 'School-Based Services Only Parents',        emoji: '🏫', description: 'Families whose child receives all therapy through school — navigating what\'s offered and what\'s not', hidden: true },
-  { id: 'therapy_waitlist_parents',     name: 'Therapy Waitlist Parents Village',          emoji: '⏳', description: 'Waiting for therapy to start — the lists are long and you are not alone', hidden: true },
-  { id: 'therapy_graduate_parents',     name: 'Therapy Graduate Parents Village',          emoji: '🌟', description: 'Your child has completed therapy — celebrating progress and navigating what comes next', hidden: true },
-  // ── Transportation villages
-  { id: 'public_transit_parents',         name: 'Public Transit Parents Village',                emoji: '🚌', description: 'Navigating buses, trains, and subways with kids in tow — a whole adventure' },
-  { id: 'no_car_parents',                 name: 'Car-Free Parents Village',                      emoji: '🚶', description: 'Raising kids without a car — creative, resourceful, and community-connected' },
-  { id: 'unreliable_transportation_parents', name: 'Unreliable Transportation Parents Village',  emoji: '🔧', description: 'When getting somewhere is its own challenge — parents navigating transportation barriers', hidden: true },
-  { id: 'rural_no_transit_parents',       name: 'Rural Parents — Limited Transit Village',       emoji: '🌾', description: 'Living in a rural area with no public transit — long distances, limited options', hidden: true },
-  { id: 'city_bus_metro_parents',         name: 'City Bus & Metro Parents Village',              emoji: '🚇', description: 'Strollers on the subway, bus schedules with a toddler — you\'ve mastered it', hidden: true },
-  { id: 'commuter_rail_parents',          name: 'Commuter Rail Parents Village',                 emoji: '🚆', description: 'Train commuters raising kids — schedule juggling at its finest', hidden: true },
-  { id: 'paratransit_parents',            name: 'Paratransit & Accessible Transit Parents',      emoji: '♿', description: 'Parents using paratransit or accessible transit services with their children', hidden: true },
-  { id: 'limited_transit_parents',        name: 'Limited Transit Options Parents Village',       emoji: '🚌', description: 'When the bus comes twice a day and that\'s your only option — you make it work', hidden: true },
-  { id: 'one_car_household_parents',      name: 'One-Car Household Parents Village',             emoji: '🚗', description: 'Coordinating one car, two schedules, and a whole family — the logistics are real', hidden: true },
-  { id: 'car_repairs_parents',            name: 'Car Trouble Parents Village',                   emoji: '🔧', description: 'When the car breaks down and you have kids to get places — solidarity', hidden: true },
-  { id: 'rides_from_others_parents',      name: 'Relying on Others for Rides — Parents',        emoji: '🤝', description: 'Depending on others for transportation while raising children', hidden: true },
-  { id: 'walkable_city_parents',          name: 'Walkable City Car-Free Parents Village',        emoji: '🚶', description: 'Car-free in a walkable city — strollers, carriers, and city life', hidden: true },
-  // ── Food allergy villages
-  { id: 'peanut_allergy_parents',         name: 'Peanut Allergy Parents Village',                emoji: '🥜', description: 'Navigating life with a peanut allergy — labels, school plans, and community', hidden: true },
-  { id: 'tree_nut_allergy_parents',       name: 'Tree Nut Allergy Parents Village',              emoji: '🌰', description: 'Managing tree nut allergies — advocacy, label reading, and support', hidden: true },
-  { id: 'dairy_allergy_parents',          name: 'Dairy / Milk Allergy Parents Village',          emoji: '🥛', description: 'Navigating dairy and milk protein allergies in children', hidden: true },
-  { id: 'egg_allergy_parents',            name: 'Egg Allergy Parents Village',                   emoji: '🥚', description: 'Managing childhood egg allergies — baking swaps, school snacks, and more', hidden: true },
-  { id: 'gluten_celiac_parents',          name: 'Celiac & Gluten Allergy Parents Village',       emoji: '🌾', description: 'Raising a child with celiac disease or a gluten allergy — a strict GF life', hidden: true },
-  { id: 'multiple_allergy_parents',       name: 'Multiple Food Allergy Parents Village',         emoji: '⚠️', description: 'Juggling more than one food allergy — the planning, the labels, the vigilance', hidden: true },
-  { id: 'anaphylaxis_parents',            name: 'Anaphylactic Allergy Parents Village',          emoji: '💉', description: 'Life with a child whose allergy can be life-threatening — epi-pens, school plans, and solidarity', hidden: true },
-  { id: 'eoe_parents',                    name: 'Eosinophilic Esophagitis (EoE) Parents Village', emoji: '🍽️', description: 'EoE families — navigating elimination diets, scopes, and the ongoing journey', hidden: true },
-  { id: 'fpies_parents',                  name: 'FPIES Parents Village',                         emoji: '⚠️', description: 'Food Protein-Induced Enterocolitis Syndrome — the FPIES community', hidden: true },
-  // ── Special / medical diet villages
-  { id: 'gluten_free_family',             name: 'Gluten-Free Family Village',                    emoji: '🌾', description: 'Raising a gluten-free family — celiac, sensitivity, or choice', hidden: true },
-  { id: 'vegan_family',                   name: 'Vegan Family Village',                          emoji: '🌱', description: 'Raising vegan kids — nutrition, social situations, and solidarity', hidden: true },
-  { id: 'vegetarian_family',              name: 'Vegetarian Family Village',                     emoji: '🥦', description: 'Raising vegetarian children — recipes, school lunches, and community', hidden: true },
-  { id: 'kosher_family',                  name: 'Kosher Family Village',                         emoji: '✡️', description: 'Keeping kosher with kids — the planning, the holidays, and the community', hidden: true },
-  { id: 'halal_family',                   name: 'Halal Family Village',                          emoji: '☪️', description: 'Raising children on a halal diet — sourcing, school, and community', hidden: true },
-  { id: 'elimination_diet_parents',       name: 'Elimination Diet Parents Village',              emoji: '🍽️', description: 'Navigating an elimination diet with your child — the restrictions, the hope, the results', hidden: true },
-  ...DUE_DATE_VILLAGES,
-  ...CHILD_AGE_VILLAGES,
-  ...LOCATION_VILLAGES,
-];
 
 // ─── Quiz questions ───────────────────────────────────────────────────────────
 // TODO: Replace with the final question list once confirmed
@@ -3697,6 +2888,10 @@ function getPrevVisibleStep(from: number, answers: Record<string, string[]>): nu
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function VillageTab() {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+  const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
+
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [loading, setLoading]           = useState(true);
   const [joining, setJoining]           = useState<string | null>(null);
@@ -3822,7 +3017,7 @@ export default function VillageTab() {
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.center}><ActivityIndicator size="large" color="#B1A7F0" /></View>
+        <View style={s.center}><ActivityIndicator size="large" color={c.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -3842,7 +3037,7 @@ export default function VillageTab() {
           <TextInput
             style={s.searchInput}
             placeholder="Search villages..."
-            placeholderTextColor="#B0A89E"
+            placeholderTextColor={c.textMuted}
             value={search}
             onChangeText={setSearch}
           />
@@ -3887,18 +3082,28 @@ export default function VillageTab() {
               style={s.joinedScroll}
               contentContainerStyle={{ paddingRight: 8 }}
             >
-              {myVillages.map(v => (
-                <TouchableOpacity
-                  key={v.id}
-                  style={s.joinedChip}
-                  onPress={() => toggleJoin(v.id)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
-                  <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
-                  <Text style={s.joinedChipLeave}>✕</Text>
-                </TouchableOpacity>
-              ))}
+              {myVillages.map((v, i) => {
+                const chipColors = [
+                  { bg: c.cardLavender, border: c.lavender },
+                  { bg: c.cardBlue,     border: c.blue },
+                  { bg: c.cardBlush,    border: c.blush },
+                  { bg: c.cardHoney,    border: c.honey },
+                  { bg: c.cardSage,     border: c.sage },
+                ];
+                const cc = chipColors[i % chipColors.length];
+                return (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[s.joinedChip, { backgroundColor: cc.bg, borderColor: cc.border }]}
+                    onPress={() => toggleJoin(v.id)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
+                    <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
+                    <Text style={s.joinedChipLeave}>✕</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </>
         )}
@@ -3982,7 +3187,7 @@ export default function VillageTab() {
             <ScrollView contentContainerStyle={s.quizContent} keyboardShouldPersistTaps="handled">
               {/* Progress bar */}
               <View style={s.progressBar}>
-                <View style={{ flex: quizStep + 1, backgroundColor: '#FA92B1', borderRadius: 3 }} />
+                <View style={{ flex: quizStep + 1, backgroundColor: c.progressFill, borderRadius: 3 }} />
                 <View style={{ flex: QUIZ_QUESTIONS.length - quizStep - 1 }} />
               </View>
 
@@ -4077,6 +3282,8 @@ function LocationPicker({
   onCityChange:    (c: string) => void;
   onSearchChange:  (t: string) => void;
 }) {
+  const c = useColors();
+  const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
   const stateList  = country ? (STATES_BY_COUNTRY[country] ?? []) : [];
   const cityList   = state   ? (CITIES_BY_STATE[state]    ?? []) : [];
   const hasStates  = stateList.length > 0;
@@ -4113,7 +3320,7 @@ function LocationPicker({
           <TextInput
             style={lp.searchInput}
             placeholder={`Search ${country === 'Canada' ? 'provinces' : 'states'}...`}
-            placeholderTextColor="#B0A89E"
+            placeholderTextColor={c.textMuted}
             value={state ? '' : search}
             onChangeText={t => { onStateChange(''); onSearchChange(t); }}
             onFocus={() => { if (state) { onStateChange(''); } }}
@@ -4140,7 +3347,7 @@ function LocationPicker({
           <TextInput
             style={lp.searchInput}
             placeholder="Search cities..."
-            placeholderTextColor="#B0A89E"
+            placeholderTextColor={c.textMuted}
             value={city ? '' : search}
             onChangeText={t => { onCityChange(''); onSearchChange(t); }}
             onFocus={() => { if (city) { onCityChange(''); } }}
@@ -4168,20 +3375,22 @@ function LocationPicker({
   );
 }
 
-const lp = StyleSheet.create({
-  label:      { fontSize: 13, fontWeight: '700', color: '#8A7E78', marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  searchInput: {
-    backgroundColor: '#fff', borderRadius: 10, borderWidth: 1.5, borderColor: '#EAE5DF',
-    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: '#3D3530', marginBottom: 8,
-  },
-  grid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:       { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#EAE5DF' },
-  chipSelected: { backgroundColor: '#FDE4DE', borderColor: '#FA92B1' },
-  chipText:   { fontSize: 13, color: '#5A544E', fontWeight: '500' },
-  chipTextSelected: { color: '#3D3530', fontWeight: '700' },
-  requestBtn: { marginTop: 12, paddingVertical: 12, alignItems: 'center', borderRadius: 10, borderWidth: 1.5, borderColor: '#EAE5DF', borderStyle: 'dashed' },
-  requestBtnText: { fontSize: 13, color: '#B0A89E', fontWeight: '500' },
-});
+function makeLocationPickerStyles(c: Colors) {
+  return StyleSheet.create({
+    label:      { fontSize: 13, fontWeight: '700', color: c.textMuted, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+    searchInput: {
+      backgroundColor: c.card, borderRadius: 10, borderWidth: 1.5, borderColor: c.separator,
+      paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: c.textPrimary, marginBottom: 8,
+    },
+    grid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip:       { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: c.bgAlt, borderWidth: 1.5, borderColor: c.cardBorder },
+    chipSelected: { backgroundColor: c.optionSelected, borderColor: c.optionSelectedBorder },
+    chipText:   { fontSize: 13, color: c.textSecondary, fontWeight: '500' },
+    chipTextSelected: { color: c.textPrimary, fontWeight: '700' },
+    requestBtn: { marginTop: 12, paddingVertical: 12, alignItems: 'center', borderRadius: 10, borderWidth: 1.5, borderColor: c.separator, borderStyle: 'dashed' },
+    requestBtnText: { fontSize: 13, color: c.textMuted, fontWeight: '500' },
+  });
+}
 
 // ─── Village card sub-component ───────────────────────────────────────────────
 
@@ -4194,6 +3403,8 @@ function VillageCard({
   onJoin: () => void;
   fullWidth?: boolean;
 }) {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   return (
     <View style={[s.villageCard, fullWidth && { width: '100%' }]}>
       <Text style={s.villageEmoji}>{village.emoji}</Text>
@@ -4219,234 +3430,233 @@ function VillageCard({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FEFCF8' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 24, paddingBottom: 40 },
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bg },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    content: { padding: 24, paddingBottom: 40 },
 
-  heading: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 16,
-  },
+    heading: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: c.textSecondary,
+      marginBottom: 16,
+    },
 
-  // ── Search
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#EAE5DF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-    gap: 8,
-  },
-  searchIcon: { fontSize: 16 },
-  searchInput: { flex: 1, fontSize: 15, color: '#5A544E', padding: 0 },
-  searchClear: { fontSize: 14, color: '#B0A89E', paddingHorizontal: 4 },
+    // ── Search
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: c.separator,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 4,
+      elevation: 1,
+      gap: 8,
+    },
+    searchIcon: { fontSize: 16 },
+    searchInput: { flex: 1, fontSize: 15, color: c.textSecondary, padding: 0 },
+    searchClear: { fontSize: 14, color: c.textMuted, paddingHorizontal: 4 },
 
-  // ── Quiz card
-  quizCard: {
-    backgroundColor: '#FDE4DE',
-    borderRadius: 16,
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 28,
-    borderLeftWidth: 5,
-    borderLeftColor: '#FA92B1',
-    gap: 14,
-    shadowColor: '#FA92B1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  quizCardEmoji: { fontSize: 32 },
-  quizCardBody: { flex: 1 },
-  quizCardTitle: { fontSize: 17, fontWeight: '800', color: '#5A544E', marginBottom: 4 },
-  quizCardSub: { fontSize: 13, color: '#8A7E78', lineHeight: 18 },
-  quizCardArrow: { fontSize: 22, color: '#FA92B1', fontWeight: '600' },
+    // ── Quiz card
+    quizCard: {
+      backgroundColor: c.quizCard,
+      borderRadius: 16,
+      padding: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 28,
+      borderLeftWidth: 5,
+      borderLeftColor: c.quizCardBorder,
+      gap: 14,
+      shadowColor: c.quizCardBorder,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    quizCardEmoji: { fontSize: 32 },
+    quizCardBody: { flex: 1 },
+    quizCardTitle: { fontSize: 17, fontWeight: '800', color: c.textSecondary, marginBottom: 4 },
+    quizCardSub: { fontSize: 13, color: c.textMuted, lineHeight: 18 },
+    quizCardArrow: { fontSize: 22, color: c.quizCardBorder, fontWeight: '600' },
 
-  // ── Retake quiz row
-  retakeRow: {
-    backgroundColor: '#F4F1FB',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 28,
-    borderLeftWidth: 5,
-    borderLeftColor: '#B1A7F0',
-    gap: 14,
-  },
-  retakeIcon:  { fontSize: 26 },
-  retakeBody:  { flex: 1 },
-  retakeTitle: { fontSize: 15, fontWeight: '700', color: '#5A544E', marginBottom: 2 },
-  retakeSub:   { fontSize: 12, color: '#8A7E78' },
-  retakeArrow: { fontSize: 22, color: '#B1A7F0', fontWeight: '600' },
+    // ── Retake quiz row
+    retakeRow: {
+      backgroundColor: c.retakeCard,
+      borderRadius: 16,
+      padding: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 28,
+      borderLeftWidth: 5,
+      borderLeftColor: c.retakeCardBorder,
+      gap: 14,
+    },
+    retakeIcon:  { fontSize: 26 },
+    retakeBody:  { flex: 1 },
+    retakeTitle: { fontSize: 15, fontWeight: '700', color: c.textSecondary, marginBottom: 2 },
+    retakeSub:   { fontSize: 12, color: c.textMuted },
+    retakeArrow: { fontSize: 22, color: c.retakeCardBorder, fontWeight: '600' },
 
-  // ── Section title
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5A544E',
-    marginBottom: 12,
-  },
+    // ── Section title
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginBottom: 12,
+    },
 
-  // ── My Villages
-  joinedScroll: { marginBottom: 28 },
-  joinedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D3E5CF',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginRight: 10,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#94B58C',
-    maxWidth: 180,
-  },
-  joinedChipEmoji: { fontSize: 18 },
-  joinedChipName: { fontSize: 13, fontWeight: '700', color: '#3D3530', flex: 1 },
-  joinedChipLeave: { fontSize: 11, color: '#AEBCB1' },
+    // ── My Villages
+    joinedScroll: { marginBottom: 28 },
+    joinedChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.joinedBg,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginRight: 10,
+      gap: 6,
+      borderWidth: 1,
+      borderColor: c.joinedBorder,
+      maxWidth: 180,
+    },
+    joinedChipEmoji: { fontSize: 18 },
+    joinedChipName: { fontSize: 13, fontWeight: '700', color: c.textPrimary, flex: 1 },
+    joinedChipLeave: { fontSize: 11, color: c.textMuted },
 
-  // ── Village card
-  villageCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    gap: 12,
-  },
-  villageEmoji: { fontSize: 28 },
-  villageInfo: { flex: 1 },
-  villageName: { fontSize: 15, fontWeight: '700', color: '#3D3530', marginBottom: 2 },
-  villageDesc: { fontSize: 12, color: '#B0A89E', lineHeight: 17 },
-  joinBtn: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    minWidth: 68,
-    alignItems: 'center',
-  },
-  joinBtnJoined: { backgroundColor: '#D3E5CF' },
-  joinBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  joinBtnTextJoined: { color: '#94B58C' },
+    // ── Village card
+    villageCard: {
+      backgroundColor: c.cardLavender,
+      borderRadius: 14,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10,
+      borderWidth: 2,
+      borderColor: c.lavender,
+      gap: 12,
+    },
+    villageEmoji: { fontSize: 28 },
+    villageInfo: { flex: 1 },
+    villageName: { fontSize: 15, fontWeight: '700', color: c.textPrimary, marginBottom: 2 },
+    villageDesc: { fontSize: 12, color: c.textMuted, lineHeight: 17 },
+    joinBtn: {
+      backgroundColor: c.joinBtn,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      minWidth: 68,
+      alignItems: 'center',
+    },
+    joinBtnJoined: { backgroundColor: c.joinedBg },
+    joinBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+    joinBtnTextJoined: { color: c.joinedBorder },
 
-  // ── Empty search
-  emptySearch: { padding: 40, alignItems: 'center' },
-  emptySearchEmoji: { fontSize: 36, marginBottom: 12 },
-  emptySearchText: { fontSize: 14, color: '#B0A89E', textAlign: 'center' },
+    // ── Empty search
+    emptySearch: { padding: 40, alignItems: 'center' },
+    emptySearchEmoji: { fontSize: 36, marginBottom: 12 },
+    emptySearchText: { fontSize: 14, color: c.textMuted, textAlign: 'center' },
 
-  // ── Quiz modal
-  modalSafe: { flex: 1, backgroundColor: '#FEFCF8' },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EBE4',
-  },
-  modalCloseBtn: { width: 40, alignItems: 'flex-start' },
-  modalCloseText: { fontSize: 18, color: '#B0A89E' },
-  modalStep: { fontSize: 14, fontWeight: '600', color: '#B0A89E' },
+    // ── Quiz modal
+    modalSafe: { flex: 1, backgroundColor: c.bg },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
+    },
+    modalCloseBtn: { width: 40, alignItems: 'flex-start' },
+    modalCloseText: { fontSize: 18, color: c.textMuted },
+    modalStep: { fontSize: 14, fontWeight: '600', color: c.textMuted },
 
-  // ── Quiz question
-  quizContent: { padding: 24, paddingBottom: 40 },
-  progressBar: {
-    flexDirection: 'row',
-    height: 6,
-    backgroundColor: '#F0EBE4',
-    borderRadius: 3,
-    marginBottom: 32,
-    overflow: 'hidden',
-  },
-  questionText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#3D3530',
-    lineHeight: 28,
-    marginBottom: 8,
-  },
-  questionSub: { fontSize: 13, color: '#B0A89E', marginBottom: 20 },
-  optionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 1.5,
-    borderColor: '#EAE5DF',
-    gap: 12,
-  },
-  optionBtnSelected: { backgroundColor: '#FDE4DE', borderColor: '#FA92B1' },
-  optionDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#D0C8C0',
-    backgroundColor: '#fff',
-  },
-  optionDotSelected: { backgroundColor: '#FA92B1', borderColor: '#FA92B1' },
-  optionText: { flex: 1, fontSize: 15, color: '#5A544E', fontWeight: '500' },
-  optionTextSelected: { fontWeight: '700', color: '#3D3530' },
-  quizNavRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 20,
-  },
-  backBtn: { paddingHorizontal: 8, paddingVertical: 12 },
-  backBtnText: { fontSize: 15, color: '#B0A89E', fontWeight: '600' },
-  nextBtn: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 14,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  nextBtnDisabled: { backgroundColor: '#D5D0C8' },
-  nextBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    // ── Quiz question
+    quizContent: { padding: 24, paddingBottom: 40 },
+    progressBar: {
+      flexDirection: 'row',
+      height: 6,
+      backgroundColor: c.separator,
+      borderRadius: 3,
+      marginBottom: 32,
+      overflow: 'hidden',
+    },
+    questionText: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: c.textPrimary,
+      lineHeight: 28,
+      marginBottom: 8,
+    },
+    questionSub: { fontSize: 13, color: c.textMuted, marginBottom: 20 },
+    optionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 10,
+      borderWidth: 1.5,
+      borderColor: c.separator,
+      gap: 12,
+    },
+    optionBtnSelected: { backgroundColor: c.optionSelected, borderColor: c.optionSelectedBorder },
+    optionDot: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: c.primaryDisabled,
+      backgroundColor: c.card,
+    },
+    optionDotSelected: { backgroundColor: c.optionDotSelected, borderColor: c.optionDotSelected },
+    optionText: { flex: 1, fontSize: 15, color: c.textSecondary, fontWeight: '500' },
+    optionTextSelected: { fontWeight: '700', color: c.textPrimary },
+    quizNavRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 20,
+    },
+    backBtn: { paddingHorizontal: 8, paddingVertical: 12 },
+    backBtnText: { fontSize: 15, color: c.textMuted, fontWeight: '600' },
+    nextBtn: {
+      backgroundColor: c.nextBtn,
+      borderRadius: 14,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+    },
+    nextBtnDisabled: { backgroundColor: c.primaryDisabled },
+    nextBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  // ── Quiz results
-  resultsContent: { padding: 24, paddingBottom: 40, alignItems: 'center' },
-  resultsEmoji: { fontSize: 52, marginTop: 16, marginBottom: 16 },
-  resultsTitle: { fontSize: 22, fontWeight: '800', color: '#3D3530', marginBottom: 8, textAlign: 'center' },
-  resultsSub: { fontSize: 14, color: '#8A7E78', textAlign: 'center', lineHeight: 20, marginBottom: 24, paddingHorizontal: 8 },
-  joinAllBtn: {
-    backgroundColor: '#FA92B1',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    alignItems: 'center',
-    width: '100%',
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  joinAllBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  skipBtn: { paddingVertical: 12 },
-  skipBtnText: { fontSize: 14, color: '#B0A89E', fontWeight: '600' },
-});
+    // ── Quiz results
+    resultsContent: { padding: 24, paddingBottom: 40, alignItems: 'center' },
+    resultsEmoji: { fontSize: 52, marginTop: 16, marginBottom: 16 },
+    resultsTitle: { fontSize: 22, fontWeight: '800', color: c.textPrimary, marginBottom: 8, textAlign: 'center' },
+    resultsSub: { fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24, paddingHorizontal: 8 },
+    joinAllBtn: {
+      backgroundColor: c.fab,
+      borderRadius: 14,
+      paddingVertical: 14,
+      paddingHorizontal: 28,
+      alignItems: 'center',
+      width: '100%',
+      marginTop: 8,
+      marginBottom: 10,
+    },
+    joinAllBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    skipBtn: { paddingVertical: 12 },
+    skipBtnText: { fontSize: 14, color: c.textMuted, fontWeight: '600' },
+  });
+}

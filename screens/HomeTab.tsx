@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import BabyProfileSheet from './BabyProfileSheet';
+import PublicProfileSheet from './PublicProfileSheet';
+import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,13 +56,15 @@ interface Reminder {
   urgency: ReminderUrgency;
 }
 
-const REMINDER_COLORS: Record<ReminderUrgency, { bg: string; border: string; text: string }> = {
-  info:      { bg: '#AEC5F1', border: '#57B2E8', text: '#5A544E' },
-  warning:   { bg: '#FCE9C4', border: '#F9DE87', text: '#5A544E' },
-  alert:     { bg: '#FDE4DE', border: '#FFC2C3', text: '#5A544E' },
-  milestone: { bg: '#D3E5CF', border: '#94B58C', text: '#5A544E' },
-  streak:    { bg: '#FFC2C3', border: '#FA92B1', text: '#5A544E' },
-};
+function getReminderColors(c: Colors): Record<ReminderUrgency, { bg: string; border: string; text: string }> {
+  return {
+    info:      { bg: c.reminderInfo.bg,      border: c.reminderInfo.border,      text: c.reminderInfo.text },
+    warning:   { bg: c.reminderWarning.bg,   border: c.reminderWarning.border,   text: c.reminderWarning.text },
+    alert:     { bg: c.reminderAlert.bg,     border: c.reminderAlert.border,     text: c.reminderAlert.text },
+    milestone: { bg: c.reminderMilestone.bg, border: c.reminderMilestone.border, text: c.reminderMilestone.text },
+    streak:    { bg: c.reminderStreak.bg,    border: c.reminderStreak.border,    text: c.reminderStreak.text },
+  };
+}
 
 const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
   membranes:      { sessions: 30,  days: 60  },
@@ -138,6 +142,10 @@ async function uploadPostImage(uri: string, userId: string): Promise<string | nu
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeTab() {
+  const c = useColors();
+  const styles = useMemo(() => makeStyles(c), [c]);
+  const REMINDER_COLORS = useMemo(() => getReminderColors(c), [c]);
+
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -161,6 +169,7 @@ export default function HomeTab() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [baby, setBaby] = useState<{ name: string; birth_date: string; photo_url: string | null; gender: string | null } | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
+  const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
     diapers: number | null; diapersLow: boolean;
@@ -621,9 +630,9 @@ export default function HomeTab() {
   );
 
   const statCards = [
-    { label: 'Feeds\nToday',   value: String(stats.feeds),           accent: '#94B58C', bg: '#D3E5CF' },
-    { label: 'Diapers\nToday', value: String(stats.diapers),          accent: '#C1C89B', bg: '#F8F3D4' },
-    { label: 'Pumped\nToday',  value: `${mlToOz(stats.pumpedMl)} oz`, accent: '#DBABBF', bg: '#FDE4DE' },
+    { label: 'Feeds\nToday',   value: String(stats.feeds),           accent: c.statFeeds.accent,   bg: c.statFeeds.bg },
+    { label: 'Diapers\nToday', value: String(stats.diapers),          accent: c.statDiapers.accent, bg: c.statDiapers.bg },
+    { label: 'Pumped\nToday',  value: `${mlToOz(stats.pumpedMl)} oz`, accent: c.statPumped.accent,  bg: c.statPumped.bg },
   ];
 
   const coloredReminders = (() => {
@@ -658,12 +667,12 @@ export default function HomeTab() {
             style={[
               styles.babyCard,
               {
-                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? '#FFC2C3'
-                  : baby.gender?.toLowerCase() === 'boy' ? '#AEC5F1'
-                  : '#FDE4DE',
-                borderLeftColor: baby.gender?.toLowerCase() === 'girl' ? '#FA92B1'
-                  : baby.gender?.toLowerCase() === 'boy' ? '#57B2E8'
-                  : '#DBABBF',
+                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBg
+                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBg
+                  : c.cardBlush,
+                borderLeftColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBorder
+                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBorder
+                  : c.girlBorder,
               },
             ]}
             onPress={() => setShowProfileSheet(true)}
@@ -672,9 +681,9 @@ export default function HomeTab() {
             <View style={[
               styles.babyAvatar,
               {
-                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? '#FA92B1'
-                  : baby.gender?.toLowerCase() === 'boy' ? '#57B2E8'
-                  : '#FFC2C3',
+                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBorder
+                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBorder
+                  : c.girlBg,
               },
             ]}>
               {baby.photo_url ? (
@@ -720,11 +729,11 @@ export default function HomeTab() {
           <View style={styles.remindersSection}>
             <Text style={styles.sectionTitle}>Reminders</Text>
             {reminders.map((r, idx) => {
-              const c = REMINDER_COLORS[coloredReminders[idx]];
+              const rc = REMINDER_COLORS[coloredReminders[idx]];
               return (
-                <View key={r.id} style={[styles.reminderCard, { backgroundColor: c.bg, borderLeftColor: c.border }]}>
+                <View key={r.id} style={[styles.reminderCard, { backgroundColor: rc.bg, borderLeftColor: rc.border }]}>
                   <Text style={styles.reminderEmoji}>{r.emoji}</Text>
-                  <Text style={[styles.reminderText, { color: c.text }]}>{r.text}</Text>
+                  <Text style={[styles.reminderText, { color: rc.text }]}>{r.text}</Text>
                 </View>
               );
             })}
@@ -736,21 +745,21 @@ export default function HomeTab() {
           <View style={styles.suppliesCard}>
             <Text style={styles.sectionTitle}>Supplies</Text>
             <View style={styles.suppliesGrid}>
-              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? '#FFC2A6' : '#FCE9C4' }]}>
+              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? c.supplyLowBg : c.cardHoney }]}>
                 <Text style={styles.supplyChipEmoji}>🍼</Text>
                 <Text style={[styles.supplyChipValue, suppliesSnap.formulaLow && styles.supplyChipValueLow]}>
                   {suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} oz` : '–'}
                 </Text>
                 <Text style={styles.supplyChipLabel}>Formula</Text>
               </View>
-              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? '#F9DE87' : '#F8F3D4' }]}>
+              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? c.supplyLowBg : c.cardSage }]}>
                 <Text style={styles.supplyChipEmoji}>👶</Text>
                 <Text style={[styles.supplyChipValue, suppliesSnap.diapersLow && styles.supplyChipValueLow]}>
                   {suppliesSnap.diapers !== null ? String(Math.round(suppliesSnap.diapers)) : '–'}
                 </Text>
                 <Text style={styles.supplyChipLabel}>Diapers</Text>
               </View>
-              <View style={[styles.supplyChip, { backgroundColor: '#FDE4DE' }]}>
+              <View style={[styles.supplyChip, { backgroundColor: c.cardBlush }]}>
                 <Text style={styles.supplyChipEmoji}>🤱</Text>
                 <Text style={styles.supplyChipValue}>
                   {suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} oz` : '–'}
@@ -779,12 +788,16 @@ export default function HomeTab() {
         {posts.map((post) => (
           <View key={post.id} style={[styles.postCard, {
             borderLeftWidth: 4,
-            borderLeftColor: post.post_type === 'milestone' ? '#F9DE87'
-              : post.post_type === 'question' ? '#57B2E8'
-              : '#B1A7F0',
+            borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
+              : post.post_type === 'question' ? c.postQuestion
+              : c.postText,
           }]}>
             <View style={styles.postHeader}>
-              <View style={styles.postAuthorRow}>
+              <TouchableOpacity
+                style={styles.postAuthorRow}
+                onPress={() => setPublicProfileUserId(post.user_id)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.postAvatar}>
                   <Text style={styles.postAvatarText}>{post.author.charAt(0)}</Text>
                 </View>
@@ -792,12 +805,12 @@ export default function HomeTab() {
                   <Text style={styles.postAuthorName}>{post.author}</Text>
                   <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
               <View style={styles.postHeaderRight}>
                 {post.post_type !== 'text' && (
                   <View style={[
                     styles.postBadge,
-                    post.post_type === 'milestone' ? { backgroundColor: '#F8F3D4' } : { backgroundColor: '#AEC5F1' },
+                    post.post_type === 'milestone' ? { backgroundColor: c.cardHoney } : { backgroundColor: c.cardBlue },
                   ]}>
                     <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
                   </View>
@@ -854,6 +867,13 @@ export default function HomeTab() {
         onClose={() => setShowProfileSheet(false)}
       />
 
+      {/* Public profile sheet */}
+      <PublicProfileSheet
+        userId={publicProfileUserId}
+        visible={publicProfileUserId !== null}
+        onClose={() => setPublicProfileUserId(null)}
+      />
+
       {/* Comments modal */}
       <Modal
         visible={commentPostId !== null}
@@ -873,15 +893,15 @@ export default function HomeTab() {
             {comments.length === 0 ? (
               <Text style={styles.noComments}>No comments yet. Start the conversation!</Text>
             ) : (
-              comments.map(c => (
-                <View key={c.id} style={styles.commentItem}>
+              comments.map(cm => (
+                <View key={cm.id} style={styles.commentItem}>
                   <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>{c.author.charAt(0).toUpperCase()}</Text>
+                    <Text style={styles.commentAvatarText}>{cm.author.charAt(0).toUpperCase()}</Text>
                   </View>
                   <View style={styles.commentBody}>
-                    <Text style={styles.commentAuthor}>{c.author}</Text>
-                    <Text style={styles.commentContent}>{c.content}</Text>
-                    <Text style={styles.commentTime}>{getTimeAgo(c.created_at)}</Text>
+                    <Text style={styles.commentAuthor}>{cm.author}</Text>
+                    <Text style={styles.commentContent}>{cm.content}</Text>
+                    <Text style={styles.commentTime}>{getTimeAgo(cm.created_at)}</Text>
                   </View>
                 </View>
               ))
@@ -1060,657 +1080,659 @@ export default function HomeTab() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FEFCF8',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  heading: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 24,
-  },
-  statRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 36,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    borderTopWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-    minHeight: 80,
-    justifyContent: 'center',
-  },
-  statSpinner: {
-    marginBottom: 6,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 6,
-    color: '#3D3530',
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#5A544E',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#5A544E',
-    marginBottom: 14,
-  },
-  remindersSection: {
-    marginBottom: 28,
-  },
-  reminderCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderLeftWidth: 4,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 8,
-    gap: 10,
-  },
-  reminderEmoji: {
-    fontSize: 18,
-  },
-  reminderText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  feedHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 14,
-  },
-  createPostButton: {
-    backgroundColor: '#B1A7F0',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  createPostButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  createPostContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  postTypeSelector: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  postTypeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#f3f4f6',
-  },
-  postTypeButtonActive: {
-    backgroundColor: '#FDE4DE',
-  },
-  postTypeText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  postTypeTextActive: {
-    color: '#B1A7F0',
-  },
-  postInput: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 12,
-  },
-  postActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cancelText: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  submitButton: {
-    backgroundColor: '#B1A7F0',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  postCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  postHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  postAuthorRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  postAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#AEC5F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  postAvatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#B1A7F0',
-  },
-  postAuthorName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5A544E',
-  },
-  postTimestamp: {
-    fontSize: 12,
-    color: '#B0A89E',
-    marginTop: 1,
-  },
-  postHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  postBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  postDeleteBtn: {
-    padding: 4,
-  },
-  postDeleteText: {
-    fontSize: 15,
-  },
-  postContent: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#5A544E',
-    marginBottom: 12,
-  },
-  postFooter: {
-    flexDirection: 'row',
-    gap: 20,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-  },
-  postAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  postActionText: {
-    fontSize: 13,
-    color: '#B0A89E',
-  },
-  likedText: {
-    color: '#e11d48',
-    fontWeight: '600',
-  },
-  // ── Comments modal ──────────────────────────────────────────────────────────
-  modalSafeArea: {
-    flex: 1,
-    backgroundColor: '#FEFCF8',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#5A544E',
-  },
-  modalClose: {
-    fontSize: 18,
-    color: '#B0A89E',
-    paddingHorizontal: 4,
-  },
-  commentsList: {
-    flex: 1,
-  },
-  commentsContent: {
-    padding: 20,
-    paddingBottom: 12,
-  },
-  noComments: {
-    textAlign: 'center',
-    color: '#B0A89E',
-    fontSize: 15,
-    marginTop: 40,
-  },
-  commentItem: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 18,
-  },
-  commentAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#AEC5F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexShrink: 0,
-  },
-  commentAvatarText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#B1A7F0',
-  },
-  commentBody: {
-    flex: 1,
-  },
-  commentAuthor: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#5A544E',
-    marginBottom: 2,
-  },
-  commentContent: {
-    fontSize: 14,
-    color: '#5A544E',
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  commentTime: {
-    fontSize: 11,
-    color: '#B0A89E',
-  },
-  commentInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    backgroundColor: '#FEFCF8',
-  },
-  commentInput: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    maxHeight: 100,
-  },
-  commentSubmit: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  commentSubmitText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  emptyFeed: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  emptyFeedText: {
-    fontSize: 15,
-    color: '#B0A89E',
-    textAlign: 'center',
-  },
-  // ── For You header
-  forYouHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 14,
-    gap: 8,
-  },
-  forYouDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FA92B1',
-  },
-  forYouTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#5A544E',
-  },
-  // ── Baby profile card ───────────────────────────────────────────────────────
-  babyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FDE4DE',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    gap: 14,
-    borderLeftWidth: 5,
-    borderLeftColor: '#DBABBF',
-  },
-  babyAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#FFC2C3',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  babyAvatarText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  babyInfo: {
-    flex: 1,
-  },
-  babyName: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#3D3530',
-  },
-  babyAge: {
-    fontSize: 13,
-    color: '#fff',
-    marginTop: 2,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0,0,0,0.75)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 5,
-  },
-  babyAvatarPhoto: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  babyCardChevron: {
-    fontSize: 22,
-    color: '#AEBCB1',
-    fontWeight: '300',
-    marginLeft: 4,
-  },
-  // ── Supplies overview card ──────────────────────────────────────────────────
-  suppliesCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  suppliesGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  supplyChip: {
-    flex: 1,
-    backgroundColor: '#F8F6F2',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-  },
-  supplyChipLow: {
-    backgroundColor: '#FFFBEB',
-  },
-  supplyChipEmoji: {
-    fontSize: 22,
-    marginBottom: 6,
-  },
-  supplyChipValue: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 3,
-  },
-  supplyChipValueLow: {
-    color: '#D97706',
-  },
-  supplyChipLabel: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: '#B0A89E',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    textAlign: 'center',
-  },
-  suppliesEmptyHint: {
-    fontSize: 12,
-    color: '#B0A89E',
-    textAlign: 'center',
-    marginTop: 10,
-    fontStyle: 'italic',
-  },
-  // ── Report modal ────────────────────────────────────────────────────────────
-  reportPrompt: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5A544E',
-    marginBottom: 16,
-  },
-  reportReasonBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#F8F3D4',
-    marginBottom: 8,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  reportReasonBtnActive: {
-    borderColor: '#B1A7F0',
-    backgroundColor: '#FDE4DE',
-  },
-  reportReasonText: {
-    fontSize: 15,
-    color: '#5A544E',
-    fontWeight: '500',
-  },
-  reportReasonTextActive: {
-    color: '#B1A7F0',
-    fontWeight: '700',
-  },
-  reportSubmitBtn: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  reportSubmitBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  reportDoneContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  reportDoneEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  reportDoneTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#5A544E',
-    marginBottom: 8,
-  },
-  reportDoneBody: {
-    fontSize: 15,
-    color: '#8A7E78',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  reportCloseBtn: {
-    backgroundColor: '#B1A7F0',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-  },
-  reportCloseBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  // ── Post image (in feed cards) ──────────────────────────────────────────────
-  postImage: {
-    width: '100%',
-    height: 220,
-    borderRadius: 12,
-    marginBottom: 12,
-    backgroundColor: '#F0EBE4',
-  },
-  // ── FAB ────────────────────────────────────────────────────────────────────
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FA92B1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#FA92B1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  fabIcon: {
-    color: '#fff',
-    fontSize: 30,
-    fontWeight: '300',
-    lineHeight: 34,
-    marginTop: -2,
-  },
-  // ── Create post modal ───────────────────────────────────────────────────────
-  postModalSubmitBtn: {
-    backgroundColor: '#B1A7F0',
-    paddingHorizontal: 18,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  postModalSubmitText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  postImagePreviewWrap: {
-    marginBottom: 12,
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  postImagePreview: {
-    width: '100%',
-    height: 220,
-    borderRadius: 12,
-    backgroundColor: '#F0EBE4',
-  },
-  removePostImageBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removePostImageText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  addPhotoBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#FDE4DE',
-    alignSelf: 'flex-start',
-  },
-  addPhotoBtnText: {
-    fontSize: 14,
-    color: '#B1A7F0',
-    fontWeight: '600',
-  },
-});
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      padding: 24,
+      paddingBottom: 40,
+    },
+    heading: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: c.textSecondary,
+      marginBottom: 24,
+    },
+    statRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginBottom: 36,
+    },
+    statCard: {
+      flex: 1,
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 14,
+      alignItems: 'center',
+      borderTopWidth: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+      elevation: 2,
+      minHeight: 80,
+      justifyContent: 'center',
+    },
+    statSpinner: {
+      marginBottom: 6,
+    },
+    statValue: {
+      fontSize: 24,
+      fontWeight: '800',
+      marginBottom: 6,
+      color: c.textPrimary,
+    },
+    statLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: c.textSecondary,
+      textAlign: 'center',
+      lineHeight: 16,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginBottom: 14,
+    },
+    remindersSection: {
+      marginBottom: 28,
+    },
+    reminderCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderLeftWidth: 4,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      marginBottom: 8,
+      gap: 10,
+    },
+    reminderEmoji: {
+      fontSize: 18,
+    },
+    reminderText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '500',
+      lineHeight: 20,
+    },
+    feedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 8,
+      marginBottom: 14,
+    },
+    createPostButton: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    createPostButtonText: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    createPostContainer: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    postTypeSelector: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 12,
+    },
+    postTypeButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      backgroundColor: c.inputBg,
+    },
+    postTypeButtonActive: {
+      backgroundColor: c.cardBlush,
+    },
+    postTypeText: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    postTypeTextActive: {
+      color: c.primary,
+    },
+    postInput: {
+      backgroundColor: c.inputBg,
+      borderRadius: 12,
+      padding: 12,
+      fontSize: 15,
+      minHeight: 80,
+      textAlignVertical: 'top',
+      marginBottom: 12,
+    },
+    postActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 12,
+    },
+    cancelText: {
+      fontSize: 14,
+      color: c.textMuted,
+    },
+    submitButton: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 20,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    submitButtonDisabled: {
+      backgroundColor: '#d1d5db',
+    },
+    submitButtonText: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    postCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    postHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+    },
+    postAuthorRow: {
+      flexDirection: 'row',
+      gap: 10,
+      alignItems: 'center',
+    },
+    postAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.boyBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    postAvatarText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    postAuthorName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    postTimestamp: {
+      fontSize: 12,
+      color: c.textMuted,
+      marginTop: 1,
+    },
+    postHeaderRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    postBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    postDeleteBtn: {
+      padding: 4,
+    },
+    postDeleteText: {
+      fontSize: 15,
+    },
+    postContent: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: c.textSecondary,
+      marginBottom: 12,
+    },
+    postFooter: {
+      flexDirection: 'row',
+      gap: 20,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: c.inputBg,
+    },
+    postAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    postActionText: {
+      fontSize: 13,
+      color: c.textMuted,
+    },
+    likedText: {
+      color: '#e11d48',
+      fontWeight: '600',
+    },
+    // ── Comments modal ──────────────────────────────────────────────────────────
+    modalSafeArea: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.inputBg,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    modalClose: {
+      fontSize: 18,
+      color: c.textMuted,
+      paddingHorizontal: 4,
+    },
+    commentsList: {
+      flex: 1,
+    },
+    commentsContent: {
+      padding: 20,
+      paddingBottom: 12,
+    },
+    noComments: {
+      textAlign: 'center',
+      color: c.textMuted,
+      fontSize: 15,
+      marginTop: 40,
+    },
+    commentItem: {
+      flexDirection: 'row',
+      gap: 12,
+      marginBottom: 18,
+    },
+    commentAvatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.boyBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+      flexShrink: 0,
+    },
+    commentAvatarText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    commentBody: {
+      flex: 1,
+    },
+    commentAuthor: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginBottom: 2,
+    },
+    commentContent: {
+      fontSize: 14,
+      color: c.textSecondary,
+      lineHeight: 20,
+      marginBottom: 4,
+    },
+    commentTime: {
+      fontSize: 11,
+      color: c.textMuted,
+    },
+    commentInputRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 10,
+      padding: 16,
+      borderTopWidth: 1,
+      borderTopColor: c.inputBg,
+      backgroundColor: c.bg,
+    },
+    commentInput: {
+      flex: 1,
+      backgroundColor: c.inputBg,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      fontSize: 15,
+      maxHeight: 100,
+    },
+    commentSubmit: {
+      backgroundColor: c.primary,
+      borderRadius: 20,
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+    },
+    commentSubmitText: {
+      color: '#fff',
+      fontWeight: '600',
+      fontSize: 14,
+    },
+    emptyFeed: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 32,
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    emptyFeedText: {
+      fontSize: 15,
+      color: c.textMuted,
+      textAlign: 'center',
+    },
+    // ── For You header
+    forYouHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+      marginBottom: 14,
+      gap: 8,
+    },
+    forYouDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: c.blush,
+    },
+    forYouTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    // ── Baby profile card ───────────────────────────────────────────────────────
+    babyCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.cardBlush,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 20,
+      gap: 14,
+      borderLeftWidth: 5,
+      borderLeftColor: c.girlBorder,
+    },
+    babyAvatar: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: c.girlBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    babyAvatarText: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: '#fff',
+    },
+    babyInfo: {
+      flex: 1,
+    },
+    babyName: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: c.textPrimary,
+    },
+    babyAge: {
+      fontSize: 13,
+      color: '#fff',
+      marginTop: 2,
+      fontWeight: '600',
+      textShadowColor: 'rgba(0,0,0,0.75)',
+      textShadowOffset: { width: 0, height: 0 },
+      textShadowRadius: 5,
+    },
+    babyAvatarPhoto: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+    },
+    babyCardChevron: {
+      fontSize: 22,
+      color: '#AEBCB1',
+      fontWeight: '300',
+      marginLeft: 4,
+    },
+    // ── Supplies overview card ──────────────────────────────────────────────────
+    suppliesCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 28,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    suppliesGrid: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    supplyChip: {
+      flex: 1,
+      backgroundColor: c.bgAlt,
+      borderRadius: 12,
+      padding: 12,
+      alignItems: 'center',
+    },
+    supplyChipLow: {
+      backgroundColor: c.supplyLowBg,
+    },
+    supplyChipEmoji: {
+      fontSize: 22,
+      marginBottom: 6,
+    },
+    supplyChipValue: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: c.textSecondary,
+      marginBottom: 3,
+    },
+    supplyChipValueLow: {
+      color: c.supplyLowText,
+    },
+    supplyChipLabel: {
+      fontSize: 9,
+      fontWeight: '600',
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+      textAlign: 'center',
+    },
+    suppliesEmptyHint: {
+      fontSize: 12,
+      color: c.textMuted,
+      textAlign: 'center',
+      marginTop: 10,
+      fontStyle: 'italic',
+    },
+    // ── Report modal ────────────────────────────────────────────────────────────
+    reportPrompt: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginBottom: 16,
+    },
+    reportReasonBtn: {
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      backgroundColor: c.cardHoney,
+      marginBottom: 8,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
+    },
+    reportReasonBtnActive: {
+      borderColor: c.primary,
+      backgroundColor: c.cardBlush,
+    },
+    reportReasonText: {
+      fontSize: 15,
+      color: c.textSecondary,
+      fontWeight: '500',
+    },
+    reportReasonTextActive: {
+      color: c.primary,
+      fontWeight: '700',
+    },
+    reportSubmitBtn: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginTop: 12,
+    },
+    reportSubmitBtnText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 15,
+    },
+    reportDoneContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 32,
+    },
+    reportDoneEmoji: {
+      fontSize: 48,
+      marginBottom: 16,
+    },
+    reportDoneTitle: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: c.textSecondary,
+      marginBottom: 8,
+    },
+    reportDoneBody: {
+      fontSize: 15,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 24,
+    },
+    reportCloseBtn: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 32,
+    },
+    reportCloseBtnText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 15,
+    },
+    // ── Post image (in feed cards) ──────────────────────────────────────────────
+    postImage: {
+      width: '100%',
+      height: 220,
+      borderRadius: 12,
+      marginBottom: 12,
+      backgroundColor: '#F0EBE4',
+    },
+    // ── FAB ────────────────────────────────────────────────────────────────────
+    fab: {
+      position: 'absolute',
+      bottom: 24,
+      right: 24,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: c.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: c.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 10,
+      elevation: 8,
+    },
+    fabIcon: {
+      color: '#fff',
+      fontSize: 30,
+      fontWeight: '300',
+      lineHeight: 34,
+      marginTop: -2,
+    },
+    // ── Create post modal ───────────────────────────────────────────────────────
+    postModalSubmitBtn: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 18,
+      paddingVertical: 7,
+      borderRadius: 20,
+    },
+    postModalSubmitText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 14,
+    },
+    postImagePreviewWrap: {
+      marginBottom: 12,
+      borderRadius: 12,
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    postImagePreview: {
+      width: '100%',
+      height: 220,
+      borderRadius: 12,
+      backgroundColor: '#F0EBE4',
+    },
+    removePostImageBtn: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    removePostImageText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    addPhotoBtn: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      backgroundColor: c.cardBlush,
+      alignSelf: 'flex-start',
+    },
+    addPhotoBtnText: {
+      fontSize: 14,
+      color: c.primary,
+      fontWeight: '600',
+    },
+  });
+}
