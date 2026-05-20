@@ -115,6 +115,8 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
 
   // Edit state
   const [editUsername, setEditUsername] = useState('');
@@ -134,17 +136,21 @@ export default function Profile() {
       setUserEmail(user.email ?? '');
       setUserCreatedAt(user.created_at ?? '');
 
-      const [profileRes, babyRes, postsRes, villagesRes] = await Promise.all([
+      const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
         supabase.from('posts').select('id,content,post_type,created_at,likes').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('user_villages').select('village_id').eq('user_id', user.id),
+        supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', user.id),
+        supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', user.id),
       ]);
 
       setProfile(profileRes.data ?? null);
       setBaby(babyRes.data ?? null);
       setPosts(postsRes.data ?? []);
       setMyVillageIds((villagesRes.data ?? []).map((r: any) => r.village_id));
+      setFollowerCount(followersRes.count ?? 0);
+      setFollowingCount(followingRes.count ?? 0);
     } catch (err: any) {
       console.warn('Profile loadAll error:', err.message);
     } finally {
@@ -448,15 +454,18 @@ export default function Profile() {
                 </View>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <Text style={s.statNum}>{myVillageIds.length}</Text>
-                  <Text style={s.statLbl}>Villages</Text>
+                  <Text style={s.statNum}>{followerCount}</Text>
+                  <Text style={s.statLbl}>Followers</Text>
                 </View>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <Text style={s.statNum} numberOfLines={1} adjustsFontSizeToFit>
-                    {userCreatedAt ? memberSince(userCreatedAt) : '–'}
-                  </Text>
-                  <Text style={s.statLbl}>Member since</Text>
+                  <Text style={s.statNum}>{followingCount}</Text>
+                  <Text style={s.statLbl}>Following</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statItem}>
+                  <Text style={s.statNum}>{myVillageIds.length}</Text>
+                  <Text style={s.statLbl}>Villages</Text>
                 </View>
               </View>
 

@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import BabyProfileSheet from './BabyProfileSheet';
 import PublicProfileSheet from './PublicProfileSheet';
+import SearchSheet from './SearchSheet';
 import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -170,6 +171,7 @@ export default function HomeTab() {
   const [baby, setBaby] = useState<{ name: string; birth_date: string; photo_url: string | null; gender: string | null } | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
     diapers: number | null; diapersLow: boolean;
@@ -659,7 +661,16 @@ export default function HomeTab() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.heading}>{greeting}</Text>
+        <View style={styles.headingRow}>
+          <Text style={styles.heading}>{greeting}</Text>
+          <TouchableOpacity
+            style={styles.searchBtn}
+            onPress={() => setShowSearch(true)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.searchBtnIcon}>🔍</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Baby profile card */}
         {baby && (
@@ -860,6 +871,9 @@ export default function HomeTab() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Search sheet */}
+      <SearchSheet visible={showSearch} onClose={() => setShowSearch(false)} />
 
       {/* Baby profile sheet */}
       <BabyProfileSheet
@@ -1093,12 +1107,31 @@ function makeStyles(c: Colors) {
       padding: 24,
       paddingBottom: 40,
     },
+    headingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 24,
+    },
     heading: {
       fontSize: 26,
       fontWeight: '800',
       color: c.textSecondary,
-      marginBottom: 24,
     },
+    searchBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: c.card,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    searchBtnIcon: { fontSize: 18 },
     statRow: {
       flexDirection: 'row',
       gap: 12,
