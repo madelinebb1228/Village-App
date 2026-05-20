@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 
 import { Village, VILLAGES, CHILD_AGES, DUE_DATE_MONTHS, toVillageId, COUNTRIES, STATES_BY_COUNTRY, CITIES_BY_STATE } from '../lib/villageData';
+import VillageFeedSheet from './VillageFeedSheet';
 
 
 // ─── Quiz questions ───────────────────────────────────────────────────────────
@@ -2893,6 +2894,7 @@ export default function VillageTab() {
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
+  const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
   const [loading, setLoading]           = useState(true);
   const [joining, setJoining]           = useState<string | null>(null);
   const [search, setSearch]             = useState('');
@@ -3092,16 +3094,22 @@ export default function VillageTab() {
                 ];
                 const cc = chipColors[i % chipColors.length];
                 return (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[s.joinedChip, { backgroundColor: cc.bg, borderColor: cc.border }]}
-                    onPress={() => toggleJoin(v.id)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
-                    <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
-                    <Text style={s.joinedChipLeave}>✕</Text>
-                  </TouchableOpacity>
+                  <View key={v.id} style={[s.joinedChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
+                    <TouchableOpacity
+                      style={s.joinedChipBody}
+                      onPress={() => setSelectedVillage(v)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
+                      <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => toggleJoin(v.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={s.joinedChipLeave}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </ScrollView>
@@ -3118,6 +3126,7 @@ export default function VillageTab() {
                 village={v}
                 joining={joining === v.id}
                 onJoin={() => toggleJoin(v.id)}
+                onOpen={() => setSelectedVillage(v)}
               />
             ))}
           </>
@@ -3132,6 +3141,15 @@ export default function VillageTab() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ── Village feed sheet ── */}
+      <VillageFeedSheet
+        village={selectedVillage}
+        visible={selectedVillage !== null}
+        onClose={() => setSelectedVillage(null)}
+        joined={selectedVillage !== null && joinedIds.has(selectedVillage.id)}
+        onToggleJoin={() => selectedVillage && toggleJoin(selectedVillage.id)}
+      />
 
       {/* ── Quiz modal ── */}
       <Modal
@@ -3169,6 +3187,7 @@ export default function VillageTab() {
                   joining={joining === v.id}
                   joined={joinedIds.has(v.id)}
                   onJoin={() => toggleJoin(v.id)}
+                  onOpen={() => setSelectedVillage(v)}
                   fullWidth
                 />
               ))}
@@ -3395,18 +3414,23 @@ function makeLocationPickerStyles(c: Colors) {
 // ─── Village card sub-component ───────────────────────────────────────────────
 
 function VillageCard({
-  village, joining, joined = false, onJoin, fullWidth = false,
+  village, joining, joined = false, onJoin, onOpen, fullWidth = false,
 }: {
   village: Village;
   joining: boolean;
   joined?: boolean;
   onJoin: () => void;
+  onOpen?: () => void;
   fullWidth?: boolean;
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   return (
-    <View style={[s.villageCard, fullWidth && { width: '100%' }]}>
+    <TouchableOpacity
+      style={[s.villageCard, fullWidth && { width: '100%' }]}
+      onPress={onOpen}
+      activeOpacity={onOpen ? 0.78 : 1}
+    >
       <Text style={s.villageEmoji}>{village.emoji}</Text>
       <View style={s.villageInfo}>
         <Text style={s.villageName}>{village.name}</Text>
@@ -3424,7 +3448,7 @@ function VillageCard({
             </Text>
         }
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -3529,9 +3553,10 @@ function makeStyles(c: Colors) {
       borderColor: c.joinedBorder,
       maxWidth: 180,
     },
+    joinedChipBody: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
     joinedChipEmoji: { fontSize: 18 },
     joinedChipName: { fontSize: 13, fontWeight: '700', color: c.textPrimary, flex: 1 },
-    joinedChipLeave: { fontSize: 11, color: c.textMuted },
+    joinedChipLeave: { fontSize: 11, color: c.textMuted, paddingLeft: 4 },
 
     // ── Village card
     villageCard: {

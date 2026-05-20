@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import BabyProfileSheet from './BabyProfileSheet';
 import PublicProfileSheet from './PublicProfileSheet';
 import SearchSheet from './SearchSheet';
+import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ interface Post {
   likes: number;
   created_at: string;
   image_url?: string | null;
+  village_id?: string | null;
 }
 
 interface Comment {
@@ -833,6 +835,13 @@ export default function HomeTab() {
                 )}
               </View>
             </View>
+            {post.village_id && VILLAGE_MAP[post.village_id] && (
+              <View style={styles.villageTag}>
+                <Text style={styles.villageTagText}>
+                  {VILLAGE_MAP[post.village_id].emoji} {VILLAGE_MAP[post.village_id].name}
+                </Text>
+              </View>
+            )}
             {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
             {post.image_url ? (
               <Image
@@ -1340,6 +1349,21 @@ function makeStyles(c: Colors) {
     },
     postDeleteText: {
       fontSize: 15,
+    },
+    villageTag: {
+      alignSelf: 'flex-start',
+      backgroundColor: c.cardLavender,
+      borderRadius: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: c.lavender,
+    },
+    villageTagText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.primary,
     },
     postContent: {
       fontSize: 15,
