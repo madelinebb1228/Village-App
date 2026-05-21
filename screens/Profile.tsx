@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { VILLAGE_MAP } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
+import BabyJournal from './BabyJournal';
 import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ interface Post {
   post_type: 'text' | 'milestone' | 'question';
   created_at: string;
   likes: number;
+  image_url?: string | null;
 }
 
 const PARENT_ROLES = ['Mom', 'Dad', 'Grandparent', 'Caregiver', 'Other'];
@@ -117,6 +119,7 @@ export default function Profile() {
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [profileTab, setProfileTab] = useState<'posts' | 'journal'>('posts');
 
   // Edit state
   const [editUsername, setEditUsername] = useState('');
@@ -139,7 +142,7 @@ export default function Profile() {
       const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
-        supabase.from('posts').select('id,content,post_type,created_at,likes').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('posts').select('id,content,post_type,created_at,likes,image_url').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('user_villages').select('village_id').eq('user_id', user.id),
         supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', user.id),
         supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', user.id),
@@ -472,11 +475,19 @@ export default function Profile() {
               {/* My villages chips — shown only when public */}
               {myVillageIds.length > 0 && profile?.show_villages !== false && (
                 <View style={s.villageChipsWrap}>
-                  {myVillageIds.slice(0, 6).map(id => {
+                  {myVillageIds.slice(0, 6).map((id, i) => {
                     const v = VILLAGE_MAP[id];
                     if (!v) return null;
+                    const chipColors = [
+                      { bg: c.cardLavender, border: c.lavender },
+                      { bg: c.cardBlue,     border: c.blue },
+                      { bg: c.cardBlush,    border: c.blush },
+                      { bg: c.cardHoney,    border: c.honey },
+                      { bg: c.cardSage,     border: c.sage },
+                    ];
+                    const cc = chipColors[i % chipColors.length];
                     return (
-                      <View key={id} style={s.villageChip}>
+                      <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
                         <Text style={s.villageChipText}>{v.emoji} {v.name.replace(' Village', '').replace(' Parents', '')}</Text>
                       </View>
                     );
@@ -538,45 +549,76 @@ export default function Profile() {
           </TouchableOpacity>
         )}
 
-        {/* ── Your Posts ── */}
-        <Text style={[s.sectionTitle, { marginTop: 28 }]}>Your Posts</Text>
-        {posts.length === 0 ? (
-          <View style={s.emptyPosts}>
-            <Text style={s.emptyPostsText}>No posts yet — share something with your village!</Text>
-          </View>
-        ) : (
-          posts.map(post => (
-            <View key={post.id} style={[
-              s.postCard,
-              {
-                borderLeftWidth: 4,
-                borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
-                  : post.post_type === 'question' ? c.postQuestion
-                  : c.postText,
-              },
-            ]}>
-              <View style={s.postCardTop}>
-                <View style={[
-                  s.postTypeBadge,
-                  post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
-                  post.post_type === 'question' && { backgroundColor: c.cardBlue },
-                  post.post_type === 'text' && { backgroundColor: c.cardBlush },
-                ]}>
-                  <Text style={s.postTypeBadgeText}>
-                    {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
-                  <Text style={s.postDeleteIcon}>🗑</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={s.postContent}>{post.content}</Text>
-              <View style={s.postCardFooter}>
-                <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                <Text style={s.postLikes}>❤️ {post.likes}</Text>
-              </View>
+        {/* ── Posts / Journal tab toggle ── */}
+        <View style={[s.tabToggleRow, { marginTop: 28 }]}>
+          <TouchableOpacity
+            style={[s.tabToggleBtn, profileTab === 'posts' && s.tabToggleBtnActive]}
+            onPress={() => setProfileTab('posts')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.tabToggleText, profileTab === 'posts' && s.tabToggleTextActive]}>
+              💬 Your Posts
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
+            onPress={() => setProfileTab('journal')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
+              📖 Baby Journal
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {profileTab === 'posts' ? (
+          posts.length === 0 ? (
+            <View style={s.emptyPosts}>
+              <Text style={s.emptyPostsText}>No posts yet — share something with your village!</Text>
             </View>
-          ))
+          ) : (
+            posts.map(post => (
+              <View key={post.id} style={[
+                s.postCard,
+                {
+                  borderLeftWidth: 4,
+                  borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
+                    : post.post_type === 'question' ? c.postQuestion
+                    : c.postText,
+                },
+              ]}>
+                <View style={s.postCardTop}>
+                  <View style={[
+                    s.postTypeBadge,
+                    post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
+                    post.post_type === 'question' && { backgroundColor: c.cardBlue },
+                    post.post_type === 'text' && { backgroundColor: c.cardBlush },
+                  ]}>
+                    <Text style={s.postTypeBadgeText}>
+                      {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
+                    <Text style={s.postDeleteIcon}>🗑</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={s.postContent}>{post.content}</Text>
+                {post.image_url ? (
+                  <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
+                ) : null}
+                <View style={s.postCardFooter}>
+                  <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+                  <Text style={s.postLikes}>❤️ {post.likes}</Text>
+                </View>
+              </View>
+            ))
+          )
+        ) : (
+          <BabyJournal
+            userId={profile?.id ?? null}
+            babyId={baby?.id ?? null}
+            babyName={baby?.name ?? null}
+          />
         )}
 
         {/* ── Sign out ── */}
@@ -863,6 +905,25 @@ function makeStyles(c: Colors) {
     marginBottom: 12,
   },
 
+  // ── Posts / Journal tab toggle
+  tabToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: c.inputBg,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 20,
+  },
+  tabToggleBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 11, alignItems: 'center',
+  },
+  tabToggleBtnActive: {
+    backgroundColor: c.card,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
+  },
+  tabToggleText: { fontSize: 13, fontWeight: '600', color: c.textMuted },
+  tabToggleTextActive: { color: c.textPrimary },
+
   // ── Baby card
   babyCard: {
     backgroundColor: c.cardSage,
@@ -991,6 +1052,13 @@ function makeStyles(c: Colors) {
     fontSize: 14,
     lineHeight: 21,
     color: c.textSecondary,
+    marginBottom: 10,
+  },
+  postImage: {
+    width: 160,
+    height: 210,
+    alignSelf: 'center',
+    borderRadius: 12,
     marginBottom: 10,
   },
   postCardFooter: {

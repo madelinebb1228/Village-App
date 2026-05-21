@@ -2909,6 +2909,11 @@ export default function VillageTab() {
   const [locCity, setLocCity]             = useState('');
   const [locSearch, setLocSearch]         = useState('');
 
+  const [showRequestModal, setShowRequestModal]   = useState(false);
+  const [requestText, setRequestText]             = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [requestDone, setRequestDone]             = useState(false);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -2986,6 +2991,26 @@ export default function VillageTab() {
     setQuizDone(true);
   }
 
+  async function submitVillageRequest() {
+    const trimmed = requestText.trim();
+    if (!trimmed) return;
+    setSubmittingRequest(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+      const { error } = await supabase
+        .from('village_requests')
+        .insert({ user_id: user.id, description: trimmed });
+      if (error) throw error;
+      setRequestDone(true);
+      setRequestText('');
+    } catch (e: any) {
+      Alert.alert('Could not submit', e.message ?? 'Please try again.');
+    } finally {
+      setSubmittingRequest(false);
+    }
+  }
+
   async function joinAllSuggested() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -3049,6 +3074,79 @@ export default function VillageTab() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Request a village banner */}
+        <TouchableOpacity
+          style={s.requestBanner}
+          onPress={() => { setRequestDone(false); setShowRequestModal(true); }}
+          activeOpacity={0.82}
+        >
+          <Text style={s.requestBannerEmoji}>💌</Text>
+          <Text style={s.requestBannerText}>Don't see your village? Request one</Text>
+          <Text style={s.requestBannerArrow}>›</Text>
+        </TouchableOpacity>
+
+        {/* Request modal */}
+        <Modal visible={showRequestModal} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={s.modalSafe}>
+            <View style={s.modalHeader}>
+              <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowRequestModal(false)}>
+                <Text style={s.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Village</Text>
+              <View style={s.modalCloseBtn} />
+            </View>
+
+            <ScrollView contentContainerStyle={s.quizContent} keyboardShouldPersistTaps="handled">
+              {requestDone ? (
+                <View style={{ alignItems: 'center', paddingVertical: 48 }}>
+                  <Text style={{ fontSize: 48, marginBottom: 16 }}>🎉</Text>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: c.textPrimary, marginBottom: 8, textAlign: 'center' }}>
+                    Request sent!
+                  </Text>
+                  <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 22 }}>
+                    Thanks for the suggestion. We'll review it and may add it as a new village soon.
+                  </Text>
+                  <TouchableOpacity
+                    style={[s.joinBtn, { marginTop: 32, paddingHorizontal: 28, paddingVertical: 12 }]}
+                    onPress={() => setShowRequestModal(false)}
+                  >
+                    <Text style={s.joinBtnText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <Text style={[s.questionText, { marginBottom: 6 }]}>What village is missing?</Text>
+                  <Text style={s.questionSub}>
+                    Describe the community you'd love to see — e.g. "Moms of toddlers in Austin, TX" or "Bilingual parenting".
+                  </Text>
+                  <TextInput
+                    style={s.requestInput}
+                    placeholder="Describe your village idea..."
+                    placeholderTextColor={c.textMuted}
+                    value={requestText}
+                    onChangeText={setRequestText}
+                    multiline
+                    maxLength={300}
+                    textAlignVertical="top"
+                  />
+                  <Text style={s.requestCharCount}>{requestText.length}/300</Text>
+                  <TouchableOpacity
+                    style={[s.joinBtn, { paddingVertical: 14, borderRadius: 14, opacity: requestText.trim() ? 1 : 0.45 }]}
+                    onPress={submitVillageRequest}
+                    disabled={submittingRequest || !requestText.trim()}
+                    activeOpacity={0.8}
+                  >
+                    {submittingRequest
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={s.joinBtnText}>Send Request</Text>
+                    }
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
 
         {/* Find Your Villages quiz card */}
         {!quizDone && !search && (
@@ -3511,6 +3609,35 @@ function makeStyles(c: Colors) {
     quizCardTitle: { fontSize: 17, fontWeight: '800', color: c.textSecondary, marginBottom: 4 },
     quizCardSub: { fontSize: 13, color: c.textMuted, lineHeight: 18 },
     quizCardArrow: { fontSize: 22, color: c.quizCardBorder, fontWeight: '600' },
+
+    // ── Request banner
+    requestBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.cardBlush,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      marginBottom: 16,
+      borderWidth: 1.5,
+      borderColor: c.blush,
+      gap: 10,
+    },
+    requestBannerEmoji: { fontSize: 20 },
+    requestBannerText: { flex: 1, fontSize: 14, fontWeight: '600', color: c.textSecondary },
+    requestBannerArrow: { fontSize: 20, color: c.textMuted, fontWeight: '600' },
+    requestInput: {
+      backgroundColor: c.card,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: c.separator,
+      padding: 14,
+      fontSize: 15,
+      color: c.textPrimary,
+      minHeight: 120,
+      marginBottom: 8,
+    },
+    requestCharCount: { fontSize: 12, color: c.textMuted, textAlign: 'right', marginBottom: 24 },
 
     // ── Retake quiz row
     retakeRow: {

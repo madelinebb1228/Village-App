@@ -36,7 +36,7 @@ export const STATES_BY_COUNTRY: Record<string, string[]> = {
 };
 
 export const CITIES_BY_STATE: Record<string, string[]> = {
-  'Alabama': ['Birmingham','Montgomery','Huntsville','Mobile'],
+  'Alabama': ['Auburn','Birmingham','Huntsville','Mobile','Montgomery','Pelham','Spanish Fort','Tuscaloosa'],
   'Alaska': ['Anchorage','Fairbanks','Juneau'],
   'Arizona': ['Phoenix','Tucson','Mesa','Scottsdale','Chandler'],
   'Arkansas': ['Little Rock','Fort Smith','Fayetteville'],

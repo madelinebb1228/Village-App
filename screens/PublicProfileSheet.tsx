@@ -161,24 +161,15 @@ function makeStyles(c: Colors) {
       gap: 6,
     },
     villageChip: {
-      backgroundColor: c.cardHoney,
       borderRadius: 12,
       paddingHorizontal: 10,
       paddingVertical: 5,
       borderWidth: 1,
-      borderColor: c.sage,
-    },
-    villageChipCommon: {
-      backgroundColor: c.cardSage,
-      borderColor: c.editBtn,
     },
     villageChipText: {
       fontSize: 12,
       color: c.textSecondary,
       fontWeight: '600',
-    },
-    villageChipTextCommon: {
-      color: c.textSecondary,
     },
 
     privateNote: {
@@ -342,13 +333,20 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
                 </View>
 
                 <View style={s.villageChipsWrap}>
-                  {theirVillageIds.map(id => {
+                  {theirVillageIds.map((id, i) => {
                     const v = VILLAGE_MAP[id];
                     if (!v) return null;
-                    const isCommon = commonIds.includes(id);
+                    const chipColors = [
+                      { bg: c.cardLavender, border: c.lavender },
+                      { bg: c.cardBlue,     border: c.blue },
+                      { bg: c.cardBlush,    border: c.blush },
+                      { bg: c.cardHoney,    border: c.honey },
+                      { bg: c.cardSage,     border: c.sage },
+                    ];
+                    const cc = chipColors[i % chipColors.length];
                     return (
-                      <View key={id} style={[s.villageChip, isCommon && s.villageChipCommon]}>
-                        <Text style={[s.villageChipText, isCommon && s.villageChipTextCommon]}>
+                      <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
+                        <Text style={s.villageChipText}>
                           {v.emoji} {v.name.replace(' Village', '').replace(' Parents', '')}
                         </Text>
                       </View>

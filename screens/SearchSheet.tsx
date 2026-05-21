@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import PublicProfileSheet from './PublicProfileSheet';
+import UserAvatar from '../components/UserAvatar';
 
 interface SearchProfile {
   id: string;
@@ -301,9 +302,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                     activeOpacity={0.78}
                   >
                     <View style={s.postCardHeader}>
-                      <View style={s.postAvatar}>
-                        <Text style={s.postAvatarText}>{post.author.charAt(0).toUpperCase()}</Text>
-                      </View>
+                      <UserAvatar userId={post.user_id} name={post.author} size={34} />
                       <View style={{ flex: 1 }}>
                         <Text style={s.postAuthor}>{post.author}</Text>
                         <Text style={s.postTime}>{getTimeAgo(post.created_at)}</Text>

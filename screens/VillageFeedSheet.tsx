@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { Village } from '../lib/villageData';
 import PublicProfileSheet from './PublicProfileSheet';
+import UserAvatar from '../components/UserAvatar';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ interface Post {
 
 interface Comment {
   id: string;
+  user_id: string;
   author: string;
   content: string;
   created_at: string;
@@ -321,9 +323,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
                       onPress={() => setProfileUserId(post.user_id)}
                       activeOpacity={0.7}
                     >
-                      <View style={s.postAvatar}>
-                        <Text style={s.postAvatarText}>{post.author.charAt(0).toUpperCase()}</Text>
-                      </View>
+                      <UserAvatar userId={post.user_id} name={post.author} size={36} />
                       <View>
                         <Text style={s.postAuthorName}>{post.author}</Text>
                         <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
@@ -393,9 +393,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
               <Text style={s.noComments}>No comments yet. Start the conversation!</Text>
             ) : comments.map(cm => (
               <View key={cm.id} style={s.commentItem}>
-                <View style={s.commentAvatar}>
-                  <Text style={s.commentAvatarText}>{cm.author.charAt(0).toUpperCase()}</Text>
-                </View>
+                <UserAvatar userId={cm.user_id} name={cm.author} size={30} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.commentAuthor}>{cm.author}</Text>
                   <Text style={s.commentContent}>{cm.content}</Text>

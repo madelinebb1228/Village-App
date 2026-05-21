@@ -18,9 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import UserAvatar from '../components/UserAvatar';
 import BabyProfileSheet from './BabyProfileSheet';
 import PublicProfileSheet from './PublicProfileSheet';
 import SearchSheet from './SearchSheet';
+import QAScreen from './QAScreen';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 
@@ -40,6 +42,7 @@ interface Post {
 
 interface Comment {
   id: string;
+  user_id: string;
   author: string;
   content: string;
   created_at: string;
@@ -179,6 +182,11 @@ export default function HomeTab() {
     diapers: number | null; diapersLow: boolean;
     milkOz: number;
   } | null>(null);
+  const [followedQuestions, setFollowedQuestions] = useState<Array<{
+    id: string; author: string; content: string; topic: string;
+    vote_score: number; answer_count: number; created_at: string;
+  }>>([]);
+  const [qaDetailId, setQaDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPosts();
@@ -624,8 +632,28 @@ export default function HomeTab() {
         }
       }
 
+      async function fetchFollowedQuestions() {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || !isActive) return;
+        const { data: followRows } = await supabase
+          .from('qa_follows')
+          .select('question_id')
+          .eq('user_id', user.id);
+        if (!followRows || followRows.length === 0) { if (isActive) setFollowedQuestions([]); return; }
+        const ids = followRows.map((r: any) => r.question_id);
+        const { data: qRows } = await supabase
+          .from('qa_questions')
+          .select('id, author, content, topic, vote_score, answer_count, created_at')
+          .in('id', ids)
+          .order('created_at', { ascending: false });
+        if (isActive) setFollowedQuestions((qRows as any[]) ?? []);
+      }
+
       fetchStats();
       fetchReminders();
+      fetchFollowedQuestions();
+      fetchPosts();
+      fetchLikedPosts();
 
       return () => {
         isActive = false;
@@ -786,6 +814,29 @@ export default function HomeTab() {
           </View>
         )}
 
+        {/* Followed Q+A questions */}
+        {followedQuestions.length > 0 && (
+          <View style={styles.followedQSection}>
+            <Text style={styles.sectionTitle}>Questions You're Following</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.followedQScroll}>
+              {followedQuestions.map(q => (
+                <TouchableOpacity
+                  key={q.id}
+                  style={styles.followedQCard}
+                  onPress={() => setQaDetailId(q.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.followedQContent} numberOfLines={3}>{q.content}</Text>
+                  <View style={styles.followedQMeta}>
+                    <Text style={styles.followedQMetaText}>💬 {q.answer_count}</Text>
+                    <Text style={styles.followedQMetaText}>⬆ {q.vote_score}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* For You feed */}
         <View style={styles.forYouHeader}>
           <View style={styles.forYouDot} />
@@ -811,9 +862,7 @@ export default function HomeTab() {
                 onPress={() => setPublicProfileUserId(post.user_id)}
                 activeOpacity={0.7}
               >
-                <View style={styles.postAvatar}>
-                  <Text style={styles.postAvatarText}>{post.author.charAt(0)}</Text>
-                </View>
+                <UserAvatar userId={post.user_id} name={post.author} size={36} />
                 <View>
                   <Text style={styles.postAuthorName}>{post.author}</Text>
                   <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
@@ -918,9 +967,7 @@ export default function HomeTab() {
             ) : (
               comments.map(cm => (
                 <View key={cm.id} style={styles.commentItem}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>{cm.author.charAt(0).toUpperCase()}</Text>
-                  </View>
+                  <UserAvatar userId={cm.user_id} name={cm.author} size={32} />
                   <View style={styles.commentBody}>
                     <Text style={styles.commentAuthor}>{cm.author}</Text>
                     <Text style={styles.commentContent}>{cm.content}</Text>
@@ -1014,6 +1061,21 @@ export default function HomeTab() {
       >
         <Text style={styles.fabIcon}>＋</Text>
       </TouchableOpacity>
+
+      {/* Q+A detail modal */}
+      <Modal
+        visible={qaDetailId !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setQaDetailId(null)}
+      >
+        {qaDetailId && (
+          <QAScreen
+            initialQuestionId={qaDetailId}
+            onBack={() => setQaDetailId(null)}
+          />
+        )}
+      </Modal>
 
       {/* Create post modal */}
       <Modal
@@ -1707,10 +1769,33 @@ function makeStyles(c: Colors) {
       fontWeight: '700',
       fontSize: 15,
     },
+    // ── Followed Q+A questions ─────────────────────────────────────────────────
+    followedQSection: { marginBottom: 16 },
+    followedQScroll: { paddingHorizontal: 4, gap: 10 },
+    followedQCard: {
+      width: 200,
+      backgroundColor: c.cardLavender,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1.5,
+      borderColor: c.lavender,
+      gap: 8,
+      justifyContent: 'space-between',
+    },
+    followedQContent: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: c.textPrimary,
+      lineHeight: 19,
+    },
+    followedQMeta: { flexDirection: 'row', gap: 10 },
+    followedQMetaText: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
+
     // ── Post image (in feed cards) ──────────────────────────────────────────────
     postImage: {
-      width: '100%',
-      height: 220,
+      width: 160,
+      height: 210,
+      alignSelf: 'center',
       borderRadius: 12,
       marginBottom: 12,
       backgroundColor: '#F0EBE4',

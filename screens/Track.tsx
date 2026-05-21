@@ -8,6 +8,10 @@ import { supabase } from '../lib/supabase';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
+import MilestoneTracker from './MilestoneTracker';
+import VaccineTracker from './VaccineTracker';
+import NutritionTracker from './NutritionTracker';
+import GrowthTracker from './GrowthTracker';
 import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
@@ -719,8 +723,38 @@ export default function Track() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [saving,      setSaving]      = useState(false);
-  const [babyId,      setBabyId]      = useState<string | null>(null);
-  const [userId,      setUserId]      = useState<string | null>(null);
+  const [babyId,        setBabyId]        = useState<string | null>(null);
+  const [userId,        setUserId]        = useState<string | null>(null);
+  const [babyBirthDate, setBabyBirthDate] = useState<string | null>(null);
+  const [babyGender,    setBabyGender]    = useState<string | null>(null);
+
+  const scrollRef    = useRef<ScrollView>(null);
+  const sectionY     = useRef<Record<string, number>>({});
+  const sectionRefs  = useRef<Record<string, View | null>>({});
+
+  const scrollToSection = useCallback((key: string) => {
+    const view = sectionRefs.current[key];
+    if (!view) {
+      const y = sectionY.current[key];
+      if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
+      return;
+    }
+    try {
+      (view as any).measureLayout(
+        scrollRef.current as any,
+        (_x: number, y: number) => {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+        },
+        () => {
+          const y = sectionY.current[key];
+          if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
+        },
+      );
+    } catch {
+      const y = sectionY.current[key];
+      if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
+    }
+  }, []);
   const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
   const [pumpChartKey,      setPumpChartKey]       = useState(0);
   const [editingId,         setEditingId]          = useState<string | null>(null);
@@ -780,8 +814,12 @@ export default function Track() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       setUserId(user.id);
-      supabase.from('babies').select('id').eq('user_id', user.id).limit(1).maybeSingle()
-        .then(({ data }) => setBabyId(data?.id ?? null));
+      supabase.from('babies').select('id,birth_date,gender').eq('user_id', user.id).limit(1).maybeSingle()
+        .then(({ data }) => {
+          setBabyId(data?.id ?? null);
+          setBabyBirthDate(data?.birth_date ?? null);
+          setBabyGender(data?.gender ?? null);
+        });
     });
   }, []);
 
@@ -1300,12 +1338,46 @@ export default function Track() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}
+      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         <Text style={styles.heading}>Track</Text>
 
+        {/* ── Quick nav */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginBottom: 20, marginHorizontal: -4 }}
+          contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
+        >
+          {([
+            { key: 'logging',    label: '📋 Logging' },
+            { key: 'supplies',   label: '🧴 Supplies' },
+            { key: 'milestones', label: '⭐ Milestones' },
+            { key: 'vaccines',   label: '💉 Vaccines' },
+            { key: 'growth',     label: '📈 Growth' },
+            { key: 'nutrition',  label: '💧 Nutrition' },
+            { key: 'timeline',   label: '🕐 Timeline' },
+          ] as const).map(sec => (
+            <TouchableOpacity
+              key={sec.key}
+              onPress={() => scrollToSection(sec.key)}
+              style={{
+                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }}>{sec.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         {/* ── Main buttons */}
-        <View style={styles.buttonGroup}>
+        <View
+          style={styles.buttonGroup}
+          ref={ref => { sectionRefs.current['logging'] = ref; }}
+          onLayout={e => { sectionY.current['logging'] = e.nativeEvent.layout.y; }}
+        >
           {mainButtons.map(btn => (
             <TouchableOpacity key={btn.type}
               style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
@@ -1323,10 +1395,37 @@ export default function Track() {
         <PumpingChartCard key={pumpChartKey} userId={userId} />
 
         {/* ── Supplies */}
-        <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
+        <View ref={ref => { sectionRefs.current['supplies'] = ref; }} onLayout={e => { sectionY.current['supplies'] = e.nativeEvent.layout.y; }}>
+          <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
+        </View>
+
+        {/* ── Development Tracker */}
+        <View ref={ref => { sectionRefs.current['milestones'] = ref; }} onLayout={e => { sectionY.current['milestones'] = e.nativeEvent.layout.y; }}>
+          <MilestoneTracker userId={userId} />
+        </View>
+
+        {/* ── Vaccines & Appointments */}
+        <View ref={ref => { sectionRefs.current['vaccines'] = ref; }} onLayout={e => { sectionY.current['vaccines'] = e.nativeEvent.layout.y; }}>
+          <VaccineTracker userId={userId} />
+        </View>
+
+        {/* ── Growth Tracker */}
+        <View ref={ref => { sectionRefs.current['growth'] = ref; }} onLayout={e => { sectionY.current['growth'] = e.nativeEvent.layout.y; }}>
+          <GrowthTracker
+            userId={userId}
+            babyId={babyId}
+            babyBirthDate={babyBirthDate}
+            babyGender={babyGender}
+          />
+        </View>
+
+        {/* ── Nutrition & Hydration */}
+        <View ref={ref => { sectionRefs.current['nutrition'] = ref; }} onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}>
+          <NutritionTracker userId={userId} />
+        </View>
 
         {/* ── Timeline */}
-        <View style={styles.timelineHeader}>
+        <View style={styles.timelineHeader} onLayout={e => { sectionY.current['timeline'] = e.nativeEvent.layout.y; }}>
           <Text style={styles.sectionTitle}>Timeline</Text>
           {refreshing && <ActivityIndicator size="small" color={c.trackFeed} />}
         </View>
