@@ -12,6 +12,7 @@ import MilestoneTracker from './MilestoneTracker';
 import VaccineTracker from './VaccineTracker';
 import NutritionTracker from './NutritionTracker';
 import GrowthTracker from './GrowthTracker';
+import AllergenTracker from './AllergenTracker';
 import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
@@ -1356,6 +1357,7 @@ export default function Track() {
             { key: 'vaccines',   label: '💉 Vaccines' },
             { key: 'growth',     label: '📈 Growth' },
             { key: 'nutrition',  label: '💧 Nutrition' },
+            { key: 'allergens',  label: '🚨 Allergens' },
             { key: 'timeline',   label: '🕐 Timeline' },
           ] as const).map(sec => (
             <TouchableOpacity
@@ -1422,6 +1424,11 @@ export default function Track() {
         {/* ── Nutrition & Hydration */}
         <View ref={ref => { sectionRefs.current['nutrition'] = ref; }} onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}>
           <NutritionTracker userId={userId} />
+        </View>
+
+        {/* ── Allergen Tracker */}
+        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
+          <AllergenTracker />
         </View>
 
         {/* ── Timeline */}

@@ -10,10 +10,22 @@ import {
 import { useColors, Colors } from '../lib/theme';
 import QAScreen from './QAScreen';
 import LocalServicesScreen from './LocalServicesScreen';
+import BabyNameFinder from './BabyNameFinder';
+import RecipesScreen from './RecipesScreen';
+import BabyFoodChart from './BabyFoodChart';
+import ProductReviewsScreen from './ProductReviewsScreen';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
 const RESOURCES = [
+  {
+    id: 'babynames',
+    emoji: '🌸',
+    title: 'Baby Name Finder',
+    description: 'Browse hundreds of names with meanings, origins, and style tags',
+    bg: (c: Colors) => c.cardBlush,
+    border: (c: Colors) => c.blush,
+  },
   {
     id: 'qa',
     emoji: '💬',
@@ -37,6 +49,38 @@ const RESOURCES = [
     description: 'Find pediatricians, lactation consultants, and more near you',
     bg: (c: Colors) => c.cardBlush,
     border: (c: Colors) => c.blush,
+  },
+  {
+    id: 'product_reviews',
+    emoji: '⭐',
+    title: 'Product Reviews',
+    description: 'Community-rated strollers, car seats, pumps, monitors, and more',
+    bg: (c: Colors) => c.cardLavender,
+    border: (c: Colors) => c.lavender,
+  },
+  {
+    id: 'food_chart',
+    emoji: '🍼',
+    title: 'What Can My Baby Eat?',
+    description: 'Age-by-age food guide with prep tips, allergen info, and safety notes',
+    bg: (c: Colors) => c.cardSage,
+    border: (c: Colors) => c.sage,
+  },
+  {
+    id: 'wic_recipes',
+    emoji: '🧡',
+    title: 'WIC Recipes',
+    description: 'Community recipes using WIC-eligible foods — share and upvote favorites',
+    bg: (c: Colors) => c.cardHoney,
+    border: (c: Colors) => c.honey,
+  },
+  {
+    id: 'weaning_recipes',
+    emoji: '🥣',
+    title: 'Weaning Recipes',
+    description: 'First foods, purees, and soft meals for babies 4–12+ months',
+    bg: (c: Colors) => c.cardSage,
+    border: (c: Colors) => c.sage,
   },
   {
     id: 'emergency',
@@ -114,12 +158,32 @@ export default function ResourcesTab() {
   const s = styles(c);
   const [selected, setSelected] = useState<ResourceId | null>(null);
 
+  if (selected === 'babynames') {
+    return <BabyNameFinder onBack={() => setSelected(null)} />;
+  }
+
   if (selected === 'qa') {
     return <QAScreen onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'local') {
     return <LocalServicesScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'product_reviews') {
+    return <ProductReviewsScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'food_chart') {
+    return <BabyFoodChart onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'wic_recipes') {
+    return <RecipesScreen category="wic" onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'weaning_recipes') {
+    return <RecipesScreen category="weaning" onBack={() => setSelected(null)} />;
   }
 
   if (selected) {
