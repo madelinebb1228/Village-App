@@ -15,6 +15,8 @@ import RecipesScreen from './RecipesScreen';
 import BabyFoodChart from './BabyFoodChart';
 import ProductReviewsScreen from './ProductReviewsScreen';
 import ParentingAZ from './ParentingAZ';
+import MomGroupDirectory from './MomGroupDirectory';
+import ParentMarketplace from './ParentMarketplace';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -24,6 +26,22 @@ const RESOURCES = [
     emoji: '🌸',
     title: 'Baby Name Finder',
     description: 'Browse hundreds of names with meanings, origins, and style tags',
+    bg: (c: Colors) => c.cardBlush,
+    border: (c: Colors) => c.blush,
+  },
+  {
+    id: 'marketplace',
+    emoji: '🛍️',
+    title: 'Parent Marketplace',
+    description: 'Buy and sell gently used baby gear with parents in your city',
+    bg: (c: Colors) => c.cardHoney,
+    border: (c: Colors) => c.honey,
+  },
+  {
+    id: 'mom_groups',
+    emoji: '👩‍👧',
+    title: 'Mom Group Directory',
+    description: 'Find local meetups, online communities, and support groups near you',
     bg: (c: Colors) => c.cardBlush,
     border: (c: Colors) => c.blush,
   },
@@ -169,6 +187,14 @@ export default function ResourcesTab() {
 
   if (selected === 'babynames') {
     return <BabyNameFinder onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'marketplace') {
+    return <ParentMarketplace onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'mom_groups') {
+    return <MomGroupDirectory onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'parenting_az') {
