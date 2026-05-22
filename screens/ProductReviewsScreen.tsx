@@ -697,18 +697,30 @@ export default function ProductReviewsScreen({ onBack }: { onBack: () => void })
   const searchResults = useMemo(() => {
     if (!isSearching) return [];
     const q = query.toLowerCase();
-    return PRODUCTS.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.brand.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
-      CATEGORIES.find(c => c.id === p.category)?.name.toLowerCase().includes(q)
-    );
-  }, [query, isSearching]);
+    return PRODUCTS
+      .filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        CATEGORIES.find(c => c.id === p.category)?.name.toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        const scoreA = (votes[a.id]?.up ?? 0) - (votes[a.id]?.down ?? 0);
+        const scoreB = (votes[b.id]?.up ?? 0) - (votes[b.id]?.down ?? 0);
+        return scoreB - scoreA;
+      });
+  }, [query, isSearching, votes]);
 
   // ── Category products ─────────────────────────────────────────────────────
 
   const categoryProducts = selectedCat
-    ? PRODUCTS.filter(p => p.category === selectedCat)
+    ? [...PRODUCTS]
+        .filter(p => p.category === selectedCat)
+        .sort((a, b) => {
+          const scoreA = (votes[a.id]?.up ?? 0) - (votes[a.id]?.down ?? 0);
+          const scoreB = (votes[b.id]?.up ?? 0) - (votes[b.id]?.down ?? 0);
+          return scoreB - scoreA;
+        })
     : [];
   const selectedCategory = CATEGORIES.find(c => c.id === selectedCat);
 

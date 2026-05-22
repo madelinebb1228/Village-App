@@ -14,6 +14,7 @@ import BabyNameFinder from './BabyNameFinder';
 import RecipesScreen from './RecipesScreen';
 import BabyFoodChart from './BabyFoodChart';
 import ProductReviewsScreen from './ProductReviewsScreen';
+import ParentingAZ from './ParentingAZ';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -25,6 +26,14 @@ const RESOURCES = [
     description: 'Browse hundreds of names with meanings, origins, and style tags',
     bg: (c: Colors) => c.cardBlush,
     border: (c: Colors) => c.blush,
+  },
+  {
+    id: 'parenting_az',
+    emoji: '📖',
+    title: 'Parenting A–Z',
+    description: 'Plain-English explanations of methods, terms, and techniques every parent should know',
+    bg: (c: Colors) => c.cardBlue,
+    border: (c: Colors) => c.blue,
   },
   {
     id: 'qa',
@@ -160,6 +169,10 @@ export default function ResourcesTab() {
 
   if (selected === 'babynames') {
     return <BabyNameFinder onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'parenting_az') {
+    return <ParentingAZ onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'qa') {
