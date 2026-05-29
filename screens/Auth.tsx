@@ -60,14 +60,14 @@ export default function Auth() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.logo}>Village</Text>
-          <Text style={styles.tagline}>Connect with your community</Text>
+          <Text style={styles.logo}>Parent Patch</Text>
+          <Text style={styles.tagline}>Track · Connect · Support · Grow</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
           <Text style={styles.subtitle}>
-            {isSignUp ? 'Join Village today' : 'Sign in to continue'}
+            {isSignUp ? 'Join Parent Patch today' : 'Sign in to continue'}
           </Text>
 
           <View style={styles.inputGroup}>

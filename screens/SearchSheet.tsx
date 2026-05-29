@@ -216,7 +216,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
               <Text style={s.hintEmoji}>{tab === 'people' ? '👋' : '📝'}</Text>
               <Text style={s.hintText}>
                 {tab === 'people'
-                  ? 'Search by username or name to find people in your village'
+                  ? 'Search by username or name to find people in your community'
                   : 'Search words or phrases to find posts'}
               </Text>
             </View>

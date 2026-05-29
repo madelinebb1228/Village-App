@@ -458,7 +458,7 @@ export default function RecipesScreen({
                 ? `No recipes found with "${query}". Try a different ingredient or clear the search.`
                 : sortMode === 'saved'
                   ? 'Tap 🔖 on any recipe to save it here.'
-                  : 'Be the first to share a recipe with the village!'}
+                  : 'Be the first to share a recipe with the community!'}
             </Text>
           </View>
         ) : (

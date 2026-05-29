@@ -3056,14 +3056,14 @@ export default function VillageTab() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={s.heading}>Village</Text>
+        <Text style={s.heading}>Community</Text>
 
         {/* Search bar */}
         <View style={s.searchRow}>
           <Text style={s.searchIcon}>🔍</Text>
           <TextInput
             style={s.searchInput}
-            placeholder="Search villages..."
+            placeholder="Search patches..."
             placeholderTextColor={c.textMuted}
             value={search}
             onChangeText={setSearch}
@@ -3082,7 +3082,7 @@ export default function VillageTab() {
           activeOpacity={0.82}
         >
           <Text style={s.requestBannerEmoji}>💌</Text>
-          <Text style={s.requestBannerText}>Don't see your village? Request one</Text>
+          <Text style={s.requestBannerText}>Don't see your community? Request one</Text>
           <Text style={s.requestBannerArrow}>›</Text>
         </TouchableOpacity>
 
@@ -3093,7 +3093,7 @@ export default function VillageTab() {
               <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowRequestModal(false)}>
                 <Text style={s.modalCloseText}>✕</Text>
               </TouchableOpacity>
-              <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Village</Text>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Community</Text>
               <View style={s.modalCloseBtn} />
             </View>
 
@@ -3116,13 +3116,13 @@ export default function VillageTab() {
                 </View>
               ) : (
                 <>
-                  <Text style={[s.questionText, { marginBottom: 6 }]}>What village is missing?</Text>
+                  <Text style={[s.questionText, { marginBottom: 6 }]}>What community is missing?</Text>
                   <Text style={s.questionSub}>
                     Describe the community you'd love to see — e.g. "Moms of toddlers in Austin, TX" or "Bilingual parenting".
                   </Text>
                   <TextInput
                     style={s.requestInput}
-                    placeholder="Describe your village idea..."
+                    placeholder="Describe your community idea..."
                     placeholderTextColor={c.textMuted}
                     value={requestText}
                     onChangeText={setRequestText}
@@ -3165,8 +3165,8 @@ export default function VillageTab() {
           <TouchableOpacity style={s.retakeRow} onPress={retakeQuiz} activeOpacity={0.75}>
             <Text style={s.retakeIcon}>🔄</Text>
             <View style={s.retakeBody}>
-              <Text style={s.retakeTitle}>Retake village quiz</Text>
-              <Text style={s.retakeSub}>Update your villages — new baby on the way?</Text>
+              <Text style={s.retakeTitle}>Retake community quiz</Text>
+              <Text style={s.retakeSub}>Update your communities — new baby on the way?</Text>
             </View>
             <Text style={s.retakeArrow}>›</Text>
           </TouchableOpacity>
@@ -3233,7 +3233,7 @@ export default function VillageTab() {
         {search && filtered.length === 0 && (
           <View style={s.emptySearch}>
             <Text style={s.emptySearchEmoji}>🔍</Text>
-            <Text style={s.emptySearchText}>No villages found for "{search}"</Text>
+            <Text style={s.emptySearchText}>No patches found for "{search}"</Text>
           </View>
         )}
 
@@ -3271,11 +3271,11 @@ export default function VillageTab() {
             /* ── Results ── */
             <ScrollView contentContainerStyle={s.resultsContent}>
               <Text style={s.resultsEmoji}>🎉</Text>
-              <Text style={s.resultsTitle}>Your villages are ready!</Text>
+              <Text style={s.resultsTitle}>Your patches are ready!</Text>
               <Text style={s.resultsSub}>
                 {suggestions.length > 0
                   ? 'Based on your answers, we think you\'d love these:'
-                  : 'Explore all our villages below and join the ones that feel right.'}
+                  : 'Explore all our patches below and join the ones that feel right.'}
               </Text>
 
               {VILLAGES.filter(v => suggestions.includes(v.id)).map(v => (

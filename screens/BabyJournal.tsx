@@ -541,7 +541,7 @@ export default function BabyJournal({
               Share to your feed?
             </Text>
             <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
-              Would you like to post this memory to your village feed so your community can see it?
+              Would you like to post this memory to your community feed so everyone can see it?
             </Text>
             <TouchableOpacity
               style={{

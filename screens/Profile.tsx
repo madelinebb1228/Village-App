@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
   Switch,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -19,9 +20,15 @@ import { supabase } from '../lib/supabase';
 import { VILLAGE_MAP } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
+import SharedCalendar from './SharedCalendar';
+import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// Run once in Supabase SQL editor:
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS show_villages boolean DEFAULT true;
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS header_url text;
 
 interface UserProfile {
   id: string;
@@ -29,6 +36,7 @@ interface UserProfile {
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
+  header_url: string | null;
   parent_role: string | null;
   show_villages: boolean | null;
 }
@@ -119,7 +127,8 @@ export default function Profile() {
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [profileTab, setProfileTab] = useState<'posts' | 'journal'>('posts');
+  const [profileTab, setProfileTab] = useState<'posts' | 'journal' | 'calendar'>('posts');
+  const [showSettings, setShowSettings] = useState(false);
 
   // Edit state
   const [editUsername, setEditUsername] = useState('');
@@ -128,6 +137,7 @@ export default function Profile() {
   const [editParentRole, setEditParentRole] = useState('');
   const [editShowVillages, setEditShowVillages] = useState(true);
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
+  const [pendingHeaderUri, setPendingHeaderUri] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState('');
   const [saveError, setSaveError] = useState('');
 
@@ -177,9 +187,27 @@ export default function Profile() {
 
   function cancelEdit() {
     setPendingAvatarUri(null);
+    setPendingHeaderUri(null);
     setUsernameError('');
     setSaveError('');
     setEditing(false);
+  }
+
+  async function pickHeader() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to add a header photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [3, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPendingHeaderUri(result.assets[0].uri);
+    }
   }
 
   async function pickAvatar() {
@@ -229,11 +257,18 @@ export default function Profile() {
         if (uploaded) avatarUrl = uploaded;
       }
 
+      let headerUrl = profile?.header_url ?? null;
+      if (pendingHeaderUri) {
+        const uploaded = await uploadAvatar(pendingHeaderUri, user.id);
+        if (uploaded) headerUrl = uploaded;
+      }
+
       const payload = {
         username: trimmedUsername || null,
         display_name: editDisplayName.trim() || null,
         bio: editBio.trim() || null,
         avatar_url: avatarUrl,
+        header_url: headerUrl,
         parent_role: editParentRole || null,
         show_villages: editShowVillages,
       };
@@ -257,6 +292,7 @@ export default function Profile() {
       await loadAll();
       setEditing(false);
       setPendingAvatarUri(null);
+      setPendingHeaderUri(null);
     } catch (err: any) {
       console.warn('saveProfile error:', err.message);
       setSaveError(err.message || 'Save failed — check your Supabase RLS policies.');
@@ -299,7 +335,10 @@ export default function Profile() {
     ? { uri: profile.avatar_url }
     : null;
 
+  const headerDisplayUri = pendingHeaderUri || profile?.header_url || null;
+
   const displayName = profile?.display_name || profile?.username || userEmail.split('@')[0] || 'Your Name';
+  const isAdmin = userEmail === 'madelinebb1228@gmail.com';
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -338,36 +377,58 @@ export default function Profile() {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity onPress={startEdit} style={s.editProfileBtn}>
-              <Text style={s.editProfileBtnText}>Edit Profile</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TouchableOpacity onPress={startEdit} style={s.editProfileBtn}>
+                <Text style={s.editProfileBtnText}>Edit Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn} activeOpacity={0.75}>
+                <Text style={{ fontSize: 20 }}>⚙️</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
         {/* ── Hero ── */}
-        <View style={s.hero}>
+        <View style={[s.hero, isAdmin && s.heroAdmin]}>
 
-          {/* Avatar */}
-          <TouchableOpacity
-            style={s.avatarWrap}
-            onPress={editing ? pickAvatar : undefined}
-            activeOpacity={editing ? 0.75 : 1}
-          >
-            {avatarSource ? (
-              <Image source={avatarSource} style={s.avatarImage} />
+          {/* Header banner */}
+          <View style={s.headerBannerWrap}>
+            {headerDisplayUri ? (
+              <Image source={{ uri: headerDisplayUri }} style={s.headerBannerImage} resizeMode="cover" />
             ) : (
-              <Text style={s.avatarInitial}>
-                {(profile?.display_name || userEmail).charAt(0).toUpperCase() || '?'}
-              </Text>
+              <View style={[s.headerBannerPlaceholder, isAdmin && s.headerBannerPlaceholderAdmin]} />
             )}
             {editing && (
-              <View style={s.cameraBadge}>
-                <Text style={s.cameraIcon}>📷</Text>
-              </View>
+              <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}>
+                <Text style={s.headerBannerEditText}>📷  {headerDisplayUri ? 'Change header' : 'Add header photo'}</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
+
+          {/* Avatar overlapping header */}
+          <View style={s.avatarOverlapRow}>
+            <TouchableOpacity
+              style={[s.avatarWrap, isAdmin && s.avatarWrapAdmin]}
+              onPress={editing ? pickAvatar : undefined}
+              activeOpacity={editing ? 0.75 : 1}
+            >
+              {avatarSource ? (
+                <Image source={avatarSource} style={s.avatarImage} />
+              ) : (
+                <Text style={s.avatarInitial}>
+                  {(profile?.display_name || userEmail).charAt(0).toUpperCase() || '?'}
+                </Text>
+              )}
+              {editing && (
+                <View style={s.cameraBadge}>
+                  <Text style={s.cameraIcon}>📷</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
           {/* Info — view or edit */}
+          <View style={s.heroContentWrap}>
           {editing ? (
             <View style={s.editBlock}>
               <TextInput
@@ -421,8 +482,8 @@ export default function Profile() {
               {/* Village privacy toggle */}
               <View style={s.privacyRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.privacyLabel}>Show my villages on my profile</Text>
-                  <Text style={s.privacyHint}>Others can see which villages you're in</Text>
+                  <Text style={s.privacyLabel}>Show my patches on my profile</Text>
+                  <Text style={s.privacyHint}>Others can see which patches you're in</Text>
                 </View>
                 <Switch
                   value={editShowVillages}
@@ -437,6 +498,17 @@ export default function Profile() {
           ) : (
             <View style={s.viewBlock}>
               <Text style={s.heroName}>{displayName}</Text>
+
+              {isAdmin && (
+                <View style={s.founderWrap}>
+                  <Text style={s.founderStars}>✦  ✦  ✦  ✦  ✦</Text>
+                  <View style={s.founderBadge}>
+                    <Text style={s.founderBadgeText}>👑  Founder of Parent Patch  👑</Text>
+                  </View>
+                  <Text style={s.founderStarsBottom}>⭐  ⭐  ⭐  ⭐  ⭐</Text>
+                </View>
+              )}
+
               {profile?.username && (
                 <Text style={s.heroUsername}>@{profile.username}</Text>
               )}
@@ -468,7 +540,7 @@ export default function Profile() {
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
                   <Text style={s.statNum}>{myVillageIds.length}</Text>
-                  <Text style={s.statLbl}>Villages</Text>
+                  <Text style={s.statLbl}>Patches</Text>
                 </View>
               </View>
 
@@ -488,7 +560,7 @@ export default function Profile() {
                     const cc = chipColors[i % chipColors.length];
                     return (
                       <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
-                        <Text style={s.villageChipText}>{v.emoji} {v.name.replace(' Village', '').replace(' Parents', '')}</Text>
+                        <Text style={s.villageChipText}>{v.emoji} {v.name.replace(' Patch', '').replace(' Parents', '')}</Text>
                       </View>
                     );
                   })}
@@ -500,10 +572,11 @@ export default function Profile() {
                 </View>
               )}
               {profile?.show_villages === false && (
-                <Text style={s.villagesPrivateNote}>Villages set to private</Text>
+                <Text style={s.villagesPrivateNote}>Patches set to private</Text>
               )}
             </View>
           )}
+          </View>
         </View>
 
         {/* ── Baby card ── */}
@@ -549,7 +622,7 @@ export default function Profile() {
           </TouchableOpacity>
         )}
 
-        {/* ── Posts / Journal tab toggle ── */}
+        {/* ── Posts / Journal / Calendar tab toggle ── */}
         <View style={[s.tabToggleRow, { marginTop: 28 }]}>
           <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'posts' && s.tabToggleBtnActive]}
@@ -557,7 +630,7 @@ export default function Profile() {
             activeOpacity={0.8}
           >
             <Text style={[s.tabToggleText, profileTab === 'posts' && s.tabToggleTextActive]}>
-              💬 Your Posts
+              💬 Posts
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -566,7 +639,16 @@ export default function Profile() {
             activeOpacity={0.8}
           >
             <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
-              📖 Baby Journal
+              📖 Journal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.tabToggleBtn, profileTab === 'calendar' && s.tabToggleBtnActive]}
+            onPress={() => setProfileTab('calendar')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.tabToggleText, profileTab === 'calendar' && s.tabToggleTextActive]}>
+              📅 Calendar
             </Text>
           </TouchableOpacity>
         </View>
@@ -574,7 +656,7 @@ export default function Profile() {
         {profileTab === 'posts' ? (
           posts.length === 0 ? (
             <View style={s.emptyPosts}>
-              <Text style={s.emptyPostsText}>No posts yet — share something with your village!</Text>
+              <Text style={s.emptyPostsText}>No posts yet — share something with your community!</Text>
             </View>
           ) : (
             posts.map(post => (
@@ -613,18 +695,15 @@ export default function Profile() {
               </View>
             ))
           )
-        ) : (
+        ) : profileTab === 'journal' ? (
           <BabyJournal
             userId={profile?.id ?? null}
             babyId={baby?.id ?? null}
             babyName={baby?.name ?? null}
           />
+        ) : (
+          <SharedCalendar userId={profile?.id ?? null} />
         )}
-
-        {/* ── Sign out ── */}
-        <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
-          <Text style={s.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -633,6 +712,10 @@ export default function Profile() {
         visible={showProfileSheet}
         onClose={() => { setShowProfileSheet(false); loadAll(); }}
       />
+
+      <Modal visible={showSettings} animationType="slide" presentationStyle="fullScreen">
+        <SettingsScreen onBack={() => { setShowSettings(false); loadAll(); }} />
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -697,19 +780,81 @@ function makeStyles(c: Colors) {
     fontWeight: '700',
     color: c.editBtn,
   },
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.card,
+    borderWidth: 1.5,
+    borderColor: c.separator,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   // ── Hero
   hero: {
     backgroundColor: c.heroBg,
     borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
+    overflow: 'hidden',
     marginBottom: 24,
     shadowColor: c.heroShadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.18,
     shadowRadius: 10,
     elevation: 4,
+  },
+  headerBannerWrap: {
+    width: '100%',
+    height: 116,
+    position: 'relative',
+  },
+  headerBannerImage: {
+    width: '100%',
+    height: 116,
+  },
+  headerBannerPlaceholder: {
+    width: '100%',
+    height: 116,
+    backgroundColor: c.cardLavender,
+  },
+  headerBannerPlaceholderAdmin: {
+    backgroundColor: '#FFF0C8',
+  },
+  headerBannerEditBtn: {
+    position: 'absolute',
+    right: 12,
+    bottom: 10,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  headerBannerEditText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  avatarOverlapRow: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: -44,
+    marginBottom: 4,
+  },
+  heroContentWrap: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    paddingTop: 4,
+  },
+  heroAdmin: {
+    borderWidth: 1.5,
+    borderColor: 'rgba(212,175,55,0.45)',
+    shadowColor: '#D4AF37',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 10,
   },
   avatarWrap: {
     width: 88,
@@ -718,8 +863,16 @@ function makeStyles(c: Colors) {
     backgroundColor: c.avatarBg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
     overflow: 'hidden',
+  },
+  avatarWrapAdmin: {
+    borderWidth: 3,
+    borderColor: '#D4AF37',
+    shadowColor: '#D4AF37',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
+    elevation: 8,
   },
   avatarImage: {
     width: 88,
@@ -758,6 +911,42 @@ function makeStyles(c: Colors) {
     color: c.textMuted,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  founderWrap: {
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  founderStars: {
+    fontSize: 11,
+    color: '#D4AF37',
+    letterSpacing: 3,
+    fontWeight: '700',
+  },
+  founderBadge: {
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1.5,
+    borderColor: '#D4AF37',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+    shadowColor: '#D4AF37',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  founderBadgeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#7C5C00',
+    letterSpacing: 0.3,
+  },
+  founderStarsBottom: {
+    fontSize: 13,
+    color: '#D4AF37',
+    letterSpacing: 4,
   },
   roleBadge: {
     backgroundColor: c.roleBadge,

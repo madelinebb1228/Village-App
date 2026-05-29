@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import { useColors } from './lib/theme';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -38,7 +38,7 @@ const NAV_TABS = [
   { name: 'Home',      emoji: '🏡', label: 'Home' },
   { name: 'Track',     emoji: '📋', label: 'Track' },
   { name: 'Resources', emoji: '📚', label: 'Resources' },
-  { name: 'Village',   emoji: '🏘️', label: 'Village' },
+  { name: 'Village',   emoji: '🌿', label: 'Patch' },
   { name: 'Profile',   emoji: '🌸', label: 'Profile' },
 ];
 
@@ -59,10 +59,11 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
       zIndex: 100,
     }}>
       <View style={{ paddingHorizontal: 10, marginBottom: 40 }}>
-        <Text style={{ fontSize: 32 }}>🏘️</Text>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: c.textPrimary, marginTop: 6 }}>
-          village
-        </Text>
+        <Image
+          source={require('./assets/logo.png')}
+          style={{ width: 120, height: 120 }}
+          resizeMode="contain"
+        />
       </View>
 
       {state.routes.map((route, index) => {
@@ -169,7 +170,7 @@ function MainTabs() {
         name="Village"
         component={sidebarAware(VillageScreen)}
         options={{
-          tabBarLabel: 'Village',
+          tabBarLabel: 'Patch',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏘️</Text>

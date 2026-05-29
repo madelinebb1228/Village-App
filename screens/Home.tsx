@@ -47,7 +47,7 @@ export default function Home() {
     },
     {
       id: '3',
-      author: 'Village Admin',
+      author: 'Parent Patch',
       content: 'New WIC-approved recipes added! Check out the sweet potato puffs - babies love them and they\'re so easy to make.',
       timestamp: '6h ago',
       likes: 8,
@@ -175,7 +175,7 @@ export default function Home() {
                 postType === 'milestone'
                   ? 'Share a milestone...'
                   : postType === 'question'
-                  ? 'Ask the village...'
+                  ? 'Ask the community...'
                   : 'What\'s on your mind?'
               }
               value={postContent}

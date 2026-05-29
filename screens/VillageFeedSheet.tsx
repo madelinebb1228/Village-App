@@ -473,7 +473,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
                 style={s.postInput}
                 placeholder={
                   postType === 'milestone' ? 'Share a milestone...' :
-                  postType === 'question' ? 'Ask the village...' :
+                  postType === 'question' ? 'Ask the community...' :
                   "What's on your mind?"
                 }
                 value={postContent}

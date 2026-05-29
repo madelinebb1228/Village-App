@@ -28,6 +28,7 @@ interface Props {
   userId: string | null;
   visible: boolean;
   onClose: () => void;
+  onMessage?: (userId: string) => void;
 }
 
 function memberSince(iso: string): string {
@@ -182,7 +183,7 @@ function makeStyles(c: Colors) {
   });
 }
 
-export default function PublicProfileSheet({ userId, visible, onClose }: Props) {
+export default function PublicProfileSheet({ userId, visible, onClose, onMessage }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
@@ -313,18 +314,32 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
                     <View style={s.statDivider} />
                     <View style={s.statItem}>
                       <Text style={s.statNum}>{theirVillageIds.length}</Text>
-                      <Text style={s.statLbl}>Villages</Text>
+                      <Text style={s.statLbl}>Patches</Text>
                     </View>
                   </>
                 )}
               </View>
+              {onMessage && userId && (
+                <TouchableOpacity
+                  onPress={() => { onClose(); onMessage(userId); }}
+                  activeOpacity={0.85}
+                  style={{
+                    marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8,
+                    backgroundColor: c.primary, borderRadius: 20,
+                    paddingHorizontal: 24, paddingVertical: 10,
+                  }}
+                >
+                  <Text style={{ fontSize: 15 }}>💬</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Message</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Villages section */}
             {showVillages && theirVillageIds.length > 0 && (
               <View style={s.section}>
                 <View style={s.sectionHeaderRow}>
-                  <Text style={s.sectionTitle}>Villages</Text>
+                  <Text style={s.sectionTitle}>Patches</Text>
                   {commonIds.length > 0 && (
                     <View style={s.commonBadge}>
                       <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
@@ -347,7 +362,7 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
                     return (
                       <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
                         <Text style={s.villageChipText}>
-                          {v.emoji} {v.name.replace(' Village', '').replace(' Parents', '')}
+                          {v.emoji} {v.name.replace(' Patch', '').replace(' Parents', '')}
                         </Text>
                       </View>
                     );
@@ -357,7 +372,7 @@ export default function PublicProfileSheet({ userId, visible, onClose }: Props) 
             )}
 
             {!showVillages && (
-              <Text style={s.privateNote}>This user's villages are private.</Text>
+              <Text style={s.privateNote}>This user's patches are private.</Text>
             )}
 
             <View style={{ height: 40 }} />

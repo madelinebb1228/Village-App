@@ -59,7 +59,7 @@ const STEPS = [
     accent: '#A8B8A0',
   },
   {
-    title: 'Join your\nvillages',
+    title: 'Join your\npatches',
     subtitle: 'Connect with parents on the same journey.',
     options: VILLAGE_OPTIONS,
     accent: '#E8B4B8',

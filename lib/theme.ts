@@ -111,7 +111,7 @@ export interface Colors {
 // ─── Light palette ────────────────────────────────────────────────────────────
 
 export const lightColors: Colors = {
-  bg:              '#F8F7FF',
+  bg:              '#FAF9F6',
   bgAlt:           '#EDE9FF',
 
   card:            '#FFFFFF',

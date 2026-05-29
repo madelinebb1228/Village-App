@@ -17,10 +17,20 @@ import ProductReviewsScreen from './ProductReviewsScreen';
 import ParentingAZ from './ParentingAZ';
 import MomGroupDirectory from './MomGroupDirectory';
 import ParentMarketplace from './ParentMarketplace';
+import SmartShoppingLists from './SmartShoppingLists';
+import ServiceProviderReviews from './ServiceProviderReviews';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
 const RESOURCES = [
+  {
+    id: 'shopping_lists',
+    emoji: '🛍️',
+    title: 'Smart Shopping Lists',
+    description: 'Curated packing lists for hospital bags, travel, newborns, and more — or post your own',
+    bg: (c: Colors) => c.cardSage,
+    border: (c: Colors) => c.sage,
+  },
   {
     id: 'babynames',
     emoji: '🌸',
@@ -42,46 +52,54 @@ const RESOURCES = [
     emoji: '👩‍👧',
     title: 'Mom Group Directory',
     description: 'Find local meetups, online communities, and support groups near you',
-    bg: (c: Colors) => c.cardBlush,
-    border: (c: Colors) => c.blush,
+    bg: (c: Colors) => c.cardBlue,
+    border: (c: Colors) => c.blue,
   },
   {
     id: 'parenting_az',
     emoji: '📖',
     title: 'Parenting A–Z',
     description: 'Plain-English explanations of methods, terms, and techniques every parent should know',
-    bg: (c: Colors) => c.cardBlue,
-    border: (c: Colors) => c.blue,
+    bg: (c: Colors) => c.cardLavender,
+    border: (c: Colors) => c.lavender,
   },
   {
     id: 'qa',
     emoji: '💬',
     title: 'Parenting Q+A',
     description: 'Ask questions and get answers from other parents',
-    bg: (c: Colors) => c.cardLavender,
-    border: (c: Colors) => c.lavender,
+    bg: (c: Colors) => c.cardSage,
+    border: (c: Colors) => c.sage,
   },
   {
     id: 'articles',
     emoji: '📰',
     title: 'Articles',
     description: 'Expert tips, guides, and parenting reads',
-    bg: (c: Colors) => c.cardBlue,
-    border: (c: Colors) => c.blue,
+    bg: (c: Colors) => c.cardBlush,
+    border: (c: Colors) => c.blush,
   },
   {
     id: 'local',
     emoji: '📍',
     title: 'Local Services',
     description: 'Find pediatricians, lactation consultants, and more near you',
-    bg: (c: Colors) => c.cardBlush,
-    border: (c: Colors) => c.blush,
+    bg: (c: Colors) => c.cardHoney,
+    border: (c: Colors) => c.honey,
   },
   {
     id: 'product_reviews',
     emoji: '⭐',
     title: 'Product Reviews',
     description: 'Community-rated strollers, car seats, pumps, monitors, and more',
+    bg: (c: Colors) => c.cardBlue,
+    border: (c: Colors) => c.blue,
+  },
+  {
+    id: 'provider_reviews',
+    emoji: '🏙️',
+    title: 'Provider Reviews by City',
+    description: 'Reviews of local pediatricians, daycares, doulas, and more from parents in your city',
     bg: (c: Colors) => c.cardLavender,
     border: (c: Colors) => c.lavender,
   },
@@ -98,40 +116,40 @@ const RESOURCES = [
     emoji: '🧡',
     title: 'WIC Recipes',
     description: 'Community recipes using WIC-eligible foods — share and upvote favorites',
-    bg: (c: Colors) => c.cardHoney,
-    border: (c: Colors) => c.honey,
+    bg: (c: Colors) => c.cardBlush,
+    border: (c: Colors) => c.blush,
   },
   {
     id: 'weaning_recipes',
     emoji: '🥣',
     title: 'Weaning Recipes',
     description: 'First foods, purees, and soft meals for babies 4–12+ months',
-    bg: (c: Colors) => c.cardSage,
-    border: (c: Colors) => c.sage,
+    bg: (c: Colors) => c.cardHoney,
+    border: (c: Colors) => c.honey,
   },
   {
     id: 'emergency',
     emoji: '🚨',
     title: 'Emergency Contacts',
     description: 'Nurse lines, poison control, and urgent care resources',
-    bg: (c: Colors) => c.cardHoney,
-    border: (c: Colors) => c.honey,
+    bg: (c: Colors) => c.cardBlue,
+    border: (c: Colors) => c.blue,
   },
   {
     id: 'videos',
     emoji: '🎬',
     title: 'Video Guides',
     description: 'How-to videos for feeding, sleep, soothing, and more',
-    bg: (c: Colors) => c.cardSage,
-    border: (c: Colors) => c.sage,
+    bg: (c: Colors) => c.cardLavender,
+    border: (c: Colors) => c.lavender,
   },
   {
     id: 'top100',
     emoji: '🔢',
     title: '100 Questions Every Parent Asks',
     description: 'The most common parenting questions — answered',
-    bg: (c: Colors) => c.cardLavender,
-    border: (c: Colors) => c.lavender,
+    bg: (c: Colors) => c.cardSage,
+    border: (c: Colors) => c.sage,
   },
 ] as const;
 
@@ -170,7 +188,7 @@ function ResourceDetail({
           <Text style={s.comingSoonEmoji}>🌱</Text>
           <Text style={s.comingSoonTitle}>Coming soon</Text>
           <Text style={s.comingSoonText}>
-            We're working on filling this section with great content for your village. Check back soon!
+            We're working on filling this section with great content for you. Check back soon!
           </Text>
         </View>
       </ScrollView>
@@ -184,6 +202,10 @@ export default function ResourcesTab() {
   const c = useColors();
   const s = styles(c);
   const [selected, setSelected] = useState<ResourceId | null>(null);
+
+  if (selected === 'shopping_lists') {
+    return <SmartShoppingLists onBack={() => setSelected(null)} />;
+  }
 
   if (selected === 'babynames') {
     return <BabyNameFinder onBack={() => setSelected(null)} />;
@@ -211,6 +233,10 @@ export default function ResourcesTab() {
 
   if (selected === 'product_reviews') {
     return <ProductReviewsScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'provider_reviews') {
+    return <ServiceProviderReviews onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'food_chart') {

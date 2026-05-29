@@ -23,6 +23,7 @@ import BabyProfileSheet from './BabyProfileSheet';
 import PublicProfileSheet from './PublicProfileSheet';
 import SearchSheet from './SearchSheet';
 import QAScreen from './QAScreen';
+import MessagesInbox from './MessagesInbox';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 
@@ -177,6 +178,9 @@ export default function HomeTab() {
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [messageTargetUserId, setMessageTargetUserId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
     diapers: number | null; diapersLow: boolean;
@@ -192,9 +196,28 @@ export default function HomeTab() {
     fetchPosts();
     fetchLikedPosts();
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id);
+      if (user) {
+        setCurrentUserId(user.id);
+        fetchUnreadCount(user.id);
+      }
     });
   }, []);
+
+  async function fetchUnreadCount(uid: string) {
+    const { data: convs } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`);
+    if (!convs || convs.length === 0) return;
+    const convIds = convs.map((c: any) => c.id);
+    const { count } = await supabase
+      .from('direct_messages')
+      .select('id', { count: 'exact', head: true })
+      .in('conversation_id', convIds)
+      .neq('sender_id', uid)
+      .is('read_at', null);
+    setUnreadCount(count ?? 0);
+  }
 
   async function fetchPosts() {
     const { data, error } = await supabase
@@ -693,13 +716,34 @@ export default function HomeTab() {
       >
         <View style={styles.headingRow}>
           <Text style={styles.heading}>{greeting}</Text>
-          <TouchableOpacity
-            style={styles.searchBtn}
-            onPress={() => setShowSearch(true)}
-            activeOpacity={0.75}
-          >
-            <Text style={styles.searchBtnIcon}>🔍</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
+              activeOpacity={0.75}
+              style={styles.searchBtn}
+            >
+              <Text style={styles.searchBtnIcon}>💬</Text>
+              {unreadCount > 0 && (
+                <View style={{
+                  position: 'absolute', top: 2, right: 2,
+                  backgroundColor: c.primary, borderRadius: 6,
+                  minWidth: 14, height: 14, justifyContent: 'center', alignItems: 'center',
+                  paddingHorizontal: 2,
+                }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.searchBtn}
+              onPress={() => setShowSearch(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.searchBtnIcon}>🔍</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Baby profile card */}
@@ -944,7 +988,16 @@ export default function HomeTab() {
         userId={publicProfileUserId}
         visible={publicProfileUserId !== null}
         onClose={() => setPublicProfileUserId(null)}
+        onMessage={(uid) => { setPublicProfileUserId(null); setMessageTargetUserId(uid); setShowMessages(true); }}
       />
+
+      {/* Messages */}
+      <Modal visible={showMessages} animationType="slide" presentationStyle="fullScreen">
+        <MessagesInbox
+          onBack={() => { setShowMessages(false); setMessageTargetUserId(null); if (currentUserId) fetchUnreadCount(currentUserId); }}
+          openWithUserId={messageTargetUserId}
+        />
+      </Modal>
 
       {/* Comments modal */}
       <Modal
@@ -1016,7 +1069,7 @@ export default function HomeTab() {
             <View style={styles.reportDoneContainer}>
               <Text style={styles.reportDoneEmoji}>✅</Text>
               <Text style={styles.reportDoneTitle}>Report Submitted</Text>
-              <Text style={styles.reportDoneBody}>Thank you for helping keep the village safe. We'll review this post.</Text>
+              <Text style={styles.reportDoneBody}>Thank you for helping keep the community safe. We'll review this post.</Text>
               <TouchableOpacity
                 style={styles.reportCloseBtn}
                 onPress={() => { setReportPostId(null); setReportDone(false); }}
@@ -1125,7 +1178,7 @@ export default function HomeTab() {
                 style={styles.postInput}
                 placeholder={
                   postType === 'milestone' ? 'Share a milestone...' :
-                  postType === 'question' ? 'Ask the village...' :
+                  postType === 'question' ? 'Ask the community...' :
                   "What's on your mind?"
                 }
                 value={postContent}

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -28,10 +29,10 @@ export default function Welcome({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.emoji}>🏘️</Text>
-        <Text style={styles.title}>Welcome to Village!</Text>
+        <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.title}>Welcome to Parent Patch!</Text>
         <Text style={styles.subtitle}>
-          Your place to connect, share, and grow with your local community.
+          Your place to track, connect, support, and grow with your parenting community.
         </Text>
       </View>
 
@@ -66,9 +67,10 @@ function makeStyles(c: Colors) {
       alignItems: 'center',
       paddingHorizontal: 16,
     },
-    emoji: {
-      fontSize: 80,
-      marginBottom: 28,
+    logo: {
+      width: 200,
+      height: 200,
+      marginBottom: 20,
     },
     title: {
       fontSize: 32,

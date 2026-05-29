@@ -345,7 +345,7 @@ export default function MilestoneTracker({ userId }: Props) {
               <Text style={s.promptEmoji}>🎉</Text>
               <Text style={s.promptTitle}>Milestone saved!</Text>
               <Text style={s.promptBody}>
-                Share your <Text style={{ fontWeight: '800' }}>{editing?.label}</Text> milestone to your village feed so everyone can celebrate?
+                Share your <Text style={{ fontWeight: '800' }}>{editing?.label}</Text> milestone to your community feed so everyone can celebrate?
               </Text>
               <View style={s.promptBtns}>
                 <TouchableOpacity
