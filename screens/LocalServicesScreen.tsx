@@ -363,6 +363,12 @@ export default function LocalServicesScreen({ onBack }: { onBack: () => void }) 
   const [submitting, setSubmitting]     = useState(false);
   const [submitDone, setSubmitDone]     = useState(false);
 
+  const [reportTarget, setReportTarget]     = useState<LocalResource | null>(null);
+  const [reportReason, setReportReason]     = useState('');
+  const [reportNote, setReportNote]         = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportDone, setReportDone]         = useState(false);
+
   const states = country ? (STATES_BY_COUNTRY[country] ?? []) : [];
   const cities = state  ? (CITIES_BY_STATE[state]    ?? []) : [];
 
@@ -415,6 +421,26 @@ export default function LocalServicesScreen({ onBack }: { onBack: () => void }) 
     setShowSuggest(false);
     setSuggestName(''); setSuggestPhone(''); setSuggestSite(''); setSuggestDesc('');
     setSubmitDone(false);
+  };
+
+  const handleReport = useCallback(async () => {
+    if (!reportTarget || !reportReason) return;
+    setReportSubmitting(true);
+    await supabase.from('resource_reports').insert({
+      resource_id: reportTarget.id,
+      resource_name: reportTarget.name,
+      reason: reportReason,
+      note: reportNote.trim() || null,
+    });
+    setReportSubmitting(false);
+    setReportDone(true);
+  }, [reportTarget, reportReason, reportNote]);
+
+  const closeReport = () => {
+    setReportTarget(null);
+    setReportReason('');
+    setReportNote('');
+    setReportDone(false);
   };
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
@@ -563,6 +589,12 @@ export default function LocalServicesScreen({ onBack }: { onBack: () => void }) 
                     </TouchableOpacity>
                   ) : null}
                 </View>
+                <TouchableOpacity
+                  onPress={() => { setReportTarget(r); setReportReason(''); setReportNote(''); setReportDone(false); }}
+                  style={{ marginTop: 10, alignSelf: 'flex-start' }}
+                >
+                  <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '500' }}>⚑ Report incorrect info</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </>
@@ -696,6 +728,94 @@ export default function LocalServicesScreen({ onBack }: { onBack: () => void }) 
         onClose={() => setPickerTarget(null)}
         c={c}
       />
+
+      {/* ── Report incorrect info modal ── */}
+      <Modal visible={!!reportTarget} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: c.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary, marginBottom: 4 }}>
+                Report Incorrect Info
+              </Text>
+              <Text style={{ fontSize: 13, color: c.textMuted, marginBottom: 20 }}>
+                {reportTarget?.name}
+              </Text>
+
+              {reportDone ? (
+                <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
+                  <Text style={{ fontSize: 36 }}>✅</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: c.textPrimary }}>Thanks for the heads up!</Text>
+                  <Text style={{ fontSize: 14, color: c.textSecondary, textAlign: 'center' }}>
+                    We'll review this and update the listing.
+                  </Text>
+                  <TouchableOpacity onPress={closeReport} style={{ marginTop: 8, backgroundColor: c.primary, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12 }}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 10 }}>
+                    What's incorrect?
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+                    {['Phone number', 'Website', 'Organization closed', 'Name or description', 'Other'].map(reason => {
+                      const active = reportReason === reason;
+                      return (
+                        <TouchableOpacity
+                          key={reason}
+                          onPress={() => setReportReason(reason)}
+                          style={{
+                            paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                            backgroundColor: active ? c.primary : c.card,
+                            borderWidth: 1.5, borderColor: active ? c.primary : c.separator,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : c.textSecondary }}>
+                            {reason}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 6 }}>
+                    Additional details (optional)
+                  </Text>
+                  <TextInput
+                    value={reportNote}
+                    onChangeText={setReportNote}
+                    placeholder="e.g. The phone number is disconnected"
+                    placeholderTextColor={c.textMuted}
+                    multiline
+                    numberOfLines={3}
+                    style={{
+                      backgroundColor: c.card, borderRadius: 12, borderWidth: 1.5,
+                      borderColor: c.separator, padding: 12, fontSize: 14, color: c.textPrimary,
+                      minHeight: 72, textAlignVertical: 'top', marginBottom: 20,
+                    }}
+                  />
+
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity onPress={closeReport} style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: c.separator, padding: 14, alignItems: 'center' }}>
+                      <Text style={{ fontWeight: '700', color: c.textSecondary }}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handleReport}
+                      disabled={!reportReason || reportSubmitting}
+                      style={{ flex: 2, borderRadius: 12, backgroundColor: c.primary, padding: 14, alignItems: 'center', opacity: reportReason ? 1 : 0.45 }}
+                    >
+                      {reportSubmitting
+                        ? <ActivityIndicator color="#fff" />
+                        : <Text style={{ fontWeight: '700', color: '#fff' }}>Submit Report</Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* ── Suggest a resource modal ── */}
       <Modal visible={showSuggest} animationType="slide" transparent>

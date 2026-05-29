@@ -36,7 +36,7 @@ export const STATES_BY_COUNTRY: Record<string, string[]> = {
 };
 
 export const CITIES_BY_STATE: Record<string, string[]> = {
-  'Alabama': ['Auburn','Birmingham','Huntsville','Mobile','Montgomery','Pelham','Spanish Fort','Tuscaloosa'],
+  'Alabama': ['Anniston','Athens','Auburn','Bessemer','Birmingham','Decatur','Dothan','Enterprise','Florence','Gadsden','Huntsville','Jasper','Mobile','Montgomery','Opelika','Pelham','Prattville','Selma','Spanish Fort','Troy','Tuscaloosa'],
   'Alaska': ['Anchorage','Fairbanks','Juneau'],
   'Arizona': ['Phoenix','Tucson','Mesa','Scottsdale','Chandler'],
   'Arkansas': ['Little Rock','Fort Smith','Fayetteville'],
@@ -101,6 +101,33 @@ export const CITIES_BY_STATE: Record<string, string[]> = {
   'Nunavut': ['Iqaluit'],
   'Yukon': ['Whitehorse'],
 };
+
+// What each country calls its first-level region. Used to label the
+// state/province field. Countries without a built-in STATES_BY_COUNTRY list
+// fall back to a free-text field using this label.
+export const REGION_LABEL_BY_COUNTRY: Record<string, string> = {
+  'United States':       'State',
+  'Canada':              'Province',
+  'United Kingdom':      'County',
+  'Australia':           'State / Territory',
+  'New Zealand':         'Region',
+  'Ireland':             'County',
+  'India':               'State',
+  'Philippines':         'Province',
+  'South Africa':        'Province',
+  'Nigeria':             'State',
+  'Ghana':               'Region',
+  'Kenya':               'County',
+  'Germany':             'State (Land)',
+  'France':              'Region',
+  'Mexico':              'State',
+  'Brazil':              'State',
+  'Jamaica':             'Parish',
+  'Trinidad and Tobago': 'Region',
+  'Singapore':           'Region',
+};
+
+export const DEFAULT_REGION_LABEL = 'State / Region';
 
 export const DUE_DATE_MONTHS = [
   'June 2026','July 2026','August 2026','September 2026','October 2026',
