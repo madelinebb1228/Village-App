@@ -127,7 +127,8 @@ export default function Profile() {
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [profileTab, setProfileTab] = useState<'posts' | 'journal' | 'calendar'>('posts');
+  const [profileTab, setProfileTab] = useState<'posts' | 'saved' | 'journal' | 'calendar'>('posts');
+  const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
 
   // Edit state
@@ -149,18 +150,20 @@ export default function Profile() {
       setUserEmail(user.email ?? '');
       setUserCreatedAt(user.created_at ?? '');
 
-      const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes] = await Promise.all([
+      const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes, savedRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
         supabase.from('posts').select('id,content,post_type,created_at,likes,image_url').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('user_villages').select('village_id').eq('user_id', user.id),
         supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', user.id),
         supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', user.id),
+        supabase.from('saved_posts').select('post_id, posts(id,content,post_type,created_at,likes,image_url,author)').eq('user_id', user.id).order('created_at', { ascending: false }),
       ]);
 
       setProfile(profileRes.data ?? null);
       setBaby(babyRes.data ?? null);
       setPosts(postsRes.data ?? []);
+      setSavedPosts((savedRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
       setMyVillageIds((villagesRes.data ?? []).map((r: any) => r.village_id));
       setFollowerCount(followersRes.count ?? 0);
       setFollowingCount(followingRes.count ?? 0);
@@ -634,6 +637,15 @@ export default function Profile() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[s.tabToggleBtn, profileTab === 'saved' && s.tabToggleBtnActive]}
+            onPress={() => setProfileTab('saved')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.tabToggleText, profileTab === 'saved' && s.tabToggleTextActive]}>
+              🔖 Saved
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
             onPress={() => setProfileTab('journal')}
             activeOpacity={0.8}
@@ -683,6 +695,46 @@ export default function Profile() {
                   <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
                     <Text style={s.postDeleteIcon}>🗑</Text>
                   </TouchableOpacity>
+                </View>
+                <Text style={s.postContent}>{post.content}</Text>
+                {post.image_url ? (
+                  <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
+                ) : null}
+                <View style={s.postCardFooter}>
+                  <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+                  <Text style={s.postLikes}>❤️ {post.likes}</Text>
+                </View>
+              </View>
+            ))
+          )
+        ) : profileTab === 'saved' ? (
+          savedPosts.length === 0 ? (
+            <View style={s.emptyPosts}>
+              <Text style={s.emptyPostsText}>No saved posts yet — tap 🏷️ on any post to bookmark it.</Text>
+            </View>
+          ) : (
+            savedPosts.map(post => (
+              <View key={post.id} style={[
+                s.postCard,
+                {
+                  borderLeftWidth: 4,
+                  borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
+                    : post.post_type === 'question' ? c.postQuestion
+                    : c.postText,
+                },
+              ]}>
+                <View style={s.postCardTop}>
+                  <View style={[
+                    s.postTypeBadge,
+                    post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
+                    post.post_type === 'question' && { backgroundColor: c.cardBlue },
+                    post.post_type === 'text' && { backgroundColor: c.cardBlush },
+                  ]}>
+                    <Text style={s.postTypeBadgeText}>
+                      {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
+                    </Text>
+                  </View>
+                  {post.author && <Text style={s.postTimestamp}>by {post.author}</Text>}
                 </View>
                 <Text style={s.postContent}>{post.content}</Text>
                 {post.image_url ? (

@@ -195,6 +195,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [myId, setMyId] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
     if (!visible || !userId) return;
@@ -205,12 +208,14 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     setFollowerCount(0);
     setFollowingCount(0);
     setIsOwnProfile(false);
+    setIsFollowing(false);
 
     (async () => {
       setLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+        setMyId(user.id);
 
         if (user.id === userId) {
           setIsOwnProfile(true);
@@ -218,13 +223,14 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
           return;
         }
 
-        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes] = await Promise.all([
+        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes] = await Promise.all([
           supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
           supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
           supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', userId),
+          supabase.from('follows').select('follower_id').eq('follower_id', user.id).eq('following_id', userId).maybeSingle(),
         ]);
 
         setProfile(profileRes.data ?? null);
@@ -233,6 +239,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         setFollowingCount(followingRes.count ?? 0);
         setTheirVillageIds((theirVillagesRes.data ?? []).map((r: any) => r.village_id));
         setMyVillageIds((myVillagesRes.data ?? []).map((r: any) => r.village_id));
+        setIsFollowing(!!isFollowingRes.data);
       } catch (err: any) {
         console.warn('PublicProfileSheet error:', err.message);
       } finally {
@@ -240,6 +247,21 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
       }
     })();
   }, [visible, userId]);
+
+  async function toggleFollow() {
+    if (!myId || !userId || followLoading) return;
+    setFollowLoading(true);
+    if (isFollowing) {
+      await supabase.from('follows').delete().eq('follower_id', myId).eq('following_id', userId);
+      setIsFollowing(false);
+      setFollowerCount(c => Math.max(0, c - 1));
+    } else {
+      await supabase.from('follows').insert({ follower_id: myId, following_id: userId });
+      setIsFollowing(true);
+      setFollowerCount(c => c + 1);
+    }
+    setFollowLoading(false);
+  }
 
   const commonIds = theirVillageIds.filter(id => myVillageIds.includes(id));
   const displayName = profile?.display_name || profile?.username || 'Villager';
@@ -319,20 +341,40 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   </>
                 )}
               </View>
-              {onMessage && userId && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                 <TouchableOpacity
-                  onPress={() => { onClose(); onMessage(userId); }}
+                  onPress={toggleFollow}
+                  disabled={followLoading}
                   activeOpacity={0.85}
                   style={{
-                    marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8,
-                    backgroundColor: c.primary, borderRadius: 20,
-                    paddingHorizontal: 24, paddingVertical: 10,
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: isFollowing ? c.card : c.primary,
+                    borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+                    borderWidth: isFollowing ? 1.5 : 0,
+                    borderColor: c.separator,
                   }}
                 >
-                  <Text style={{ fontSize: 15 }}>💬</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Message</Text>
+                  <Text style={{ fontSize: 14 }}>{isFollowing ? '✓' : '+'}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing ? c.textPrimary : '#fff' }}>
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </Text>
                 </TouchableOpacity>
-              )}
+                {onMessage && userId && (
+                  <TouchableOpacity
+                    onPress={() => { onClose(); onMessage(userId); }}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      backgroundColor: c.card, borderRadius: 20,
+                      paddingHorizontal: 20, paddingVertical: 10,
+                      borderWidth: 1.5, borderColor: c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14 }}>💬</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Message</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
             {/* Villages section */}
