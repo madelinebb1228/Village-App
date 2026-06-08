@@ -14,6 +14,7 @@ import {
   Share,
   Image,
 } from 'react-native';
+import MentionTextInput from '../components/MentionTextInput';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,8 +26,12 @@ import SearchSheet from './SearchSheet';
 import QAScreen from './QAScreen';
 import MessagesInbox from './MessagesInbox';
 import NotificationsScreen from './NotificationsScreen';
+import EventsScreen from './EventsScreen';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import StoriesBar, { StoryGroup } from '../components/StoriesBar';
+import StoryViewer from '../components/StoryViewer';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +44,8 @@ interface Post {
   likes: number;
   created_at: string;
   image_url?: string | null;
+  video_url?: string | null;
+  tags?: string[] | null;
   village_id?: string | null;
 }
 
@@ -48,6 +55,8 @@ interface Comment {
   author: string;
   content: string;
   created_at: string;
+  parent_id?: string | null;
+  replies?: Comment[];
 }
 
 type Stats = {
@@ -73,6 +82,13 @@ function getReminderColors(c: Colors): Record<ReminderUrgency, { bg: string; bor
     streak:    { bg: c.reminderStreak.bg,    border: c.reminderStreak.border,    text: c.reminderStreak.text },
   };
 }
+
+const POST_TAGS = [
+  'Sleep', 'Feeding', 'Milestones', 'Health', 'Play', 'Development',
+  'Mom Life', 'Dad Life', 'Breastfeeding', 'Formula', 'Solid Foods',
+  'Newborn', 'Toddler', 'Pregnancy', 'Postpartum', 'Self Care',
+  'Products', 'Travel', 'Safety',
+];
 
 const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
   membranes:      { sessions: 30,  days: 60  },
@@ -129,6 +145,16 @@ function getTimeAgo(dateString: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+function showSourcePicker(title: string): Promise<'camera' | 'library' | null> {
+  return new Promise(resolve => {
+    Alert.alert(title, '', [
+      { text: 'Take Photo/Video', onPress: () => resolve('camera') },
+      { text: 'Choose from Library', onPress: () => resolve('library') },
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+    ]);
+  });
+}
+
 async function uploadPostImage(uri: string, userId: string): Promise<string | null> {
   try {
     const response = await fetch(uri);
@@ -145,6 +171,109 @@ async function uploadPostImage(uri: string, userId: string): Promise<string | nu
     console.warn('Post image upload failed:', err.message);
     return null;
   }
+}
+
+async function uploadPostVideo(uri: string, userId: string): Promise<string | null> {
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const ext = uri.split('.').pop()?.toLowerCase() ?? 'mp4';
+    const path = `${userId}/video-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('baby-photos')
+      .upload(path, blob, { contentType: `video/${ext}`, upsert: true });
+    if (error) throw error;
+    const { data } = supabase.storage.from('baby-photos').getPublicUrl(path);
+    return data.publicUrl;
+  } catch (err: any) {
+    console.warn('Post video upload failed:', err.message);
+    return null;
+  }
+}
+
+// ─── Mention helpers ──────────────────────────────────────────────────────────
+
+function extractMentions(text: string): string[] {
+  const raw = text.match(/@(\w+)/g) ?? [];
+  return [...new Set(raw.map(m => m.slice(1).toLowerCase()))];
+}
+
+async function sendMentionNotifications(
+  content: string,
+  postId: string,
+  actorId: string,
+) {
+  const usernames = extractMentions(content);
+  if (usernames.length === 0) return;
+  const { data: users } = await supabase
+    .from('profiles')
+    .select('id')
+    .in('username', usernames)
+    .neq('id', actorId);
+  if (!users || users.length === 0) return;
+  await supabase.from('notifications').insert(
+    users.map((u: any) => ({
+      user_id: u.id,
+      type: 'mention',
+      actor_id: actorId,
+      post_id: postId,
+      comment_preview: content.substring(0, 100),
+      read: false,
+    })) as any
+  );
+}
+
+function renderTextWithMentions(
+  text: string,
+  outerStyle: any,
+  mentionColor: string,
+  onMentionPress?: (username: string) => void,
+  onHashtagPress?: (tag: string) => void,
+): React.ReactElement {
+  const parts = text.split(/(@\w+|#\w+)/);
+  return (
+    <Text style={outerStyle}>
+      {parts.map((part, i) => {
+        if (/^@\w+$/.test(part)) {
+          return (
+            <Text
+              key={i}
+              style={{ color: mentionColor, fontWeight: '700' }}
+              onPress={onMentionPress ? () => onMentionPress(part.slice(1)) : undefined}
+            >
+              {part}
+            </Text>
+          );
+        }
+        if (/^#\w+$/.test(part)) {
+          return (
+            <Text
+              key={i}
+              style={{ color: '#57B2E8', fontWeight: '600' }}
+              onPress={onHashtagPress ? () => onHashtagPress(part.slice(1)) : undefined}
+            >
+              {part}
+            </Text>
+          );
+        }
+        return part;
+      })}
+    </Text>
+  );
+}
+
+// ─── Video player for feed posts ──────────────────────────────────────────────
+
+function VideoPostPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.loop = false; });
+  return (
+    <VideoView
+      player={player}
+      style={{ width: '100%', height: 240, borderRadius: 12, marginBottom: 12, backgroundColor: '#000' }}
+      allowsFullscreen
+      allowsPictureInPicture
+    />
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -171,6 +300,7 @@ export default function HomeTab() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [reportPostId, setReportPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState('');
@@ -178,7 +308,12 @@ export default function HomeTab() {
   const [reportDone, setReportDone] = useState(false);
   const [reportedPostIds, setReportedPostIds] = useState<Set<string>>(new Set());
   const [pendingPostImageUri, setPendingPostImageUri] = useState<string | null>(null);
+  const [pendingPostVideoUri, setPendingPostVideoUri] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
+  const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [baby, setBaby] = useState<{ name: string; birth_date: string; photo_url: string | null; gender: string | null } | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -188,6 +323,7 @@ export default function HomeTab() {
   const [messageTargetUserId, setMessageTargetUserId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
@@ -200,8 +336,29 @@ export default function HomeTab() {
   }>>([]);
   const [qaDetailId, setQaDetailId] = useState<string | null>(null);
 
+  // Stories
+  const [storyViewGroups, setStoryViewGroups] = useState<StoryGroup[]>([]);
+  const [storyViewGroupIndex, setStoryViewGroupIndex] = useState(0);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [showAddStory, setShowAddStory] = useState(false);
+  const [storyMode, setStoryMode] = useState<'photo' | 'video' | 'text'>('photo');
+  const [storyText, setStoryText] = useState('');
+  const [storyBgColor, setStoryBgColor] = useState('#B1A7F0');
+  const [storyImageUri, setStoryImageUri] = useState<string | null>(null);
+  const [storyVideoUri, setStoryVideoUri] = useState<string | null>(null);
+  const [storySubmitting, setStorySubmitting] = useState(false);
+  const [storyRefreshKey, setStoryRefreshKey] = useState(0);
+
+  const filteredPosts = useMemo(() => {
+    let result = posts;
+    if (activeHashtag) result = result.filter(p => p.content?.toLowerCase().includes(`#${activeHashtag.toLowerCase()}`));
+    if (activeTag) result = result.filter(p => p.tags?.includes(activeTag));
+    return result;
+  }, [posts, activeHashtag, activeTag]);
+
   useEffect(() => {
     fetchPosts();
+    fetchTrendingPosts();
     fetchSavedPosts();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -248,6 +405,26 @@ export default function HomeTab() {
       fetchReactions(data);
       fetchPollData(data);
     }
+  }
+
+  async function fetchTrendingPosts() {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .gte('created_at', since)
+      .order('likes', { ascending: false })
+      .limit(10);
+    if (!data) return;
+
+    // Score = likes * 2 + recency bonus (posts in last 24h get +5)
+    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+    const scored = data.map((p: Post) => ({
+      post: p,
+      score: (p.likes || 0) * 2 + (new Date(p.created_at).getTime() > cutoff24h ? 5 : 0),
+    }));
+    scored.sort((a: any, b: any) => b.score - a.score);
+    setTrendingPosts(scored.slice(0, 5).map((s: any) => s.post));
   }
 
   async function fetchReactions(loadedPosts: Post[]) {
@@ -378,13 +555,28 @@ export default function HomeTab() {
 
   async function openComments(postId: string) {
     setComments([]);
+    setReplyingTo(null);
     setCommentPostId(postId);
     const { data } = await supabase
       .from('comments')
       .select('*')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
-    if (data) setComments(data);
+    if (data) setComments(buildCommentTree(data));
+  }
+
+  function buildCommentTree(flat: Comment[]): Comment[] {
+    const map = new Map<string, Comment>();
+    flat.forEach(c => map.set(c.id, { ...c, replies: [] }));
+    const roots: Comment[] = [];
+    map.forEach(c => {
+      if (c.parent_id && map.has(c.parent_id)) {
+        map.get(c.parent_id)!.replies!.push(c);
+      } else {
+        roots.push(c);
+      }
+    });
+    return roots;
   }
 
   async function submitComment() {
@@ -402,20 +594,34 @@ export default function HomeTab() {
       user_id: user.id,
       author,
       content: commentText,
+      parent_id: replyingTo?.id ?? null,
     });
     if (!error) {
+      if (commentPostId && commentText.trim()) {
+        sendMentionNotifications(commentText.trim(), commentPostId, user.id);
+      }
       setCommentText('');
+      setReplyingTo(null);
       const { data } = await supabase
         .from('comments')
         .select('*')
         .eq('post_id', commentPostId)
         .order('created_at', { ascending: true });
-      if (data) setComments(data);
+      if (data) setComments(buildCommentTree(data));
     }
   }
 
   async function handleShare(post: Post) {
     await Share.share({ message: post.content });
+  }
+
+  async function openMentionedUser(username: string) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle();
+    if (data) setPublicProfileUserId((data as any).id);
   }
 
   async function doDeletePost(postId: string) {
@@ -459,23 +665,39 @@ export default function HomeTab() {
   }
 
   async function pickPostImage() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo access to add a photo to your post.');
-      return;
+    const source = await showSourcePicker('Add Photo');
+    if (!source) return;
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+      if (!result.canceled && result.assets[0]) { setPendingPostImageUri(result.assets[0].uri); setPendingPostVideoUri(null); }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: false, quality: 0.8 });
+      if (!result.canceled && result.assets[0]) { setPendingPostImageUri(result.assets[0].uri); setPendingPostVideoUri(null); }
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPendingPostImageUri(result.assets[0].uri);
+  }
+
+  async function pickPostVideo() {
+    const source = await showSourcePicker('Add Video');
+    if (!source) return;
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, videoMaxDuration: 60 });
+      if (!result.canceled && result.assets[0]) { setPendingPostVideoUri(result.assets[0].uri); setPendingPostImageUri(null); }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow media library access.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, allowsEditing: true, videoMaxDuration: 60 });
+      if (!result.canceled && result.assets[0]) { setPendingPostVideoUri(result.assets[0].uri); setPendingPostImageUri(null); }
     }
   }
 
   async function handleCreatePost() {
-    if (!postContent.trim() && !pendingPostImageUri) return;
+    if (!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { Alert.alert('Not signed in'); return; }
 
@@ -488,9 +710,14 @@ export default function HomeTab() {
     const author = profileData?.username ?? profileData?.display_name ?? user.email?.split('@')[0] ?? 'Someone';
 
     let imageUrl: string | null = null;
+    let videoUrl: string | null = null;
     if (pendingPostImageUri) {
       setImageUploading(true);
       imageUrl = await uploadPostImage(pendingPostImageUri, user.id);
+      setImageUploading(false);
+    } else if (pendingPostVideoUri) {
+      setImageUploading(true);
+      videoUrl = await uploadPostVideo(pendingPostVideoUri, user.id);
       setImageUploading(false);
     }
 
@@ -503,6 +730,8 @@ export default function HomeTab() {
       created_at: new Date().toISOString(),
     };
     if (imageUrl) payload.image_url = imageUrl;
+    if (videoUrl) payload.video_url = videoUrl;
+    if (selectedTags.length > 0) payload.tags = selectedTags;
 
     const { data: newPost, error } = await supabase.from('posts').insert(payload).select('id').single();
     if (error) {
@@ -517,12 +746,83 @@ export default function HomeTab() {
         );
       }
     }
+    if (newPost && postContent.trim()) {
+      sendMentionNotifications(postContent.trim(), newPost.id, user.id);
+    }
     setPostContent('');
     setPendingPostImageUri(null);
+    setPendingPostVideoUri(null);
+    setSelectedTags([]);
     setPostType('text');
     setPollOptions(['', '']);
     setShowCreatePost(false);
     fetchPosts();
+  }
+
+  async function pickStoryImage() {
+    const source = await showSourcePicker('Add Photo Story');
+    if (!source) return;
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [9, 16], quality: 0.85 });
+      if (!result.canceled && result.assets[0]) setStoryImageUri(result.assets[0].uri);
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [9, 16], quality: 0.85 });
+      if (!result.canceled && result.assets[0]) setStoryImageUri(result.assets[0].uri);
+    }
+  }
+
+  async function pickStoryVideo() {
+    const source = await showSourcePicker('Add Video Story');
+    if (!source) return;
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, videoMaxDuration: 30 });
+      if (!result.canceled && result.assets[0]) setStoryVideoUri(result.assets[0].uri);
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow media library access.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, allowsEditing: true, videoMaxDuration: 30 });
+      if (!result.canceled && result.assets[0]) setStoryVideoUri(result.assets[0].uri);
+    }
+  }
+
+  async function handleSubmitStory() {
+    if (!currentUserId) return;
+    if (storyMode === 'photo' && !storyImageUri) return;
+    if (storyMode === 'video' && !storyVideoUri) return;
+    if (storyMode === 'text' && !storyText.trim()) return;
+    setStorySubmitting(true);
+    const { data: profileData } = await supabase
+      .from('profiles').select('username, display_name').eq('id', currentUserId).maybeSingle();
+    const author = profileData?.username ?? profileData?.display_name ?? 'Someone';
+    let imageUrl: string | null = null;
+    let videoUrl: string | null = null;
+    if (storyMode === 'photo' && storyImageUri) {
+      imageUrl = await uploadPostImage(storyImageUri, currentUserId);
+    } else if (storyMode === 'video' && storyVideoUri) {
+      videoUrl = await uploadPostVideo(storyVideoUri, currentUserId);
+    }
+    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    await supabase.from('stories').insert({
+      user_id: currentUserId,
+      author,
+      image_url: imageUrl,
+      video_url: videoUrl,
+      text_content: storyMode === 'text' ? storyText.trim() : null,
+      bg_color: storyMode === 'text' ? storyBgColor : null,
+      expires_at: expiresAt,
+    });
+    setStorySubmitting(false);
+    setShowAddStory(false);
+    setStoryText('');
+    setStoryImageUri(null);
+    setStoryVideoUri(null);
+    setStoryRefreshKey(k => k + 1);
   }
 
   // Re-fetch every time this tab comes into focus so numbers update
@@ -799,6 +1099,7 @@ export default function HomeTab() {
       fetchReminders();
       fetchFollowedQuestions();
       fetchPosts();
+      fetchTrendingPosts();
 
       return () => {
         isActive = false;
@@ -879,6 +1180,13 @@ export default function HomeTab() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.searchBtn}
+              onPress={() => setShowEvents(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.searchBtnIcon}>📅</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.searchBtn}
               onPress={() => setShowSearch(true)}
               activeOpacity={0.75}
             >
@@ -886,6 +1194,14 @@ export default function HomeTab() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Stories */}
+        <StoriesBar
+          currentUserId={currentUserId}
+          onAddStory={() => { setStoryMode('photo'); setStoryImageUri(null); setStoryVideoUri(null); setStoryText(''); setShowAddStory(true); }}
+          onViewStories={(groups, idx) => { setStoryViewGroups(groups); setStoryViewGroupIndex(idx); setShowStoryViewer(true); }}
+          refreshKey={storyRefreshKey}
+        />
 
         {/* Baby profile card */}
         {baby && (
@@ -1022,19 +1338,83 @@ export default function HomeTab() {
           </View>
         )}
 
+        {/* Trending posts */}
+        {trendingPosts.length >= 2 && (
+          <View style={{ marginBottom: 16 }}>
+            <View style={styles.forYouHeader}>
+              <Text style={{ fontSize: 18 }}>🔥</Text>
+              <Text style={styles.forYouTitle}>Trending</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
+              {trendingPosts.map(post => (
+                <TouchableOpacity
+                  key={post.id}
+                  style={styles.trendingCard}
+                  onPress={() => openComments(post.id)}
+                  activeOpacity={0.85}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <UserAvatar userId={post.user_id} name={post.author} size={24} />
+                    <Text style={styles.trendingCardAuthor} numberOfLines={1}>{post.author}</Text>
+                    {post.post_type !== 'text' && (
+                      <Text style={{ fontSize: 13 }}>
+                        {post.post_type === 'milestone' ? '🎉' : post.post_type === 'poll' ? '📊' : '❓'}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.trendingCardContent} numberOfLines={3}>
+                    {post.content || (post.image_url ? '📷 Photo' : post.video_url ? '🎬 Video' : '')}
+                  </Text>
+                  {post.tags && post.tags.length > 0 && (
+                    <Text style={styles.trendingCardTag}>{post.tags[0]}</Text>
+                  )}
+                  <View style={styles.trendingCardFooter}>
+                    <Text style={styles.trendingCardStat}>❤️ {post.likes || 0}</Text>
+                    <Text style={styles.trendingCardTime}>{getTimeAgo(post.created_at)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* For You feed */}
         <View style={styles.forYouHeader}>
           <View style={styles.forYouDot} />
           <Text style={styles.forYouTitle}>For You</Text>
         </View>
 
-        {posts.length === 0 && (
+        {/* Topic filter chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 4 }}>
+          {POST_TAGS.map(tag => (
+            <TouchableOpacity
+              key={tag}
+              onPress={() => setActiveTag(activeTag === tag ? null : tag)}
+              style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}
+            >
+              <Text style={[styles.tagChipText, activeTag === tag && styles.tagChipTextActive]}>{tag}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Active hashtag banner */}
+        {activeHashtag && (
+          <TouchableOpacity
+            onPress={() => setActiveHashtag(null)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#E8F4FB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
+          >
+            <Text style={{ color: '#57B2E8', fontWeight: '700', fontSize: 14 }}>#{activeHashtag}</Text>
+            <Text style={{ color: '#57B2E8', fontSize: 13 }}>✕</Text>
+          </TouchableOpacity>
+        )}
+
+        {filteredPosts.length === 0 && (
           <View style={styles.emptyFeed}>
-            <Text style={styles.emptyFeedText}>No posts yet. Be the first to share!</Text>
+            <Text style={styles.emptyFeedText}>{posts.length === 0 ? 'No posts yet. Be the first to share!' : 'No posts match this filter.'}</Text>
           </View>
         )}
 
-        {posts.map((post) => (
+        {filteredPosts.map((post) => (
           <View key={post.id} style={[styles.postCard, {
             borderLeftWidth: 4,
             borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
@@ -1078,7 +1458,9 @@ export default function HomeTab() {
                 </Text>
               </View>
             )}
-            {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+            {post.content
+              ? renderTextWithMentions(post.content, styles.postContent, c.primary, openMentionedUser, tag => setActiveHashtag(tag))
+              : null}
             {post.image_url ? (
               <Image
                 source={{ uri: post.image_url }}
@@ -1086,6 +1468,16 @@ export default function HomeTab() {
                 resizeMode="cover"
               />
             ) : null}
+            {post.video_url ? <VideoPostPlayer uri={post.video_url} /> : null}
+            {post.tags && post.tags.length > 0 && (
+              <View style={styles.postTagsRow}>
+                {post.tags.map(tag => (
+                  <TouchableOpacity key={tag} onPress={() => setActiveTag(tag)} style={styles.postTagChip}>
+                    <Text style={styles.postTagChipText}>{tag}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
             {post.post_type === 'poll' && (() => {
               const pd = pollData.get(post.id);
               if (!pd) return null;
@@ -1233,6 +1625,11 @@ export default function HomeTab() {
         />
       </Modal>
 
+      {/* Events */}
+      <Modal visible={showEvents} animationType="slide" presentationStyle="fullScreen">
+        <EventsScreen onBack={() => setShowEvents(false)} />
+      </Modal>
+
       {/* Comments modal */}
       <Modal
         visible={commentPostId !== null}
@@ -1253,27 +1650,59 @@ export default function HomeTab() {
               <Text style={styles.noComments}>No comments yet. Start the conversation!</Text>
             ) : (
               comments.map(cm => (
-                <View key={cm.id} style={styles.commentItem}>
-                  <UserAvatar userId={cm.user_id} name={cm.author} size={32} />
-                  <View style={styles.commentBody}>
-                    <Text style={styles.commentAuthor}>{cm.author}</Text>
-                    <Text style={styles.commentContent}>{cm.content}</Text>
-                    <Text style={styles.commentTime}>{getTimeAgo(cm.created_at)}</Text>
+                <View key={cm.id}>
+                  <View style={styles.commentItem}>
+                    <UserAvatar userId={cm.user_id} name={cm.author} size={32} />
+                    <View style={styles.commentBody}>
+                      <Text style={styles.commentAuthor}>{cm.author}</Text>
+                      {renderTextWithMentions(cm.content, styles.commentContent, c.primary)}
+                      <View style={styles.commentMeta}>
+                        <Text style={styles.commentTime}>{getTimeAgo(cm.created_at)}</Text>
+                        <TouchableOpacity onPress={() => { setReplyingTo(cm); setCommentText(''); }}>
+                          <Text style={styles.replyBtn}>Reply</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   </View>
+                  {cm.replies && cm.replies.length > 0 && (
+                    <View style={styles.repliesContainer}>
+                      {cm.replies.map(reply => (
+                        <View key={reply.id} style={styles.commentItem}>
+                          <UserAvatar userId={reply.user_id} name={reply.author} size={26} />
+                          <View style={styles.commentBody}>
+                            <Text style={styles.commentAuthor}>{reply.author}</Text>
+                            {renderTextWithMentions(reply.content, styles.commentContent, c.primary)}
+                            <Text style={styles.commentTime}>{getTimeAgo(reply.created_at)}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
               ))
             )}
           </ScrollView>
 
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            {replyingTo && (
+              <View style={styles.replyingToBanner}>
+                <Text style={styles.replyingToText}>Replying to <Text style={{ fontWeight: '700' }}>@{replyingTo.author}</Text></Text>
+                <TouchableOpacity onPress={() => { setReplyingTo(null); setCommentText(''); }}>
+                  <Text style={styles.replyingToCancel}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.commentInputRow}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment..."
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-              />
+              <View style={{ flex: 1 }}>
+                <MentionTextInput
+                  suggestionsAbove
+                  style={styles.commentInput}
+                  placeholder={replyingTo ? `Reply to @${replyingTo.author}...` : 'Add a comment... (type @ to mention)'}
+                  value={commentText}
+                  onChangeText={setCommentText}
+                  multiline
+                />
+              </View>
               <TouchableOpacity
                 style={[styles.commentSubmit, !commentText.trim() && styles.submitButtonDisabled]}
                 onPress={submitComment}
@@ -1380,10 +1809,10 @@ export default function HomeTab() {
             <TouchableOpacity
               style={[
                 styles.postModalSubmitBtn,
-                (!postContent.trim() && !pendingPostImageUri) && styles.submitButtonDisabled,
+                (!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) && styles.submitButtonDisabled,
               ]}
               onPress={handleCreatePost}
-              disabled={(!postContent.trim() && !pendingPostImageUri) || imageUploading}
+              disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
             >
               {imageUploading
                 ? <ActivityIndicator size="small" color="#fff" />
@@ -1408,7 +1837,7 @@ export default function HomeTab() {
                 ))}
               </View>
 
-              <TextInput
+              <MentionTextInput
                 style={styles.postInput}
                 placeholder={
                   postType === 'milestone' ? 'Share a milestone...' :
@@ -1452,6 +1881,27 @@ export default function HomeTab() {
                 </View>
               )}
 
+              {/* Topic tag selector */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: c.textMuted, marginTop: 12, marginBottom: 8 }}>
+                Add topic tags
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {POST_TAGS.map(tag => {
+                    const active = selectedTags.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        onPress={() => setSelectedTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
+                        style={[styles.tagChip, active && styles.tagChipActive]}
+                      >
+                        <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>{tag}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
               {pendingPostImageUri && (
                 <View style={styles.postImagePreviewWrap}>
                   <Image
@@ -1468,9 +1918,155 @@ export default function HomeTab() {
                 </View>
               )}
 
-              <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}>
-                <Text style={styles.addPhotoBtnText}>📷  Add Photo</Text>
+              {pendingPostVideoUri && (
+                <View style={styles.postImagePreviewWrap}>
+                  <VideoPostPlayer uri={pendingPostVideoUri} />
+                  <TouchableOpacity
+                    style={styles.removePostImageBtn}
+                    onPress={() => setPendingPostVideoUri(null)}
+                  >
+                    <Text style={styles.removePostImageText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}>
+                  <Text style={styles.addPhotoBtnText}>📷  Photo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.addPhotoBtn, { backgroundColor: '#E8E4F7' }]} onPress={pickPostVideo}>
+                  <Text style={styles.addPhotoBtnText}>🎬  Video</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Story viewer */}
+      <StoryViewer
+        visible={showStoryViewer}
+        groups={storyViewGroups}
+        startGroupIndex={storyViewGroupIndex}
+        onClose={() => setShowStoryViewer(false)}
+      />
+
+      {/* Add Story modal */}
+      <Modal
+        visible={showAddStory}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddStory(false)}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowAddStory(false)}>
+              <Text style={styles.modalClose}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Story</Text>
+            <TouchableOpacity
+              style={[styles.postModalSubmitBtn,
+                ((storyMode === 'photo' && !storyImageUri) || (storyMode === 'video' && !storyVideoUri) || (storyMode === 'text' && !storyText.trim()) || storySubmitting)
+                  && styles.submitButtonDisabled]}
+              onPress={handleSubmitStory}
+              disabled={(storyMode === 'photo' && !storyImageUri) || (storyMode === 'video' && !storyVideoUri) || (storyMode === 'text' && !storyText.trim()) || storySubmitting}
+            >
+              {storySubmitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.postModalSubmitText}>Share</Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          {/* Mode toggle */}
+          <View style={{ flexDirection: 'row', margin: 20, marginBottom: 0, gap: 8 }}>
+            {(['photo', 'video', 'text'] as const).map(mode => (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.postTypeButton, storyMode === mode && styles.postTypeButtonActive, { flex: 1 }]}
+                onPress={() => setStoryMode(mode)}
+              >
+                <Text style={[styles.postTypeText, storyMode === mode && styles.postTypeTextActive, { textAlign: 'center' }]}>
+                  {mode === 'photo' ? '📷 Photo' : mode === 'video' ? '🎬 Video' : '✏️ Text'}
+                </Text>
               </TouchableOpacity>
+            ))}
+          </View>
+
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+              {storyMode === 'photo' ? (
+                <>
+                  {storyImageUri ? (
+                    <View style={styles.postImagePreviewWrap}>
+                      <Image source={{ uri: storyImageUri }} style={[styles.postImagePreview, { height: 360 }]} resizeMode="cover" />
+                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryImageUri(null)}>
+                        <Text style={styles.removePostImageText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48 }]} onPress={pickStoryImage}>
+                      <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>📷</Text>
+                      <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : storyMode === 'video' ? (
+                <>
+                  {storyVideoUri ? (
+                    <View style={styles.postImagePreviewWrap}>
+                      <VideoPostPlayer uri={storyVideoUri} />
+                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryVideoUri(null)}>
+                        <Text style={styles.removePostImageText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, backgroundColor: '#E8E4F7' }]} onPress={pickStoryVideo}>
+                      <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>🎬</Text>
+                      <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a video</Text>
+                      <Text style={{ fontSize: 12, color: c.textMuted, textAlign: 'center', marginTop: 6 }}>Max 30 seconds</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Live preview */}
+                  <View style={[styles.storyTextPreview, { backgroundColor: storyBgColor }]}>
+                    <Text style={styles.storyTextPreviewText}>{storyText || 'Your text here…'}</Text>
+                  </View>
+
+                  <TextInput
+                    style={[styles.postInput, { marginTop: 16, minHeight: 80 }]}
+                    placeholder="What's on your mind?"
+                    value={storyText}
+                    onChangeText={setStoryText}
+                    multiline
+                    autoFocus
+                    textAlignVertical="top"
+                  />
+
+                  {/* Color palette */}
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: c.textMuted, marginBottom: 10 }}>
+                    Background color
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {['#B1A7F0', '#FA92B1', '#94B58C', '#F9DE87', '#57B2E8', '#FF7043', '#26C6DA', '#AB47BC'].map(col => (
+                      <TouchableOpacity
+                        key={col}
+                        onPress={() => setStoryBgColor(col)}
+                        style={[
+                          styles.colorSwatch,
+                          { backgroundColor: col },
+                          storyBgColor === col && styles.colorSwatchSelected,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+              <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 20, textAlign: 'center' }}>
+                Stories disappear after 24 hours
+              </Text>
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -1843,6 +2439,43 @@ function makeStyles(c: Colors) {
       fontSize: 11,
       color: c.textMuted,
     },
+    commentMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      marginTop: 2,
+    },
+    replyBtn: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.primary,
+    },
+    repliesContainer: {
+      marginLeft: 44,
+      paddingLeft: 12,
+      borderLeftWidth: 2,
+      borderLeftColor: c.inputBorder,
+      marginBottom: 8,
+    },
+    replyingToBanner: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: c.inputBg,
+      borderTopWidth: 1,
+      borderTopColor: c.inputBorder,
+    },
+    replyingToText: {
+      fontSize: 13,
+      color: c.textMuted,
+    },
+    replyingToCancel: {
+      fontSize: 15,
+      color: c.textMuted,
+      paddingHorizontal: 4,
+    },
     commentInputRow: {
       flexDirection: 'row',
       alignItems: 'flex-end',
@@ -2191,6 +2824,122 @@ function makeStyles(c: Colors) {
       fontSize: 14,
       color: c.primary,
       fontWeight: '600',
+    },
+    // ── Trending cards ────────────────────────────────────────────────────────────
+    trendingCard: {
+      width: 210,
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 14,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.07,
+      shadowRadius: 6,
+      elevation: 3,
+      borderWidth: 1,
+      borderColor: c.separator,
+    },
+    trendingCardAuthor: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textPrimary,
+      flex: 1,
+    },
+    trendingCardContent: {
+      fontSize: 13,
+      color: c.textSecondary,
+      lineHeight: 19,
+      marginBottom: 8,
+      flex: 1,
+    },
+    trendingCardTag: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: '#57B2E8',
+      backgroundColor: '#EEF6FC',
+      alignSelf: 'flex-start',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 10,
+      marginBottom: 8,
+    },
+    trendingCardFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 'auto' as any,
+    },
+    trendingCardStat: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '600',
+    },
+    trendingCardTime: {
+      fontSize: 11,
+      color: c.textMuted,
+    },
+    // ── Tags ──────────────────────────────────────────────────────────────────────
+    tagChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: c.cardBlush,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    tagChipActive: {
+      backgroundColor: c.primary,
+      borderColor: c.primary,
+    },
+    tagChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    tagChipTextActive: {
+      color: '#fff',
+    },
+    postTagsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 10,
+    },
+    postTagChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+      backgroundColor: '#EEF6FC',
+    },
+    postTagChipText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: '#57B2E8',
+    },
+    // ── Story styles ────────────────────────────────────────────────────────────
+    storyTextPreview: {
+      height: 260,
+      borderRadius: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 32,
+      marginBottom: 4,
+    },
+    storyTextPreviewText: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: '#fff',
+      textAlign: 'center',
+      lineHeight: 34,
+    },
+    colorSwatch: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
+    colorSwatchSelected: {
+      borderWidth: 3,
+      borderColor: c.textPrimary,
     },
   });
 }

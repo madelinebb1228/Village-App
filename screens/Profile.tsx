@@ -39,6 +39,7 @@ interface UserProfile {
   header_url: string | null;
   parent_role: string | null;
   show_villages: boolean | null;
+  pinned_post_id: string | null;
 }
 
 interface Baby {
@@ -320,6 +321,14 @@ export default function Profile() {
     ]);
   }
 
+  async function togglePin(postId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const newPinnedId = profile?.pinned_post_id === postId ? null : postId;
+    await supabase.from('profiles').update({ pinned_post_id: newPinnedId } as any).eq('id', user.id);
+    setProfile(prev => prev ? { ...prev, pinned_post_id: newPinnedId } : prev);
+  }
+
   async function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -331,6 +340,14 @@ export default function Profile() {
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
+
+  const sortedPosts = useMemo(() => {
+    const pinnedId = profile?.pinned_post_id;
+    if (!pinnedId) return posts;
+    const pinned = posts.find(p => p.id === pinnedId);
+    const rest = posts.filter(p => p.id !== pinnedId);
+    return pinned ? [pinned, ...rest] : posts;
+  }, [posts, profile?.pinned_post_id]);
 
   const avatarSource = pendingAvatarUri
     ? { uri: pendingAvatarUri }
@@ -666,46 +683,60 @@ export default function Profile() {
         </View>
 
         {profileTab === 'posts' ? (
-          posts.length === 0 ? (
+          sortedPosts.length === 0 ? (
             <View style={s.emptyPosts}>
               <Text style={s.emptyPostsText}>No posts yet — share something with your community!</Text>
             </View>
           ) : (
-            posts.map(post => (
-              <View key={post.id} style={[
-                s.postCard,
-                {
-                  borderLeftWidth: 4,
-                  borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
-                    : post.post_type === 'question' ? c.postQuestion
-                    : c.postText,
-                },
-              ]}>
-                <View style={s.postCardTop}>
-                  <View style={[
-                    s.postTypeBadge,
-                    post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
-                    post.post_type === 'question' && { backgroundColor: c.cardBlue },
-                    post.post_type === 'text' && { backgroundColor: c.cardBlush },
-                  ]}>
-                    <Text style={s.postTypeBadgeText}>
-                      {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
-                    </Text>
+            sortedPosts.map(post => {
+              const isPinned = profile?.pinned_post_id === post.id;
+              return (
+                <View key={post.id} style={[
+                  s.postCard,
+                  isPinned && s.postCardPinned,
+                  {
+                    borderLeftWidth: 4,
+                    borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
+                      : post.post_type === 'question' ? c.postQuestion
+                      : c.postText,
+                  },
+                ]}>
+                  {isPinned && (
+                    <View style={s.pinnedBanner}>
+                      <Text style={s.pinnedBannerText}>📌 Pinned</Text>
+                    </View>
+                  )}
+                  <View style={s.postCardTop}>
+                    <View style={[
+                      s.postTypeBadge,
+                      post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
+                      post.post_type === 'question' && { backgroundColor: c.cardBlue },
+                      post.post_type === 'text' && { backgroundColor: c.cardBlush },
+                    ]}>
+                      <Text style={s.postTypeBadgeText}>
+                        {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={s.postDeleteIcon}>{isPinned ? '📌' : '📍'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
+                        <Text style={s.postDeleteIcon}>🗑</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
-                    <Text style={s.postDeleteIcon}>🗑</Text>
-                  </TouchableOpacity>
+                  <Text style={s.postContent}>{post.content}</Text>
+                  {post.image_url ? (
+                    <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
+                  ) : null}
+                  <View style={s.postCardFooter}>
+                    <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+                    <Text style={s.postLikes}>❤️ {post.likes}</Text>
+                  </View>
                 </View>
-                <Text style={s.postContent}>{post.content}</Text>
-                {post.image_url ? (
-                  <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
-                ) : null}
-                <View style={s.postCardFooter}>
-                  <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                  <Text style={s.postLikes}>❤️ {post.likes}</Text>
-                </View>
-              </View>
-            ))
+              );
+            })
           )
         ) : profileTab === 'saved' ? (
           savedPosts.length === 0 ? (
@@ -1266,6 +1297,19 @@ function makeStyles(c: Colors) {
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  postCardPinned: {
+    borderTopWidth: 2,
+    borderTopColor: c.primary,
+  },
+  pinnedBanner: {
+    marginBottom: 8,
+  },
+  pinnedBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: c.primary,
+    letterSpacing: 0.3,
   },
   postCardTop: {
     flexDirection: 'row',

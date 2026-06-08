@@ -805,7 +805,7 @@ function PostModal({
 
             {/* Category */}
             <Text style={s.label}>Category *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} contentContainerStyle={s.chipRow}>
               {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
                 <TouchableOpacity
                   key={cat.id}
@@ -1099,7 +1099,7 @@ export default function ParentMarketplace({ onBack }: { onBack: () => void }) {
         </View>
 
         {/* Category chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} contentContainerStyle={s.chips}>
           {CATEGORIES.map(cat => {
             const active = categoryFilter === cat.id;
             return (

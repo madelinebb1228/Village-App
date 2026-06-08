@@ -331,7 +331,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
       if (!granted && Platform.OS !== 'web') {
         Alert.alert(
           'Reminders are off',
-          ‘Notification permission was not granted, so this reminder won’t alert you. You can enable notifications for Parent Patch in your device settings.’
+          "Notification permission was not granted, so this reminder won’t alert you. You can enable notifications for Parent Patch in your device settings."
         );
       }
     }

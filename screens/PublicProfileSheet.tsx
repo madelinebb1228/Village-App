@@ -22,6 +22,16 @@ interface PublicProfile {
   avatar_url: string | null;
   parent_role: string | null;
   show_villages: boolean | null;
+  pinned_post_id: string | null;
+}
+
+interface PinnedPost {
+  id: string;
+  content: string;
+  post_type: string;
+  image_url: string | null;
+  likes: number;
+  created_at: string;
 }
 
 interface Props {
@@ -33,6 +43,15 @@ interface Props {
 
 function memberSince(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function getTimeAgo(dateString: string): string {
+  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
+  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 function makeStyles(c: Colors) {
@@ -180,6 +199,60 @@ function makeStyles(c: Colors) {
       fontStyle: 'italic',
       marginTop: 4,
     },
+
+    pinnedCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 12,
+      borderTopWidth: 2,
+      borderTopColor: c.primary,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 1,
+    },
+    pinnedLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.primary,
+      letterSpacing: 0.3,
+      marginBottom: 8,
+    },
+    pinnedTypeBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 10,
+      marginBottom: 8,
+    },
+    pinnedTypeBadgeText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    pinnedContent: {
+      fontSize: 14,
+      lineHeight: 21,
+      color: c.textSecondary,
+      marginBottom: 10,
+    },
+    pinnedImage: {
+      width: '100%',
+      height: 180,
+      borderRadius: 10,
+      marginBottom: 10,
+    },
+    pinnedFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      borderTopWidth: 1,
+      borderTopColor: c.separator,
+      paddingTop: 8,
+    },
+    pinnedStat: { fontSize: 12, color: c.textMuted, fontWeight: '500' },
+    pinnedTime: { fontSize: 11, color: c.textMuted },
   });
 }
 
@@ -198,10 +271,12 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [myId, setMyId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [pinnedPost, setPinnedPost] = useState<PinnedPost | null>(null);
 
   useEffect(() => {
     if (!visible || !userId) return;
     setProfile(null);
+    setPinnedPost(null);
     setTheirVillageIds([]);
     setMyVillageIds([]);
     setPostCount(0);
@@ -224,7 +299,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         }
 
         const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes] = await Promise.all([
-          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages').eq('id', userId).maybeSingle(),
+          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
@@ -240,6 +315,16 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         setTheirVillageIds((theirVillagesRes.data ?? []).map((r: any) => r.village_id));
         setMyVillageIds((myVillagesRes.data ?? []).map((r: any) => r.village_id));
         setIsFollowing(!!isFollowingRes.data);
+
+        const pinnedId = (profileRes.data as any)?.pinned_post_id;
+        if (pinnedId) {
+          const { data: pinned } = await supabase
+            .from('posts')
+            .select('id,content,post_type,image_url,likes,created_at')
+            .eq('id', pinnedId)
+            .maybeSingle();
+          setPinnedPost((pinned as any) ?? null);
+        }
       } catch (err: any) {
         console.warn('PublicProfileSheet error:', err.message);
       } finally {
@@ -376,6 +461,35 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 )}
               </View>
             </View>
+
+            {/* Pinned post */}
+            {pinnedPost && (
+              <View style={s.pinnedCard}>
+                <Text style={s.pinnedLabel}>📌 Pinned</Text>
+                <View style={[
+                  s.pinnedTypeBadge,
+                  pinnedPost.post_type === 'milestone' ? { backgroundColor: c.cardHoney }
+                    : pinnedPost.post_type === 'question' ? { backgroundColor: c.cardBlue }
+                    : { backgroundColor: c.cardBlush },
+                ]}>
+                  <Text style={s.pinnedTypeBadgeText}>
+                    {pinnedPost.post_type === 'milestone' ? '🎉 Milestone'
+                      : pinnedPost.post_type === 'question' ? '❓ Question'
+                      : '💬 Update'}
+                  </Text>
+                </View>
+                {!!pinnedPost.content && (
+                  <Text style={s.pinnedContent}>{pinnedPost.content}</Text>
+                )}
+                {pinnedPost.image_url && (
+                  <Image source={{ uri: pinnedPost.image_url }} style={s.pinnedImage} resizeMode="cover" />
+                )}
+                <View style={s.pinnedFooter}>
+                  <Text style={s.pinnedStat}>❤️ {pinnedPost.likes || 0}</Text>
+                  <Text style={s.pinnedTime}>{getTimeAgo(pinnedPost.created_at)}</Text>
+                </View>
+              </View>
+            )}
 
             {/* Villages section */}
             {showVillages && theirVillageIds.length > 0 && (

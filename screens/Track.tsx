@@ -13,6 +13,8 @@ import VaccineTracker from './VaccineTracker';
 import NutritionTracker from './NutritionTracker';
 import GrowthTracker from './GrowthTracker';
 import AllergenTracker from './AllergenTracker';
+import SleepTracker from './SleepTracker';
+import MomMentalHealthTracker from './MomMentalHealthTracker';
 import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
@@ -1353,11 +1355,13 @@ export default function Track() {
           {([
             { key: 'logging',    label: '📋 Logging' },
             { key: 'supplies',   label: '🧴 Supplies' },
+            { key: 'sleep',      label: '🌙 Sleep & Wake' },
             { key: 'milestones', label: '⭐ Milestones' },
             { key: 'vaccines',   label: '💉 Vaccines' },
             { key: 'growth',     label: '📈 Growth' },
-            { key: 'nutrition',  label: '💧 Nutrition' },
             { key: 'allergens',  label: '🚨 Allergens' },
+            { key: 'nutrition',  label: '💧 Nutrition' },
+            { key: 'mental',     label: '🧠 Mental Health' },
             { key: 'timeline',   label: '🕐 Timeline' },
           ] as const).map(sec => (
             <TouchableOpacity
@@ -1401,6 +1405,11 @@ export default function Track() {
           <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
         </View>
 
+        {/* ── Sleep & Wake Tracker */}
+        <View ref={ref => { sectionRefs.current['sleep'] = ref; }} onLayout={e => { sectionY.current['sleep'] = e.nativeEvent.layout.y; }}>
+          <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+        </View>
+
         {/* ── Development Tracker */}
         <View ref={ref => { sectionRefs.current['milestones'] = ref; }} onLayout={e => { sectionY.current['milestones'] = e.nativeEvent.layout.y; }}>
           <MilestoneTracker userId={userId} />
@@ -1421,14 +1430,19 @@ export default function Track() {
           />
         </View>
 
-        {/* ── Nutrition & Hydration */}
+        {/* ── Allergen Tracker */}
+        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
+          <AllergenTracker />
+        </View>
+
+        {/* ── Mom: Nutrition & Hydration */}
         <View ref={ref => { sectionRefs.current['nutrition'] = ref; }} onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}>
           <NutritionTracker userId={userId} />
         </View>
 
-        {/* ── Allergen Tracker */}
-        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
-          <AllergenTracker />
+        {/* ── Mom: Mental Health */}
+        <View ref={ref => { sectionRefs.current['mental'] = ref; }} onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}>
+          <MomMentalHealthTracker userId={userId} />
         </View>
 
         {/* ── Timeline */}

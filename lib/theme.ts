@@ -111,10 +111,10 @@ export interface Colors {
 // ─── Light palette ────────────────────────────────────────────────────────────
 
 export const lightColors: Colors = {
-  bg:              '#FAF9F6',
+  bg:              '#FFFFFF',
   bgAlt:           '#EDE9FF',
 
-  card:            '#FFFFFF',
+  card:            '#FAF9F6',
   cardBlue:        '#BFDBFE',
   cardSage:        '#A7F3D0',
   cardBlush:       '#FBCFE8',
@@ -199,10 +199,10 @@ export const lightColors: Colors = {
 // ─── Dark palette ─────────────────────────────────────────────────────────────
 
 export const darkColors: Colors = {
-  bg:              '#1A2332',
+  bg:              '#243040',
   bgAlt:           '#1E2A3C',
 
-  card:            '#243040',
+  card:            '#1A2332',
   cardBlue:        '#1A3858',
   cardSage:        '#1A3828',
   cardBlush:       '#3A1C32',

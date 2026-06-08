@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput,
-  ScrollView,
+  ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors, Colors } from '../lib/theme';
@@ -498,7 +498,7 @@ export default function BabyNameFinder({ onBack }: { onBack: () => void }) {
       <View style={s.tagScrollWrap}>
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={Platform.OS === 'web'}
           contentContainerStyle={s.tagScrollContent}
         >
           <TouchableOpacity
@@ -523,7 +523,7 @@ export default function BabyNameFinder({ onBack }: { onBack: () => void }) {
       <View style={s.alphaScrollWrap}>
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={Platform.OS === 'web'}
           contentContainerStyle={s.alphaScrollContent}
         >
           {ALPHABET.map(l => (
