@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Village",
-    "slug": "village-app",
+    "name": "Parent Patch",
+    "slug": "parent-patch",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",

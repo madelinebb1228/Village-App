@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
+import { useOneHanded } from '../lib/OneHandedContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -530,6 +531,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
 
 export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const c = useColors();
+  const { isOneHanded, toggleOneHanded } = useOneHanded();
   const [view, setView] = useState<View>('main');
   const [notifs, setNotifs] = useState<NotifPrefs>(DEFAULT_NOTIFS);
   const [showVillages, setShowVillages] = useState(true);
@@ -838,6 +840,25 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
               />
             </>
           )}
+        </View>
+
+        {/* ── Accessibility ───────────────────────────────────────── */}
+        <SectionHeader label="Accessibility" />
+        <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
+          <SettingsRow
+            icon="☝️"
+            label="One-Handed Mode"
+            sublabel="Moves save buttons to the bottom of the screen — great when holding your baby"
+            chevron={false}
+            right={
+              <Switch
+                value={isOneHanded}
+                onValueChange={toggleOneHanded}
+                trackColor={{ false: c.separator, true: c.sage }}
+                thumbColor="#fff"
+              />
+            }
+          />
         </View>
 
         {/* ── Support ─────────────────────────────────────────────── */}

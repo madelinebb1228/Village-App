@@ -2,6 +2,9 @@ import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import { useColors } from './lib/theme';
 import { NavigationContainer } from '@react-navigation/native';
+import { SyncProvider } from './lib/syncService';
+import OfflineBanner from './components/OfflineBanner';
+import { OneHandedProvider, useOneHanded } from './lib/OneHandedContext';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BottomTabBar, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -38,7 +41,7 @@ const NAV_TABS = [
   { name: 'Home',      emoji: '🏡', label: 'Home' },
   { name: 'Track',     emoji: '📋', label: 'Track' },
   { name: 'Resources', emoji: '📚', label: 'Resources' },
-  { name: 'Village',   emoji: '🌿', label: 'Patch' },
+  { name: 'Patch',     emoji: '🌿', label: 'Patch' },
   { name: 'Profile',   emoji: '🌸', label: 'Profile' },
 ];
 
@@ -96,6 +99,30 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
           </TouchableOpacity>
         );
       })}
+    </View>
+  );
+}
+
+function OneHandedIndicator() {
+  const { isOneHanded } = useOneHanded();
+  if (!isOneHanded) return null;
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', bottom: 74, right: 14, zIndex: 998 }}
+    >
+      <View style={{
+        backgroundColor: 'rgba(124,107,196,0.88)',
+        borderRadius: 20,
+        paddingHorizontal: 9,
+        paddingVertical: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <Text style={{ fontSize: 12 }}>☝️</Text>
+        <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700', letterSpacing: 0.3 }}>1H</Text>
+      </View>
     </View>
   );
 }
@@ -167,7 +194,7 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Village"
+        name="Patch"
         component={sidebarAware(VillageScreen)}
         options={{
           tabBarLabel: 'Patch',
@@ -226,6 +253,9 @@ export default function App() {
 
   return (
     <AppContext.Provider value={{ markOnboardingComplete }}>
+      <OneHandedProvider>
+      <SyncProvider>
+      <OfflineBanner />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!session ? (
@@ -237,6 +267,9 @@ export default function App() {
           )}
         </Stack.Navigator>
       </NavigationContainer>
+      <OneHandedIndicator />
+      </SyncProvider>
+      </OneHandedProvider>
     </AppContext.Provider>
   );
 }

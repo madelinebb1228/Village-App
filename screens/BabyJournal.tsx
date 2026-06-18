@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeDelete, generateId } from '../lib/syncService';
 import { useColors } from '../lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -172,21 +173,23 @@ export default function BabyJournal({
         imageUrl = await uploadJournalPhoto(imageUri, userId);
       }
 
-      const { data, error } = await supabase
-        .from('baby_journal')
-        .insert({
-          user_id: userId,
-          baby_id: babyId,
-          title: title.trim() || null,
-          caption: caption.trim() || null,
-          image_url: imageUrl,
-          happened_on: happenedOn || todayISO(),
-          category,
-        })
-        .select('*')
-        .single();
-
-      if (error) throw error;
+      const entryId = generateId();
+      const newEntry: JournalEntry = {
+        id: entryId,
+        title: title.trim() || null,
+        caption: caption.trim() || null,
+        image_url: imageUrl,
+        happened_on: happenedOn || todayISO(),
+        category,
+        created_at: new Date().toISOString(),
+      };
+      const { queued } = await safeInsert('baby_journal', {
+        ...newEntry,
+        user_id: userId,
+        baby_id: babyId,
+      });
+      const data = newEntry;
+      if (queued) console.log('[Journal] Saved locally, will sync when online');
 
       setEntries(prev => [data, ...prev]);
       setShowModal(false);
@@ -234,8 +237,8 @@ export default function BabyJournal({
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          const { error } = await supabase.from('baby_journal').delete().eq('id', id);
-          if (!error) setEntries(prev => prev.filter(e => e.id !== id));
+          await safeDelete('baby_journal', id);
+          setEntries(prev => prev.filter(e => e.id !== id));
         },
       },
     ]);

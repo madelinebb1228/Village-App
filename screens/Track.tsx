@@ -4,16 +4,21 @@ import {
   Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import OneHandedTray from '../components/OneHandedTray';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeQuery, generateId, useSyncStatus } from '../lib/syncService';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
 import MilestoneTracker from './MilestoneTracker';
 import VaccineTracker from './VaccineTracker';
-import NutritionTracker from './NutritionTracker';
 import GrowthTracker from './GrowthTracker';
 import AllergenTracker from './AllergenTracker';
 import SleepTracker from './SleepTracker';
+import WakeWindowTracker from './WakeWindowTracker';
+import BabyJournal from './BabyJournal';
+import BabyFoodChart from './BabyFoodChart';
+import NutritionTracker from './NutritionTracker';
 import MomMentalHealthTracker from './MomMentalHealthTracker';
 import { useColors, Colors } from '../lib/theme';
 
@@ -306,24 +311,32 @@ function ModalSheet({ visible, onClose, title, accent, onSave, saving, children 
   const insets = useSafeAreaInsets();
   const c = useColors();
   const ms = useMemo(() => makeMsStyles(c), [c]);
+
+  const actionButtons = (
+    <>
+      <TouchableOpacity style={[ms.saveBtn, { backgroundColor: accent }, saving && ms.saveBtnOff]}
+        onPress={onSave} disabled={saving} activeOpacity={0.85}>
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={ms.saveBtnText}>Save</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity style={ms.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+        <Text style={ms.cancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </>
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={ms.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={ms.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={[ms.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={ms.sheet}>
           <View style={ms.handle} />
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
-            contentContainerStyle={ms.content}>
-            <Text style={ms.title}>{title}</Text>
-            {children}
-            <TouchableOpacity style={[ms.saveBtn, { backgroundColor: accent }, saving && ms.saveBtnOff]}
-              onPress={onSave} disabled={saving} activeOpacity={0.85}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={ms.saveBtnText}>Save</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity style={ms.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-              <Text style={ms.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </ScrollView>
+          <OneHandedTray actions={actionButtons} bottomPad={insets.bottom + 8}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+              contentContainerStyle={ms.content}>
+              <Text style={ms.title}>{title}</Text>
+              {children}
+            </ScrollView>
+          </OneHandedTray>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -730,6 +743,9 @@ export default function Track() {
   const [userId,        setUserId]        = useState<string | null>(null);
   const [babyBirthDate, setBabyBirthDate] = useState<string | null>(null);
   const [babyGender,    setBabyGender]    = useState<string | null>(null);
+  const [babyName,      setBabyName]      = useState<string | null>(null);
+  const [showFoodChart, setShowFoodChart] = useState(false);
+  const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
 
   const scrollRef    = useRef<ScrollView>(null);
   const sectionY     = useRef<Record<string, number>>({});
@@ -817,9 +833,10 @@ export default function Track() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       setUserId(user.id);
-      supabase.from('babies').select('id,birth_date,gender').eq('user_id', user.id).limit(1).maybeSingle()
+      supabase.from('babies').select('id,name,birth_date,gender').eq('user_id', user.id).limit(1).maybeSingle()
         .then(({ data }) => {
           setBabyId(data?.id ?? null);
+          setBabyName(data?.name ?? null);
           setBabyBirthDate(data?.birth_date ?? null);
           setBabyGender(data?.gender ?? null);
         });
@@ -833,14 +850,24 @@ export default function Track() {
       const dayEnd   = new Date(selectedDate); dayEnd.setHours(23, 59, 59, 999);
       const start = dayStart.toISOString();
       const end   = dayEnd.toISOString();
-      const [feedRes, diaperRes, pumpRes] = await Promise.all([
-        supabase.from('feeds').select('id, feed_type, logged_at')
-          .gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
-        supabase.from('diaper_logs').select('id, diaper_type, logged_at')
-          .gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
-        supabase.from('pumping_sessions').select('id, total_ml, logged_at')
-          .gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
+      const dateKey = start.slice(0, 10);
+      const [feedRows, diaperRows, pumpRows] = await Promise.all([
+        safeQuery(
+          () => supabase.from('feeds').select('id, feed_type, logged_at').gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
+          `timeline_feeds_${dateKey}`,
+        ),
+        safeQuery(
+          () => supabase.from('diaper_logs').select('id, diaper_type, logged_at').gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
+          `timeline_diapers_${dateKey}`,
+        ),
+        safeQuery(
+          () => supabase.from('pumping_sessions').select('id, total_ml, logged_at').gte('logged_at', start).lte('logged_at', end).order('logged_at', { ascending: false }),
+          `timeline_pumping_${dateKey}`,
+        ),
       ]);
+      const feedRes   = { data: feedRows };
+      const diaperRes = { data: diaperRows };
+      const pumpRes   = { data: pumpRows };
       const merged: TimelineEntry[] = [
         ...(feedRes.data ?? []).map(r => ({
           id: `feed-${r.id}`, rawId: r.id, table: 'feeds' as const,
@@ -937,13 +964,11 @@ export default function Track() {
       };
 
       if (editingId) {
-        const { error } = await supabase.from('feeds').update(fields).eq('id', editingId);
-        if (error) throw error;
+        await safeUpdate('feeds', editingId, fields);
       } else {
-        const baby_id = await getFirstBabyId();
+        const baby_id = babyId ?? await getFirstBabyId();
         if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
-        const { error } = await supabase.from('feeds').insert({ ...fields, baby_id, logged_at: new Date().toISOString() });
-        if (error) throw error;
+        await safeInsert('feeds', { ...fields, baby_id, logged_at: new Date().toISOString() });
         try {
           if (feedType === 'bottle' && feedAmount && userId) {
             const oz = parseFloat(feedAmount) || 0;
@@ -986,13 +1011,11 @@ export default function Track() {
       };
 
       if (editingId) {
-        const { error } = await supabase.from('diaper_logs').update(fields).eq('id', editingId);
-        if (error) throw error;
+        await safeUpdate('diaper_logs', editingId, fields);
       } else {
-        const baby_id = await getFirstBabyId();
+        const baby_id = babyId ?? await getFirstBabyId();
         if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
-        const { error } = await supabase.from('diaper_logs').insert({ ...fields, baby_id, logged_at: new Date().toISOString() });
-        if (error) throw error;
+        await safeInsert('diaper_logs', { ...fields, baby_id, logged_at: new Date().toISOString() });
         try {
           if (userId) {
             await deductFromSupply(userId, 'diapers', 1);
@@ -1041,13 +1064,11 @@ export default function Track() {
       };
 
       if (editingId) {
-        const { error } = await supabase.from('pumping_sessions').update(fields).eq('id', editingId);
-        if (error) throw error;
+        await safeUpdate('pumping_sessions', editingId, fields);
       } else {
-        const { error } = await supabase.from('pumping_sessions').insert({
+        await safeInsert('pumping_sessions', {
           ...fields, user_id: user.id, logged_at: new Date().toISOString(),
         });
-        if (error) throw error;
         try {
           if (storageLocation === 'fridge' || storageLocation === 'freezer') {
             await addToMilkStash(user.id, total_ml, storageLocation);
@@ -1345,6 +1366,28 @@ export default function Track() {
         showsVerticalScrollIndicator={false}>
         <Text style={styles.heading}>Track</Text>
 
+        {/* ── Baby / You toggle */}
+        <View style={styles.viewToggleRow}>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, activeView === 'baby' && styles.viewToggleBtnActive]}
+            onPress={() => { setActiveView('baby'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.viewToggleText, activeView === 'baby' && styles.viewToggleTextActive]}>
+              👶  Baby
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, activeView === 'you' && styles.viewToggleBtnActive]}
+            onPress={() => { setActiveView('you'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.viewToggleText, activeView === 'you' && styles.viewToggleTextActive]}>
+              🌷  You
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* ── Quick nav */}
         <ScrollView
           horizontal
@@ -1352,18 +1395,22 @@ export default function Track() {
           style={{ marginBottom: 20, marginHorizontal: -4 }}
           contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
         >
-          {([
+          {(activeView === 'baby' ? [
             { key: 'logging',    label: '📋 Logging' },
             { key: 'supplies',   label: '🧴 Supplies' },
-            { key: 'sleep',      label: '🌙 Sleep & Wake' },
+            { key: 'sleep',      label: '🌙 Sleep' },
+            { key: 'wake',       label: '⏱️ Wake Windows' },
             { key: 'milestones', label: '⭐ Milestones' },
             { key: 'vaccines',   label: '💉 Vaccines' },
             { key: 'growth',     label: '📈 Growth' },
             { key: 'allergens',  label: '🚨 Allergens' },
+            { key: 'foodchart',  label: '🍽️ Food Chart' },
+            { key: 'journal',    label: '📓 Journal' },
+            { key: 'timeline',   label: '🕐 Timeline' },
+          ] : [
             { key: 'nutrition',  label: '💧 Nutrition' },
             { key: 'mental',     label: '🧠 Mental Health' },
-            { key: 'timeline',   label: '🕐 Timeline' },
-          ] as const).map(sec => (
+          ]).map(sec => (
             <TouchableOpacity
               key={sec.key}
               onPress={() => scrollToSection(sec.key)}
@@ -1377,6 +1424,8 @@ export default function Track() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {activeView === 'baby' ? (<>
 
         {/* ── Main buttons */}
         <View
@@ -1405,9 +1454,14 @@ export default function Track() {
           <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
         </View>
 
-        {/* ── Sleep & Wake Tracker */}
+        {/* ── Sleep Tracker */}
         <View ref={ref => { sectionRefs.current['sleep'] = ref; }} onLayout={e => { sectionY.current['sleep'] = e.nativeEvent.layout.y; }}>
           <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+        </View>
+
+        {/* ── Wake Windows */}
+        <View ref={ref => { sectionRefs.current['wake'] = ref; }} onLayout={e => { sectionY.current['wake'] = e.nativeEvent.layout.y; }}>
+          <WakeWindowTracker babyBirthDate={babyBirthDate} />
         </View>
 
         {/* ── Development Tracker */}
@@ -1435,14 +1489,26 @@ export default function Track() {
           <AllergenTracker />
         </View>
 
-        {/* ── Mom: Nutrition & Hydration */}
-        <View ref={ref => { sectionRefs.current['nutrition'] = ref; }} onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}>
-          <NutritionTracker userId={userId} />
+        {/* ── Baby Food Chart */}
+        <View
+          ref={ref => { sectionRefs.current['foodchart'] = ref; }}
+          onLayout={e => { sectionY.current['foodchart'] = e.nativeEvent.layout.y; }}
+          style={{ marginBottom: 36 }}
+        >
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
+            activeOpacity={0.8}
+            onPress={() => setShowFoodChart(true)}
+          >
+            <Text style={styles.buttonEmoji}>🍽️</Text>
+            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Chart</Text>
+            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ── Mom: Mental Health */}
-        <View ref={ref => { sectionRefs.current['mental'] = ref; }} onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}>
-          <MomMentalHealthTracker userId={userId} />
+        {/* ── Baby Journal */}
+        <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
+          <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
         </View>
 
         {/* ── Timeline */}
@@ -1492,6 +1558,26 @@ export default function Track() {
             ))
           )}
         </View>
+
+        </>) : (<>
+
+        {/* ── You: Nutrition & Hydration */}
+        <View
+          ref={ref => { sectionRefs.current['nutrition'] = ref; }}
+          onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}
+        >
+          <NutritionTracker userId={userId} />
+        </View>
+
+        {/* ── You: Mental Health */}
+        <View
+          ref={ref => { sectionRefs.current['mental'] = ref; }}
+          onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}
+        >
+          <MomMentalHealthTracker userId={userId} />
+        </View>
+
+        </>)}
       </ScrollView>
 
       {/* ══════════ DETAIL MODAL ══════════ */}
@@ -1711,6 +1797,11 @@ export default function Track() {
           value={storageLocation} onChange={setStorageLocation} accent={c.trackPump} />
       </ModalSheet>
 
+      {/* ══════════ BABY FOOD CHART MODAL ══════════ */}
+      <Modal visible={showFoodChart} animationType="slide" onRequestClose={() => setShowFoodChart(false)}>
+        <BabyFoodChart onBack={() => setShowFoodChart(false)} />
+      </Modal>
+
       {/* ══════════ CALENDAR PICKER ══════════ */}
       <Modal visible={showCalendar} animationType="fade" transparent
         onRequestClose={() => setShowCalendar(false)}>
@@ -1856,7 +1947,7 @@ function makeMsStyles(c: Colors) {
   return StyleSheet.create({
     overlay:    { flex: 1, justifyContent: 'flex-end' },
     backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(30,27,75,0.4)' },
-    sheet:      { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, maxHeight: '92%' },
+    sheet:      { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, maxHeight: '92%', overflow: 'hidden' },
     handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: c.inputBorder, alignSelf: 'center', marginBottom: 18 },
     content:    { paddingHorizontal: 24, paddingBottom: 8 },
     title:      { fontSize: 22, fontWeight: '800', color: c.textPrimary, marginBottom: 24 },
@@ -1945,6 +2036,12 @@ function makeStyles(c: Colors) {
     breastDivider:   { width: 1, backgroundColor: c.inputBorder, marginVertical: 16 },
     totalPreview:    { fontSize: 13, color: c.trackPump, fontWeight: '700', textAlign: 'center',
                        marginBottom: 20, marginTop: 4 },
+
+    viewToggleRow:         { flexDirection: 'row', backgroundColor: c.inputBg, borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 },
+    viewToggleBtn:         { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
+    viewToggleBtnActive:   { backgroundColor: c.card, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
+    viewToggleText:        { fontSize: 15, fontWeight: '600', color: c.textMuted },
+    viewToggleTextActive:  { color: c.textPrimary, fontWeight: '700' },
 
     dateNav:             { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     dateNavBtn:          { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },

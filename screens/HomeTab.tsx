@@ -16,7 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
@@ -32,267 +32,30 @@ import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
 import StoryViewer from '../components/StoryViewer';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Post {
-  id: string;
-  user_id: string;
-  author: string;
-  content: string;
-  post_type: 'text' | 'milestone' | 'question' | 'poll';
-  likes: number;
-  created_at: string;
-  image_url?: string | null;
-  video_url?: string | null;
-  tags?: string[] | null;
-  village_id?: string | null;
-  is_sensitive?: boolean | null;
-  sensitive_label?: string | null;
-}
-
-interface Comment {
-  id: string;
-  user_id: string;
-  author: string;
-  content: string;
-  created_at: string;
-  parent_id?: string | null;
-  replies?: Comment[];
-}
-
-type Stats = {
-  feeds: number;
-  diapers: number;
-  pumpedMl: number;
-};
-
-type ReminderUrgency = 'info' | 'warning' | 'alert' | 'milestone' | 'streak';
-interface Reminder {
-  id: string;
-  emoji: string;
-  text: string;
-  urgency: ReminderUrgency;
-}
-
-function getReminderColors(c: Colors): Record<ReminderUrgency, { bg: string; border: string; text: string }> {
-  return {
-    info:      { bg: c.reminderInfo.bg,      border: c.reminderInfo.border,      text: c.reminderInfo.text },
-    warning:   { bg: c.reminderWarning.bg,   border: c.reminderWarning.border,   text: c.reminderWarning.text },
-    alert:     { bg: c.reminderAlert.bg,     border: c.reminderAlert.border,     text: c.reminderAlert.text },
-    milestone: { bg: c.reminderMilestone.bg, border: c.reminderMilestone.border, text: c.reminderMilestone.text },
-    streak:    { bg: c.reminderStreak.bg,    border: c.reminderStreak.border,    text: c.reminderStreak.text },
-  };
-}
-
-const POST_TAGS = [
-  'Sleep', 'Feeding', 'Milestones', 'Health', 'Play', 'Development',
-  'Mom Life', 'Dad Life', 'Breastfeeding', 'Formula', 'Solid Foods',
-  'Newborn', 'Toddler', 'Pregnancy', 'Postpartum', 'Self Care',
-  'Products', 'Travel', 'Safety',
-];
-
-const MENTAL_HEALTH_KEYWORDS = [
-  'struggling', 'overwhelmed', 'ppd', 'postpartum depression', 'postpartum anxiety',
-  "can't cope", 'hopeless', 'suicidal', 'breakdown', 'depressed', 'not okay',
-  "can't do this", 'losing my mind', 'burnout', 'want to give up', 'hurting myself',
-  'self harm', 'end it all', 'help me please', 'can\'t take it', 'giving up',
-];
-
-const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
-  membranes:      { sessions: 30,  days: 60  },
-  valves:         { sessions: 15,  days: 28  },
-  breast_shields: { sessions: 100, days: 180 },
-  tubing:         { sessions: 100, days: 180 },
-};
-const PART_LABELS: Record<string, string> = {
-  membranes:      'Pump membranes',
-  valves:         'Pump valves',
-  breast_shields: 'Breast shields',
-  tubing:         'Pump tubing',
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function todayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
-function greetingFor(hour: number): string {
-  if (hour < 12) return 'Good morning 🌸';
-  if (hour < 17) return 'Good afternoon ☀️';
-  return 'Good evening 🌙';
-}
-
-function mlToOz(ml: number): string {
-  return (ml / 29.5735).toFixed(1);
-}
-
-function babyAgeLabel(dob: string): string {
-  const now = Date.now();
-  const ageDays = Math.floor((now - new Date(dob).getTime()) / 86400000);
-  const ageWeeks = Math.floor(ageDays / 7);
-  const d = new Date(dob);
-  const today = new Date();
-  const monthsOld = (today.getFullYear() - d.getFullYear()) * 12 + (today.getMonth() - d.getMonth());
-  return monthsOld >= 3
-    ? `${monthsOld} month${monthsOld !== 1 ? 's' : ''} old`
-    : `${ageWeeks} week${ageWeeks !== 1 ? 's' : ''} old`;
-}
-
-function getTimeAgo(dateString: string): string {
-  // Ensure the string is parsed as UTC (Supabase stores UTC; without Z JS may treat as local)
-  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
-  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
-
-function showSourcePicker(title: string): Promise<'camera' | 'library' | null> {
-  return new Promise(resolve => {
-    Alert.alert(title, '', [
-      { text: 'Take Photo/Video', onPress: () => resolve('camera') },
-      { text: 'Choose from Library', onPress: () => resolve('library') },
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
-    ]);
-  });
-}
-
-async function uploadPostImage(uri: string, userId: string): Promise<string | null> {
-  try {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const path = `${userId}/post-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('baby-photos')
-      .upload(path, blob, { contentType: `image/${ext}`, upsert: true });
-    if (error) throw error;
-    const { data } = supabase.storage.from('baby-photos').getPublicUrl(path);
-    return data.publicUrl;
-  } catch (err: any) {
-    console.warn('Post image upload failed:', err.message);
-    return null;
-  }
-}
-
-async function uploadPostVideo(uri: string, userId: string): Promise<string | null> {
-  try {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const ext = uri.split('.').pop()?.toLowerCase() ?? 'mp4';
-    const path = `${userId}/video-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('baby-photos')
-      .upload(path, blob, { contentType: `video/${ext}`, upsert: true });
-    if (error) throw error;
-    const { data } = supabase.storage.from('baby-photos').getPublicUrl(path);
-    return data.publicUrl;
-  } catch (err: any) {
-    console.warn('Post video upload failed:', err.message);
-    return null;
-  }
-}
-
-// ─── Mention helpers ──────────────────────────────────────────────────────────
-
-function extractMentions(text: string): string[] {
-  const raw = text.match(/@(\w+)/g) ?? [];
-  return [...new Set(raw.map(m => m.slice(1).toLowerCase()))];
-}
-
-async function sendMentionNotifications(
-  content: string,
-  postId: string,
-  actorId: string,
-) {
-  const usernames = extractMentions(content);
-  if (usernames.length === 0) return;
-  const { data: users } = await supabase
-    .from('profiles')
-    .select('id')
-    .in('username', usernames)
-    .neq('id', actorId);
-  if (!users || users.length === 0) return;
-  await supabase.from('notifications').insert(
-    users.map((u: any) => ({
-      user_id: u.id,
-      type: 'mention',
-      actor_id: actorId,
-      post_id: postId,
-      comment_preview: content.substring(0, 100),
-      read: false,
-    })) as any
-  );
-}
-
-function renderTextWithMentions(
-  text: string,
-  outerStyle: any,
-  mentionColor: string,
-  onMentionPress?: (username: string) => void,
-  onHashtagPress?: (tag: string) => void,
-): React.ReactElement {
-  const parts = text.split(/(@\w+|#\w+)/);
-  return (
-    <Text style={outerStyle}>
-      {parts.map((part, i) => {
-        if (/^@\w+$/.test(part)) {
-          return (
-            <Text
-              key={i}
-              style={{ color: mentionColor, fontWeight: '700' }}
-              onPress={onMentionPress ? () => onMentionPress(part.slice(1)) : undefined}
-            >
-              {part}
-            </Text>
-          );
-        }
-        if (/^#\w+$/.test(part)) {
-          return (
-            <Text
-              key={i}
-              style={{ color: '#57B2E8', fontWeight: '600' }}
-              onPress={onHashtagPress ? () => onHashtagPress(part.slice(1)) : undefined}
-            >
-              {part}
-            </Text>
-          );
-        }
-        return part;
-      })}
-    </Text>
-  );
-}
-
-// ─── Video player for feed posts ──────────────────────────────────────────────
-
-function VideoPostPlayer({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, p => { p.loop = false; });
-  return (
-    <VideoView
-      player={player}
-      style={{ width: '100%', height: 240, borderRadius: 12, marginBottom: 12, backgroundColor: '#000' }}
-      allowsFullscreen
-      allowsPictureInPicture
-    />
-  );
-}
+import {
+  Post, Comment, Stats, ReminderUrgency, Reminder,
+  POST_TAGS, MENTAL_HEALTH_KEYWORDS, PART_LIMITS, PART_LABELS,
+  getReminderColors,
+} from '../types/feed';
+import {
+  todayRange, greetingFor, mlToOz, babyAgeLabel, getTimeAgo,
+  showSourcePicker, uploadPostImage, uploadPostVideo,
+  extractMentions, sendMentionNotifications, renderTextWithMentions,
+} from '../lib/feedUtils.tsx';
+import { VideoPostPlayer } from '../components/feed/VideoPostPlayer';
+import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
+import { useOneHanded } from '../lib/OneHandedContext';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeTab() {
   const c = useColors();
   const styles = useMemo(() => makeStyles(c), [c]);
+  const { isOneHanded } = useOneHanded();
+  const insets = useSafeAreaInsets();
   const REMINDER_COLORS = useMemo(() => getReminderColors(c), [c]);
 
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
@@ -467,13 +230,12 @@ export default function HomeTab() {
   }
 
   async function fetchPosts() {
-    const { data, error } = await supabase
-      .from('posts')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (!error && data) {
-      setPosts(data);
+    const data = await safeQuery<Post>(
+      () => supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(20),
+      'home_posts',
+    );
+    setPosts(data);
+    if (data.length > 0) {
       fetchReactions(data);
       fetchPollData(data);
     }
@@ -939,6 +701,8 @@ export default function HomeTab() {
 
       async function fetchStats() {
         setLoading(true);
+        const today = new Date().toDateString();
+        const statsCacheKey = `home_stats_${today}`;
         try {
           const { start, end } = todayRange();
 
@@ -965,14 +729,19 @@ export default function HomeTab() {
             0,
           );
 
-          if (!isActive) return;
-          setStats({
+          const newStats: Stats = {
             feeds: feedRes.count ?? 0,
             diapers: diaperRes.count ?? 0,
             pumpedMl,
-          });
+          };
+          await cacheSet(statsCacheKey, newStats);
+
+          if (!isActive) return;
+          setStats(newStats);
         } catch (err: any) {
           console.warn('HomeTab fetchStats error:', err.message);
+          const cached = await cacheGetStale<Stats>(statsCacheKey);
+          if (cached && isActive) setStats(cached);
         } finally {
           if (isActive) setLoading(false);
         }
@@ -2005,23 +1774,31 @@ export default function HomeTab() {
               <Text style={styles.modalClose}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>New Post</Text>
-            <TouchableOpacity
-              style={[
-                styles.postModalSubmitBtn,
-                (!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) && styles.submitButtonDisabled,
-              ]}
-              onPress={handleCreatePost}
-              disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
-            >
-              {imageUploading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={styles.postModalSubmitText}>Post</Text>
-              }
-            </TouchableOpacity>
+            {isOneHanded
+              ? <View style={{ width: 60 }} />
+              : (
+                <TouchableOpacity
+                  style={[
+                    styles.postModalSubmitBtn,
+                    (!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) && styles.submitButtonDisabled,
+                  ]}
+                  onPress={handleCreatePost}
+                  disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
+                >
+                  {imageUploading
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.postModalSubmitText}>Post</Text>
+                  }
+                </TouchableOpacity>
+              )
+            }
           </View>
 
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              contentContainerStyle={{ padding: 20, paddingBottom: isOneHanded ? 100 + insets.bottom : 20 }}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={styles.postTypeSelector}>
                 {(['text', 'milestone', 'question', 'poll'] as Post['post_type'][]).map((t) => (
                   <TouchableOpacity
@@ -2214,6 +1991,24 @@ export default function HomeTab() {
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
+
+          {isOneHanded && (
+            <View style={[styles.oneHandedPostTray, { paddingBottom: insets.bottom + 8 }]}>
+              <TouchableOpacity
+                style={[
+                  styles.oneHandedPostBtn,
+                  (!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) && styles.submitButtonDisabled,
+                ]}
+                onPress={handleCreatePost}
+                disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
+              >
+                {imageUploading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.oneHandedPostBtnText}>Post</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          )}
         </SafeAreaView>
       </Modal>
 
@@ -3083,6 +2878,30 @@ function makeStyles(c: Colors) {
       color: '#fff',
       fontWeight: '700',
       fontSize: 14,
+    },
+    oneHandedPostTray: {
+      borderTopWidth: 1.5,
+      borderTopColor: c.separator,
+      backgroundColor: c.bg,
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -3 },
+      shadowOpacity: 0.07,
+      shadowRadius: 8,
+      elevation: 10,
+    },
+    oneHandedPostBtn: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 16,
+      alignItems: 'center' as const,
+    },
+    oneHandedPostBtnText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 16,
+      letterSpacing: 0.3,
     },
     postImagePreviewWrap: {
       marginBottom: 12,

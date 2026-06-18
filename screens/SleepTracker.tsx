@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate } from '../lib/syncService';
 
 type Mode = 'idle' | 'awake' | 'sleeping' | 'quality';
 type SleepType = 'nap' | 'night';
@@ -307,12 +308,10 @@ export default function SleepTracker({
       if (modeStartTimeRef.current) setElapsed(Math.floor((Date.now() - modeStartTimeRef.current) / 1000));
     }, 1000);
 
-    const { data } = await supabase
-      .from('sleep_logs')
-      .insert({ baby_id: babyId, sleep_type: sleepType, start_time: new Date().toISOString() })
-      .select('id')
-      .single();
-    if (data) activeSleepIdRef.current = data.id;
+    const { id } = await safeInsert('sleep_logs', {
+      baby_id: babyId, sleep_type: sleepType, start_time: new Date().toISOString(),
+    });
+    activeSleepIdRef.current = id;
   }
 
   function handleWakeUp() {
@@ -330,11 +329,11 @@ export default function SleepTracker({
     setSaving(true);
     try {
       if (activeSleepIdRef.current) {
-        await supabase.from('sleep_logs').update({
+        await safeUpdate('sleep_logs', activeSleepIdRef.current, {
           end_time: new Date().toISOString(),
           duration_minutes: Math.round(finalSleepSecs / 60),
           quality,
-        }).eq('id', activeSleepIdRef.current);
+        });
         activeSleepIdRef.current = null;
       }
       await loadTodayLogs();
