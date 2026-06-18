@@ -19,6 +19,9 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
+  const [dobYear, setDobYear] = useState('')
 
   const c = useColors()
   const styles = useMemo(() => makeStyles(c), [c])
@@ -27,6 +30,27 @@ export default function Auth() {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter your email and password.')
       return
+    }
+
+    if (isSignUp) {
+      const month = parseInt(dobMonth, 10);
+      const day = parseInt(dobDay, 10);
+      const year = parseInt(dobYear, 10);
+      if (!dobMonth || !dobDay || !dobYear || isNaN(month) || isNaN(day) || isNaN(year) ||
+          month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > new Date().getFullYear()) {
+        Alert.alert('Date of Birth Required', 'Please enter a valid date of birth.');
+        return;
+      }
+      const dob = new Date(year, month - 1, day);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      if (today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      if (age < 18) {
+        Alert.alert('Age Requirement', 'Parent Patch is designed for parents 18 and older. You must be at least 18 to create an account.');
+        return;
+      }
     }
 
     setLoading(true)
@@ -96,6 +120,44 @@ export default function Auth() {
               autoComplete={isSignUp ? 'new-password' : 'current-password'}
             />
           </View>
+
+          {isSignUp && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Date of Birth</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="MM"
+                  placeholderTextColor={c.textMuted}
+                  value={dobMonth}
+                  onChangeText={setDobMonth}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="DD"
+                  placeholderTextColor={c.textMuted}
+                  value={dobDay}
+                  onChangeText={setDobDay}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <TextInput
+                  style={[styles.input, { flex: 2 }]}
+                  placeholder="YYYY"
+                  placeholderTextColor={c.textMuted}
+                  value={dobYear}
+                  onChangeText={setDobYear}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
+              </View>
+              <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 5 }}>
+                You must be 18 or older to create an account.
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}

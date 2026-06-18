@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -23,6 +25,7 @@ interface PublicProfile {
   parent_role: string | null;
   show_villages: boolean | null;
   pinned_post_id: string | null;
+  is_private: boolean | null;
 }
 
 interface PinnedPost {
@@ -272,6 +275,15 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [pinnedPost, setPinnedPost] = useState<PinnedPost | null>(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [muteLoading, setMuteLoading] = useState(false);
+  const [followRequestStatus, setFollowRequestStatus] = useState<'none' | 'pending'>('none');
+  const [showReportUser, setShowReportUser] = useState(false);
+  const [reportUserReason, setReportUserReason] = useState('');
+  const [reportUserSubmitting, setReportUserSubmitting] = useState(false);
+  const [reportUserDone, setReportUserDone] = useState(false);
 
   useEffect(() => {
     if (!visible || !userId) return;
@@ -284,6 +296,11 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     setFollowingCount(0);
     setIsOwnProfile(false);
     setIsFollowing(false);
+    setIsBlocked(false);
+    setIsMuted(false);
+    setFollowRequestStatus('none');
+    setShowReportUser(false);
+    setReportUserDone(false);
 
     (async () => {
       setLoading(true);
@@ -298,14 +315,17 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
           return;
         }
 
-        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes] = await Promise.all([
-          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id').eq('id', userId).maybeSingle(),
+        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes, blockRes, muteRes, followReqRes] = await Promise.all([
+          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id,is_private').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
           supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
           supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', userId),
           supabase.from('follows').select('follower_id').eq('follower_id', user.id).eq('following_id', userId).maybeSingle(),
+          supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id).eq('blocked_id', userId).maybeSingle(),
+          supabase.from('user_mutes').select('muted_id').eq('muter_id', user.id).eq('muted_id', userId).maybeSingle(),
+          (supabase as any).from('follow_requests').select('status').eq('requester_id', user.id).eq('target_id', userId).maybeSingle(),
         ]);
 
         setProfile(profileRes.data ?? null);
@@ -315,6 +335,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         setTheirVillageIds((theirVillagesRes.data ?? []).map((r: any) => r.village_id));
         setMyVillageIds((myVillagesRes.data ?? []).map((r: any) => r.village_id));
         setIsFollowing(!!isFollowingRes.data);
+        setIsBlocked(!!blockRes.data);
+        setIsMuted(!!muteRes.data);
+        setFollowRequestStatus(followReqRes.data?.status === 'pending' ? 'pending' : 'none');
 
         const pinnedId = (profileRes.data as any)?.pinned_post_id;
         if (pinnedId) {
@@ -340,12 +363,78 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
       await supabase.from('follows').delete().eq('follower_id', myId).eq('following_id', userId);
       setIsFollowing(false);
       setFollowerCount(c => Math.max(0, c - 1));
+    } else if (profile?.is_private) {
+      if (followRequestStatus === 'pending') {
+        await (supabase as any).from('follow_requests').delete().eq('requester_id', myId).eq('target_id', userId);
+        setFollowRequestStatus('none');
+      } else {
+        await (supabase as any).from('follow_requests').insert({ requester_id: myId, target_id: userId });
+        setFollowRequestStatus('pending');
+      }
     } else {
-      await supabase.from('follows').insert({ follower_id: myId, following_id: userId });
+      await (supabase as any).from('follows').insert({ follower_id: myId, following_id: userId });
       setIsFollowing(true);
       setFollowerCount(c => c + 1);
     }
     setFollowLoading(false);
+  }
+
+  async function toggleMute() {
+    if (!myId || !userId || muteLoading) return;
+    setMuteLoading(true);
+    if (isMuted) {
+      await (supabase as any).from('user_mutes').delete().eq('muter_id', myId).eq('muted_id', userId);
+      setIsMuted(false);
+    } else {
+      await (supabase as any).from('user_mutes').insert({ muter_id: myId, muted_id: userId });
+      setIsMuted(true);
+    }
+    setMuteLoading(false);
+  }
+
+  async function handleBlock() {
+    if (!myId || !userId || blockLoading) return;
+    const name = profile?.display_name || profile?.username || 'this user';
+    if (isBlocked) {
+      const doUnblock = async () => {
+        setBlockLoading(true);
+        await supabase.from('user_blocks').delete().eq('blocker_id', myId).eq('blocked_id', userId);
+        setIsBlocked(false);
+        setBlockLoading(false);
+      };
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Unblock ${name}?`)) doUnblock();
+      } else {
+        Alert.alert('Unblock', `Unblock ${name}?`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Unblock', onPress: doUnblock },
+        ]);
+      }
+    } else {
+      const doBlock = async () => {
+        setBlockLoading(true);
+        await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: userId });
+        setIsBlocked(true);
+        setBlockLoading(false);
+        onClose();
+      };
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Block ${name}? They won't be able to see your profile or message you.`)) doBlock();
+      } else {
+        Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to see your profile or send you messages.`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Block', style: 'destructive', onPress: doBlock },
+        ]);
+      }
+    }
+  }
+
+  async function submitUserReport() {
+    if (!myId || !userId || !reportUserReason) return;
+    setReportUserSubmitting(true);
+    await supabase.from('user_reports').insert({ reporter_id: myId, reported_id: userId, reason: reportUserReason });
+    setReportUserSubmitting(false);
+    setReportUserDone(true);
   }
 
   const commonIds = theirVillageIds.filter(id => myVillageIds.includes(id));
@@ -387,7 +476,10 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 )}
               </View>
 
-              <Text style={s.heroName}>{displayName}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={s.heroName}>{displayName}</Text>
+                {profile.is_private && <Text style={{ fontSize: 16 }}>🔒</Text>}
+              </View>
               {profile.username && (
                 <Text style={s.heroUsername}>@{profile.username}</Text>
               )}
@@ -426,25 +518,52 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   </>
                 )}
               </View>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-                <TouchableOpacity
-                  onPress={toggleFollow}
-                  disabled={followLoading}
-                  activeOpacity={0.85}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6,
-                    backgroundColor: isFollowing ? c.card : c.primary,
-                    borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
-                    borderWidth: isFollowing ? 1.5 : 0,
-                    borderColor: c.separator,
-                  }}
-                >
-                  <Text style={{ fontSize: 14 }}>{isFollowing ? '✓' : '+'}</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing ? c.textPrimary : '#fff' }}>
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </Text>
-                </TouchableOpacity>
-                {onMessage && userId && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {!isBlocked && (
+                  <TouchableOpacity
+                    onPress={toggleFollow}
+                    disabled={followLoading}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      backgroundColor: isFollowing || followRequestStatus === 'pending' ? c.card : c.primary,
+                      borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+                      borderWidth: isFollowing || followRequestStatus === 'pending' ? 1.5 : 0,
+                      borderColor: c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14 }}>
+                      {isFollowing ? '✓' : followRequestStatus === 'pending' ? '⏳' : '+'}
+                    </Text>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : '#fff' }}>
+                      {isFollowing ? 'Following' : followRequestStatus === 'pending' ? 'Requested' : 'Follow'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {!isBlocked && (
+                  <TouchableOpacity
+                    onPress={toggleMute}
+                    disabled={muteLoading}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      backgroundColor: isMuted ? c.cardHoney : c.card, borderRadius: 20,
+                      paddingHorizontal: 16, paddingVertical: 10,
+                      borderWidth: 1.5, borderColor: isMuted ? c.honey : c.separator,
+                    }}
+                  >
+                    {muteLoading
+                      ? <ActivityIndicator size="small" color={c.textMuted} />
+                      : <>
+                          <Text style={{ fontSize: 14 }}>🔇</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>
+                            {isMuted ? 'Unmute' : 'Mute'}
+                          </Text>
+                        </>
+                    }
+                  </TouchableOpacity>
+                )}
+                {onMessage && userId && !isBlocked && (
                   <TouchableOpacity
                     onPress={() => { onClose(); onMessage(userId); }}
                     activeOpacity={0.85}
@@ -459,8 +578,59 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Message</Text>
                   </TouchableOpacity>
                 )}
+                <TouchableOpacity
+                  onPress={() => { setShowReportUser(true); setReportUserReason(''); setReportUserDone(false); }}
+                  activeOpacity={0.85}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: c.card, borderRadius: 20,
+                    paddingHorizontal: 16, paddingVertical: 10,
+                    borderWidth: 1.5, borderColor: c.separator,
+                  }}
+                >
+                  <Text style={{ fontSize: 14 }}>🚩</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Report</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleBlock}
+                  disabled={blockLoading}
+                  activeOpacity={0.85}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: isBlocked ? '#FEE2E2' : c.card, borderRadius: 20,
+                    paddingHorizontal: 16, paddingVertical: 10,
+                    borderWidth: 1.5, borderColor: isBlocked ? '#FCA5A5' : c.separator,
+                  }}
+                >
+                  {blockLoading
+                    ? <ActivityIndicator size="small" color="#DC2626" />
+                    : <>
+                        <Text style={{ fontSize: 14 }}>🚫</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: isBlocked ? '#DC2626' : c.textPrimary }}>
+                          {isBlocked ? 'Unblock' : 'Block'}
+                        </Text>
+                      </>
+                  }
+                </TouchableOpacity>
               </View>
             </View>
+
+            {/* Private account banner (shown if private and not following) */}
+            {profile.is_private && !isFollowing && (
+              <View style={{
+                backgroundColor: c.card, borderRadius: 16, padding: 16, marginBottom: 12,
+                alignItems: 'center', gap: 6,
+                borderWidth: 1.5, borderColor: c.separator,
+              }}>
+                <Text style={{ fontSize: 28 }}>🔒</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>This account is private</Text>
+                <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 18 }}>
+                  {followRequestStatus === 'pending'
+                    ? 'Your follow request is pending approval.'
+                    : 'Follow this account to see their posts and patches.'}
+                </Text>
+              </View>
+            )}
 
             {/* Pinned post */}
             {pinnedPost && (
@@ -535,6 +705,75 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
           </ScrollView>
         )}
       </SafeAreaView>
+
+      {/* Report user modal */}
+      <Modal
+        visible={showReportUser}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowReportUser(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            paddingHorizontal: 20, paddingVertical: 14,
+            borderBottomWidth: 1, borderBottomColor: c.separator,
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report User</Text>
+            <TouchableOpacity onPress={() => setShowReportUser(false)}>
+              <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {reportUserDone ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 }}>
+              <Text style={{ fontSize: 40 }}>✅</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report Submitted</Text>
+              <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20 }}>
+                Thank you for helping keep the community safe. We'll review this account.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowReportUser(false)}
+                style={{ marginTop: 8, backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 28, paddingVertical: 12 }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
+              <Text style={{ fontSize: 15, color: c.textSecondary, marginBottom: 4 }}>
+                Why are you reporting this account?
+              </Text>
+              {['Spam or fake account', 'Inappropriate content', 'Harassment or bullying', 'Impersonation', 'Other'].map(reason => (
+                <TouchableOpacity
+                  key={reason}
+                  onPress={() => setReportUserReason(reason)}
+                  style={{
+                    padding: 14, borderRadius: 12, borderWidth: 1.5,
+                    borderColor: reportUserReason === reason ? c.primary : c.separator,
+                    backgroundColor: reportUserReason === reason ? c.cardLavender : c.card,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: c.textPrimary }}>{reason}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={submitUserReport}
+                disabled={!reportUserReason || reportUserSubmitting}
+                style={{
+                  marginTop: 8, backgroundColor: c.primary, borderRadius: 20,
+                  paddingVertical: 14, alignItems: 'center',
+                  opacity: !reportUserReason || reportUserSubmitting ? 0.4 : 1,
+                }}
+              >
+                {reportUserSubmitting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Submit Report</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
     </Modal>
   );
 }

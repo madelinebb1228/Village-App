@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   ActivityIndicator, KeyboardAvoidingView, Platform, Image,
+  Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -70,9 +71,15 @@ export default function MessagesInbox({
 }) {
   const c = useColors();
   const [myId, setMyId] = useState<string | null>(null);
-  const [convs, setConvs] = useState<ConvRow[]>([]);
+  const [allConvs, setAllConvs] = useState<ConvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openConv, setOpenConv] = useState<ConvRow | null>(null);
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+
+  const convs = React.useMemo(
+    () => allConvs.filter(c => !blockedUserIds.has(c.otherUserId)),
+    [allConvs, blockedUserIds]
+  );
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -81,6 +88,15 @@ export default function MessagesInbox({
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  const [recipientBlocksMessages, setRecipientBlocksMessages] = useState(false);
+
+  // Block/report state
+  const [showBlockMenu, setShowBlockMenu] = useState(false);
+  const [reportConvReason, setReportConvReason] = useState('');
+  const [reportConvSubmitting, setReportConvSubmitting] = useState(false);
+  const [reportConvDone, setReportConvDone] = useState(false);
+  const [showReportConv, setShowReportConv] = useState(false);
+
   // ── Load current user + inbox ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -88,9 +104,15 @@ export default function MessagesInbox({
       if (user) {
         setMyId(user.id);
         loadInbox(user.id);
+        loadBlockedUsers(user.id);
       }
     });
   }, []);
+
+  async function loadBlockedUsers(uid: string) {
+    const { data } = await supabase.from('user_blocks').select('blocked_id').eq('blocker_id', uid);
+    if (data) setBlockedUserIds(new Set(data.map((r: any) => r.blocked_id)));
+  }
 
   // If a target user was passed in (from "Message" button on a profile), open/create that convo
   useEffect(() => {
@@ -107,7 +129,7 @@ export default function MessagesInbox({
         .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
         .order('last_message_at', { ascending: false });
 
-      if (!rows || rows.length === 0) { setConvs([]); return; }
+      if (!rows || rows.length === 0) { setAllConvs([]); return; }
 
       const otherIds = rows.map((r: any) => r.participant_1 === uid ? r.participant_2 : r.participant_1);
 
@@ -142,7 +164,7 @@ export default function MessagesInbox({
         };
       });
 
-      setConvs(built);
+      setAllConvs(built);
     } finally {
       setLoading(false);
     }
@@ -176,10 +198,11 @@ export default function MessagesInbox({
 
     const { data: prof } = await supabase
       .from('profiles')
-      .select('display_name, username, avatar_url')
+      .select('display_name, username, avatar_url, messages_from')
       .eq('id', otherId)
       .maybeSingle();
 
+    setRecipientBlocksMessages((prof as any)?.messages_from === 'nobody');
     setOpenConv({
       id: existing.id,
       otherUserId: otherId,
@@ -237,7 +260,7 @@ export default function MessagesInbox({
 
   const sendMessage = async () => {
     const text = draft.trim();
-    if (!text || !openConv || !myId || sending) return;
+    if (!text || !openConv || !myId || sending || recipientBlocksMessages) return;
     setSending(true);
     setDraft('');
 
@@ -255,6 +278,40 @@ export default function MessagesInbox({
     setSending(false);
   };
 
+  async function blockConvUser() {
+    if (!myId || !openConv) return;
+    const otherId = openConv.otherUserId;
+    const name = openConv.otherName;
+    const doBlock = async () => {
+      await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: otherId });
+      setBlockedUserIds(prev => new Set([...prev, otherId]));
+      setShowBlockMenu(false);
+      setOpenConv(null);
+      loadInbox(myId);
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Block ${name}? They won't be able to message you.`)) doBlock();
+    } else {
+      Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to send you messages.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: doBlock },
+      ]);
+    }
+    setShowBlockMenu(false);
+  }
+
+  async function submitConvReport() {
+    if (!myId || !openConv || !reportConvReason) return;
+    setReportConvSubmitting(true);
+    await supabase.from('user_reports').insert({
+      reporter_id: myId,
+      reported_id: openConv.otherUserId,
+      reason: reportConvReason,
+    });
+    setReportConvSubmitting(false);
+    setReportConvDone(true);
+  }
+
   // ── Chat view ─────────────────────────────────────────────────────────────
 
   if (openConv) {
@@ -265,14 +322,93 @@ export default function MessagesInbox({
           paddingHorizontal: 16, paddingVertical: 12,
           borderBottomWidth: 1, borderBottomColor: c.separator,
         }}>
-          <TouchableOpacity onPress={() => { setOpenConv(null); myId && loadInbox(myId); }}>
+          <TouchableOpacity onPress={() => { setOpenConv(null); setRecipientBlocksMessages(false); myId && loadInbox(myId); }}>
             <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
           </TouchableOpacity>
           <Avatar name={openConv.otherName} url={openConv.otherAvatar} size={36} />
           <Text style={{ fontSize: 16, fontWeight: '700', color: c.textPrimary, flex: 1 }}>
             {openConv.otherName}
           </Text>
+          <TouchableOpacity onPress={() => setShowBlockMenu(true)} style={{ padding: 4 }}>
+            <Text style={{ fontSize: 20, color: c.textMuted }}>⋯</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Block menu */}
+        <Modal visible={showBlockMenu} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowBlockMenu(false)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>{openConv.otherName}</Text>
+              <TouchableOpacity onPress={() => setShowBlockMenu(false)}>
+                <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: 16, gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => { setShowBlockMenu(false); setReportConvReason(''); setReportConvDone(false); setShowReportConv(true); }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, backgroundColor: c.card, borderRadius: 14, borderWidth: 1, borderColor: c.separator }}
+              >
+                <Text style={{ fontSize: 20 }}>🚩</Text>
+                <View>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>Report {openConv.otherName}</Text>
+                  <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>Report inappropriate behavior</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={blockConvUser}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, backgroundColor: '#FEF2F2', borderRadius: 14, borderWidth: 1, borderColor: '#FECACA' }}
+              >
+                <Text style={{ fontSize: 20 }}>🚫</Text>
+                <View>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#DC2626' }}>Block {openConv.otherName}</Text>
+                  <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 2 }}>They won't be able to message you</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
+
+        {/* Report user from DM modal */}
+        <Modal visible={showReportConv} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReportConv(false)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report User</Text>
+              <TouchableOpacity onPress={() => setShowReportConv(false)}>
+                <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {reportConvDone ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 }}>
+                <Text style={{ fontSize: 40 }}>✅</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report Submitted</Text>
+                <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20 }}>Thank you for keeping the community safe.</Text>
+                <TouchableOpacity onPress={() => setShowReportConv(false)} style={{ marginTop: 8, backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 28, paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
+                <Text style={{ fontSize: 15, color: c.textSecondary, marginBottom: 4 }}>Why are you reporting this user?</Text>
+                {['Spam or fake account', 'Inappropriate content', 'Harassment or bullying', 'Impersonation', 'Other'].map(reason => (
+                  <TouchableOpacity
+                    key={reason}
+                    onPress={() => setReportConvReason(reason)}
+                    style={{ padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: reportConvReason === reason ? c.primary : c.separator, backgroundColor: c.card }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: c.textPrimary }}>{reason}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  onPress={submitConvReport}
+                  disabled={!reportConvReason || reportConvSubmitting}
+                  style={{ marginTop: 8, backgroundColor: c.primary, borderRadius: 20, paddingVertical: 14, alignItems: 'center', opacity: !reportConvReason || reportConvSubmitting ? 0.4 : 1 }}
+                >
+                  {reportConvSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Submit Report</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </SafeAreaView>
+        </Modal>
 
         {chatLoading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -328,42 +464,54 @@ export default function MessagesInbox({
               })}
             </ScrollView>
 
-            <View style={{
-              flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-              paddingHorizontal: 14, paddingVertical: 10,
-              borderTopWidth: 1, borderTopColor: c.separator,
-              backgroundColor: c.bg,
-            }}>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Message..."
-                placeholderTextColor={c.textMuted}
-                multiline
-                style={{
-                  flex: 1, backgroundColor: c.card, borderRadius: 20,
-                  borderWidth: 1.5, borderColor: c.separator,
-                  paddingHorizontal: 14, paddingVertical: 10,
-                  fontSize: 15, color: c.textPrimary, maxHeight: 120,
-                }}
-                onSubmitEditing={sendMessage}
-                blurOnSubmit={false}
-              />
-              <TouchableOpacity
-                onPress={sendMessage}
-                disabled={!draft.trim() || sending}
-                style={{
-                  width: 42, height: 42, borderRadius: 21,
-                  backgroundColor: draft.trim() ? c.primary : c.separator,
-                  justifyContent: 'center', alignItems: 'center',
-                }}
-              >
-                {sending
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{ fontSize: 18 }}>↑</Text>
-                }
-              </TouchableOpacity>
-            </View>
+            {recipientBlocksMessages ? (
+              <View style={{
+                paddingHorizontal: 20, paddingVertical: 14,
+                borderTopWidth: 1, borderTopColor: c.separator,
+                backgroundColor: c.bg, alignItems: 'center',
+              }}>
+                <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 18 }}>
+                  {openConv.otherName} isn't accepting messages right now.
+                </Text>
+              </View>
+            ) : (
+              <View style={{
+                flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+                paddingHorizontal: 14, paddingVertical: 10,
+                borderTopWidth: 1, borderTopColor: c.separator,
+                backgroundColor: c.bg,
+              }}>
+                <TextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder="Message..."
+                  placeholderTextColor={c.textMuted}
+                  multiline
+                  style={{
+                    flex: 1, backgroundColor: c.card, borderRadius: 20,
+                    borderWidth: 1.5, borderColor: c.separator,
+                    paddingHorizontal: 14, paddingVertical: 10,
+                    fontSize: 15, color: c.textPrimary, maxHeight: 120,
+                  }}
+                  onSubmitEditing={sendMessage}
+                  blurOnSubmit={false}
+                />
+                <TouchableOpacity
+                  onPress={sendMessage}
+                  disabled={!draft.trim() || sending}
+                  style={{
+                    width: 42, height: 42, borderRadius: 21,
+                    backgroundColor: draft.trim() ? c.primary : c.separator,
+                    justifyContent: 'center', alignItems: 'center',
+                  }}
+                >
+                  {sending
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ fontSize: 18 }}>↑</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            )}
           </KeyboardAvoidingView>
         )}
       </SafeAreaView>

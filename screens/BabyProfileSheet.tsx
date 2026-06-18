@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -167,6 +169,8 @@ export default function BabyProfileSheet({
   const [editPedName, setEditPedName] = useState('');
   const [editPedPhone, setEditPedPhone] = useState('');
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string; contentType: ContentType } | null>(null);
 
   // Milestone form state
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
@@ -259,9 +263,15 @@ export default function BabyProfileSheet({
       aspect: [1, 1],
       quality: 0.7,
     });
-    if (!result.canceled && result.assets[0]) {
-      setPendingPhotoUri(result.assets[0].uri);
+    if (result.canceled || !result.assets[0]) return;
+    setModerating(true);
+    const modResult = await moderateImage(result.assets[0].uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason, contentType: 'baby_photo' });
+      return;
     }
+    setPendingPhotoUri(result.assets[0].uri);
   }
 
   async function saveEdits() {
@@ -725,6 +735,29 @@ export default function BabyProfileSheet({
               >
                 <Text style={s.promptSkipBtnText}>Not Now</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {blockedContent && userId && (
+          <ContentBlockedModal
+            visible={!!blockedContent}
+            severity={blockedContent.severity}
+            reason={blockedContent.reason}
+            contentType={blockedContent.contentType}
+            userId={userId}
+            onClose={() => setBlockedContent(null)}
+          />
+        )}
+
+        {moderating && (
+          <View style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
+          }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 }}>
+              <ActivityIndicator size="large" />
+              <Text style={{ fontSize: 14, fontWeight: '600' }}>Scanning content…</Text>
             </View>
           </View>
         )}

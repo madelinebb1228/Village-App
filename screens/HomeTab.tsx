@@ -13,6 +13,7 @@ import {
   Platform,
   Share,
   Image,
+  Linking,
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +33,8 @@ import { useColors, Colors } from '../lib/theme';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
 import StoryViewer from '../components/StoryViewer';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +50,8 @@ interface Post {
   video_url?: string | null;
   tags?: string[] | null;
   village_id?: string | null;
+  is_sensitive?: boolean | null;
+  sensitive_label?: string | null;
 }
 
 interface Comment {
@@ -88,6 +93,13 @@ const POST_TAGS = [
   'Mom Life', 'Dad Life', 'Breastfeeding', 'Formula', 'Solid Foods',
   'Newborn', 'Toddler', 'Pregnancy', 'Postpartum', 'Self Care',
   'Products', 'Travel', 'Safety',
+];
+
+const MENTAL_HEALTH_KEYWORDS = [
+  'struggling', 'overwhelmed', 'ppd', 'postpartum depression', 'postpartum anxiety',
+  "can't cope", 'hopeless', 'suicidal', 'breakdown', 'depressed', 'not okay',
+  "can't do this", 'losing my mind', 'burnout', 'want to give up', 'hurting myself',
+  'self harm', 'end it all', 'help me please', 'can\'t take it', 'giving up',
 ];
 
 const PART_LIMITS: Record<string, { sessions: number; days: number }> = {
@@ -307,9 +319,24 @@ export default function HomeTab() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [reportedPostIds, setReportedPostIds] = useState<Set<string>>(new Set());
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [reportCommentId, setReportCommentId] = useState<string | null>(null);
+  const [reportCommentReason, setReportCommentReason] = useState('');
+  const [reportCommentSubmitting, setReportCommentSubmitting] = useState(false);
+  const [reportCommentDone, setReportCommentDone] = useState(false);
+  const [reportedCommentIds, setReportedCommentIds] = useState<Set<string>>(new Set());
   const [pendingPostImageUri, setPendingPostImageUri] = useState<string | null>(null);
   const [pendingPostVideoUri, setPendingPostVideoUri] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string; contentType: ContentType } | null>(null);
+  const [mutedUserIds, setMutedUserIds] = useState<Set<string>>(new Set());
+  const [privateUnfollowedIds, setPrivateUnfollowedIds] = useState<Set<string>>(new Set());
+  const [revealedSensitiveIds, setRevealedSensitiveIds] = useState<Set<string>>(new Set());
+  const [wordFilter, setWordFilter] = useState<string[]>([]);
+  const [dismissedHealthBanner, setDismissedHealthBanner] = useState(false);
+  const [isSensitive, setIsSensitive] = useState(false);
+  const [sensitiveLabel, setSensitiveLabel] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
@@ -350,11 +377,27 @@ export default function HomeTab() {
   const [storyRefreshKey, setStoryRefreshKey] = useState(0);
 
   const filteredPosts = useMemo(() => {
-    let result = posts;
+    let result = posts.filter(p =>
+      !blockedUserIds.has(p.user_id) &&
+      !mutedUserIds.has(p.user_id) &&
+      (p.user_id === currentUserId || !privateUnfollowedIds.has(p.user_id))
+    );
+    if (wordFilter.length > 0) {
+      result = result.filter(p => {
+        const lower = (p.content ?? '').toLowerCase();
+        return !wordFilter.some(w => lower.includes(w));
+      });
+    }
     if (activeHashtag) result = result.filter(p => p.content?.toLowerCase().includes(`#${activeHashtag.toLowerCase()}`));
     if (activeTag) result = result.filter(p => p.tags?.includes(activeTag));
     return result;
-  }, [posts, activeHashtag, activeTag]);
+  }, [posts, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
+
+  const showMentalHealthBanner = useMemo(() => {
+    if (!postContent.trim()) return false;
+    const lower = postContent.toLowerCase();
+    return MENTAL_HEALTH_KEYWORDS.some(kw => lower.includes(kw));
+  }, [postContent]);
 
   useEffect(() => {
     fetchPosts();
@@ -365,9 +408,38 @@ export default function HomeTab() {
         setCurrentUserId(user.id);
         fetchUnreadCount(user.id);
         fetchUnreadNotifCount(user.id);
+        fetchBlockedUsers(user.id);
+        fetchMutedUsers(user.id);
+        fetchPrivateFilter(user.id);
+        fetchWordFilter(user.id);
       }
     });
   }, []);
+
+  async function fetchBlockedUsers(uid: string) {
+    const { data } = await supabase.from('user_blocks').select('blocked_id').eq('blocker_id', uid);
+    if (data) setBlockedUserIds(new Set(data.map((r: any) => r.blocked_id)));
+  }
+
+  async function fetchMutedUsers(uid: string) {
+    const { data } = await supabase.from('user_mutes').select('muted_id').eq('muter_id', uid);
+    if (data) setMutedUserIds(new Set(data.map((r: any) => r.muted_id)));
+  }
+
+  async function fetchPrivateFilter(uid: string) {
+    const [followingRes, privateRes] = await Promise.all([
+      supabase.from('follows').select('following_id').eq('follower_id', uid),
+      supabase.from('profiles').select('id').eq('is_private', true).neq('id', uid),
+    ]);
+    const followingSet = new Set((followingRes.data ?? []).map((r: any) => r.following_id));
+    const privateIds = (privateRes.data ?? []).map((r: any) => r.id);
+    setPrivateUnfollowedIds(new Set(privateIds.filter((id: string) => !followingSet.has(id))));
+  }
+
+  async function fetchWordFilter(uid: string) {
+    const { data } = await (supabase as any).from('user_word_filters').select('word').eq('user_id', uid);
+    if (data) setWordFilter(data.map((r: any) => r.word));
+  }
 
   async function fetchUnreadCount(uid: string) {
     const { data: convs } = await supabase
@@ -664,25 +736,55 @@ export default function HomeTab() {
     }
   }
 
+  async function submitCommentReport() {
+    if (!reportCommentId || !reportCommentReason) return;
+    setReportCommentSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setReportCommentSubmitting(false); return; }
+    const { error } = await supabase.from('comment_reports').insert({
+      reporter_id: user.id,
+      comment_id: reportCommentId,
+      reason: reportCommentReason,
+    });
+    setReportCommentSubmitting(false);
+    if (!error) {
+      setReportedCommentIds(prev => { const next = new Set(prev); next.add(reportCommentId!); return next; });
+      setReportCommentDone(true);
+    }
+  }
+
   async function pickPostImage() {
     const source = await showSourcePicker('Add Photo');
     if (!source) return;
+    let uri: string | null = null;
     if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-      if (!result.canceled && result.assets[0]) { setPendingPostImageUri(result.assets[0].uri); setPendingPostVideoUri(null); }
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     } else {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: false, quality: 0.8 });
-      if (!result.canceled && result.assets[0]) { setPendingPostImageUri(result.assets[0].uri); setPendingPostVideoUri(null); }
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     }
+    if (!uri) return;
+    setModerating(true);
+    const modResult = await moderateImage(uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason, contentType: 'post_image' });
+      return;
+    }
+    setPendingPostImageUri(uri);
+    setPendingPostVideoUri(null);
   }
 
   async function pickPostVideo() {
     const source = await showSourcePicker('Add Video');
     if (!source) return;
+    // Video scanning requires Google Video Intelligence API (async, requires Edge Functions).
+    // Videos are accepted here and flagged for manual review via content_flags if reported.
     if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
@@ -732,6 +834,7 @@ export default function HomeTab() {
     if (imageUrl) payload.image_url = imageUrl;
     if (videoUrl) payload.video_url = videoUrl;
     if (selectedTags.length > 0) payload.tags = selectedTags;
+    if (isSensitive) { payload.is_sensitive = true; if (sensitiveLabel) payload.sensitive_label = sensitiveLabel; }
 
     const { data: newPost, error } = await supabase.from('posts').insert(payload).select('id').single();
     if (error) {
@@ -755,6 +858,9 @@ export default function HomeTab() {
     setSelectedTags([]);
     setPostType('text');
     setPollOptions(['', '']);
+    setIsSensitive(false);
+    setSensitiveLabel('');
+    setDismissedHealthBanner(false);
     setShowCreatePost(false);
     fetchPosts();
   }
@@ -1421,6 +1527,34 @@ export default function HomeTab() {
               : post.post_type === 'question' ? c.postQuestion
               : c.postText,
           }]}>
+            {post.is_sensitive && !revealedSensitiveIds.has(post.id) ? (
+              <View style={{ padding: 16, gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <UserAvatar userId={post.user_id} name={post.author} size={28} />
+                  <Text style={styles.postAuthorName}>{post.author}</Text>
+                  <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+                </View>
+                <View style={{ backgroundColor: c.cardHoney, borderRadius: 12, padding: 14, gap: 6, borderWidth: 1, borderColor: c.honey }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400E' }}>⚠️ Sensitive Content</Text>
+                  {post.sensitive_label ? (
+                    <Text style={{ fontSize: 13, color: '#78350F', lineHeight: 18 }}>
+                      This post is marked as: <Text style={{ fontWeight: '700' }}>{post.sensitive_label}</Text>
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: 13, color: '#78350F', lineHeight: 18 }}>
+                      The author has marked this post as sensitive.
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => setRevealedSensitiveIds(prev => { const s = new Set(prev); s.add(post.id); return s; })}
+                    style={{ alignSelf: 'flex-start', marginTop: 4, backgroundColor: '#92400E', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6 }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Show post</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+            {(!post.is_sensitive || revealedSensitiveIds.has(post.id)) && (<>
             <View style={styles.postHeader}>
               <TouchableOpacity
                 style={styles.postAuthorRow}
@@ -1587,6 +1721,7 @@ export default function HomeTab() {
                 )
               )}
             </View>
+            </>)}
           </View>
         ))}
 
@@ -1661,6 +1796,15 @@ export default function HomeTab() {
                         <TouchableOpacity onPress={() => { setReplyingTo(cm); setCommentText(''); }}>
                           <Text style={styles.replyBtn}>Reply</Text>
                         </TouchableOpacity>
+                        {currentUserId && cm.user_id !== currentUserId && (
+                          reportedCommentIds.has(cm.id) ? (
+                            <Text style={{ fontSize: 11, color: c.textMuted, fontStyle: 'italic' }}>Reported</Text>
+                          ) : (
+                            <TouchableOpacity onPress={() => { setReportCommentId(cm.id); setReportCommentReason(''); setReportCommentDone(false); }}>
+                              <Text style={{ fontSize: 12, color: c.textMuted }}>🚩</Text>
+                            </TouchableOpacity>
+                          )
+                        )}
                       </View>
                     </View>
                   </View>
@@ -1769,6 +1913,61 @@ export default function HomeTab() {
         </SafeAreaView>
       </Modal>
 
+      {/* Report comment modal */}
+      <Modal
+        visible={reportCommentId !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { setReportCommentId(null); setReportCommentDone(false); }}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Report Comment</Text>
+            <TouchableOpacity onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {reportCommentDone ? (
+            <View style={styles.reportDoneContainer}>
+              <Text style={styles.reportDoneEmoji}>✅</Text>
+              <Text style={styles.reportDoneTitle}>Report Submitted</Text>
+              <Text style={styles.reportDoneBody}>Thank you for helping keep the community safe. We'll review this comment.</Text>
+              <TouchableOpacity
+                style={styles.reportCloseBtn}
+                onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}
+              >
+                <Text style={styles.reportCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              <Text style={styles.reportPrompt}>Why are you reporting this comment?</Text>
+              {['Spam', 'Inappropriate content', 'Harassment', 'Misinformation', 'Other'].map(reason => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[styles.reportReasonBtn, reportCommentReason === reason && styles.reportReasonBtnActive]}
+                  onPress={() => setReportCommentReason(reason)}
+                >
+                  <Text style={[styles.reportReasonText, reportCommentReason === reason && styles.reportReasonTextActive]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.reportSubmitBtn, (!reportCommentReason || reportCommentSubmitting) && styles.submitButtonDisabled]}
+                onPress={submitCommentReport}
+                disabled={!reportCommentReason || reportCommentSubmitting}
+              >
+                {reportCommentSubmitting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.reportSubmitBtnText}>Submit Report</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+
       {/* Floating action button */}
       <TouchableOpacity
         style={styles.fab}
@@ -1798,11 +1997,11 @@ export default function HomeTab() {
         visible={showCreatePost}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => { setShowCreatePost(false); setPendingPostImageUri(null); }}
+        onRequestClose={() => { setShowCreatePost(false); setPendingPostImageUri(null); setDismissedHealthBanner(false); }}
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setShowCreatePost(false); setPendingPostImageUri(null); }}>
+            <TouchableOpacity onPress={() => { setShowCreatePost(false); setPendingPostImageUri(null); setDismissedHealthBanner(false); }}>
               <Text style={styles.modalClose}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>New Post</Text>
@@ -1853,6 +2052,39 @@ export default function HomeTab() {
                 textAlignVertical="top"
               />
 
+              {showMentalHealthBanner && !dismissedHealthBanner && (
+                <View style={{
+                  backgroundColor: '#FFFBEB', borderRadius: 12, padding: 14, marginTop: 8,
+                  borderLeftWidth: 4, borderLeftColor: '#F59E0B',
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#92400E', flex: 1, marginRight: 8 }}>
+                      You're not alone 💛
+                    </Text>
+                    <TouchableOpacity onPress={() => setDismissedHealthBanner(true)}>
+                      <Text style={{ fontSize: 16, color: '#92400E', opacity: 0.6 }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={{ fontSize: 13, color: '#78350F', marginTop: 4, lineHeight: 18 }}>
+                    It sounds like you might be going through a tough time. Free, confidential support is available.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL('https://www.postpartum.net')}
+                      style={{ backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Postpartum Support</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL('tel:988')}
+                      style={{ backgroundColor: '#92400E', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Call/Text 988</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {postType === 'poll' && (
                 <View style={{ marginTop: 12, gap: 8 }}>
                   {pollOptions.map((opt, i) => (
@@ -1901,6 +2133,48 @@ export default function HomeTab() {
                   })}
                 </View>
               </ScrollView>
+
+              {/* Sensitive content toggle */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, marginTop: 4 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: c.textPrimary }}>Mark as sensitive</Text>
+                  <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 1 }}>A warning is shown before your post</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => { setIsSensitive(v => !v); setSensitiveLabel(''); }}
+                  style={{
+                    width: 44, height: 26, borderRadius: 13,
+                    backgroundColor: isSensitive ? c.primary : c.separator,
+                    justifyContent: 'center', paddingHorizontal: 3,
+                    alignItems: isSensitive ? 'flex-end' : 'flex-start',
+                  }}
+                >
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' }} />
+                </TouchableOpacity>
+              </View>
+              {isSensitive && (
+                <View style={{ gap: 6, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '600' }}>Select a label (optional)</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {['Pregnancy Loss', 'NICU / Premature Birth', 'Birth Trauma', 'Postpartum Mental Health', 'Medical / Graphic'].map(label => (
+                      <TouchableOpacity
+                        key={label}
+                        onPress={() => setSensitiveLabel(prev => prev === label ? '' : label)}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12,
+                          borderWidth: 1.5,
+                          borderColor: sensitiveLabel === label ? c.primary : c.separator,
+                          backgroundColor: sensitiveLabel === label ? c.cardLavender : c.card,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: sensitiveLabel === label ? c.primary : c.textMuted }}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
 
               {pendingPostImageUri && (
                 <View style={styles.postImagePreviewWrap}>
@@ -2071,6 +2345,31 @@ export default function HomeTab() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* Content moderation blocked modal */}
+      {blockedContent && currentUserId && (
+        <ContentBlockedModal
+          visible={!!blockedContent}
+          severity={blockedContent.severity}
+          reason={blockedContent.reason}
+          contentType={blockedContent.contentType}
+          userId={currentUserId}
+          onClose={() => setBlockedContent(null)}
+        />
+      )}
+
+      {/* Scanning indicator overlay */}
+      {moderating && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
+        }}>
+          <View style={{ backgroundColor: c.card, borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 }}>
+            <ActivityIndicator color={c.primary} size="large" />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: c.textPrimary }}>Scanning content…</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

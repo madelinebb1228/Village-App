@@ -23,6 +23,8 @@ import BabyJournal from './BabyJournal';
 import SharedCalendar from './SharedCalendar';
 import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +41,18 @@ interface UserProfile {
   header_url: string | null;
   parent_role: string | null;
   show_villages: boolean | null;
+  baby_info_private: boolean | null;
   pinned_post_id: string | null;
+  is_private: boolean | null;
+}
+
+interface FollowRequest {
+  id: string;
+  requester_id: string;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  created_at: string;
 }
 
 interface Baby {
@@ -128,6 +141,8 @@ export default function Profile() {
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<'posts' | 'saved' | 'journal' | 'calendar'>('posts');
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -138,8 +153,12 @@ export default function Profile() {
   const [editBio, setEditBio] = useState('');
   const [editParentRole, setEditParentRole] = useState('');
   const [editShowVillages, setEditShowVillages] = useState(true);
+  const [editBabyInfoPrivate, setEditBabyInfoPrivate] = useState(false);
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
   const [pendingHeaderUri, setPendingHeaderUri] = useState<string | null>(null);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string; contentType: ContentType } | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState('');
   const [saveError, setSaveError] = useState('');
 
@@ -148,6 +167,7 @@ export default function Profile() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setCurrentUserId(user.id);
       setUserEmail(user.email ?? '');
       setUserCreatedAt(user.created_at ?? '');
 
@@ -168,6 +188,35 @@ export default function Profile() {
       setMyVillageIds((villagesRes.data ?? []).map((r: any) => r.village_id));
       setFollowerCount(followersRes.count ?? 0);
       setFollowingCount(followingRes.count ?? 0);
+
+      // Load incoming follow requests if account is private
+      if (profileRes.data?.is_private) {
+        const { data: reqData } = await (supabase as any)
+          .from('follow_requests')
+          .select('id, requester_id, created_at')
+          .eq('target_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true });
+        if (reqData && reqData.length > 0) {
+          const requesterIds = reqData.map((r: any) => r.requester_id);
+          const { data: reqProfiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, username, avatar_url')
+            .in('id', requesterIds);
+          const profileMap: Record<string, any> = {};
+          (reqProfiles ?? []).forEach((p: any) => { profileMap[p.id] = p; });
+          setFollowRequests(reqData.map((r: any) => ({
+            id: r.id,
+            requester_id: r.requester_id,
+            created_at: r.created_at,
+            ...profileMap[r.requester_id],
+          })));
+        } else {
+          setFollowRequests([]);
+        }
+      } else {
+        setFollowRequests([]);
+      }
     } catch (err: any) {
       console.warn('Profile loadAll error:', err.message);
     } finally {
@@ -183,6 +232,7 @@ export default function Profile() {
     setEditBio(profile?.bio ?? '');
     setEditParentRole(profile?.parent_role ?? '');
     setEditShowVillages(profile?.show_villages !== false);
+    setEditBabyInfoPrivate(profile?.baby_info_private === true);
     setPendingAvatarUri(null);
     setUsernameError('');
     setSaveError('');
@@ -197,6 +247,19 @@ export default function Profile() {
     setEditing(false);
   }
 
+  async function handleFollowRequest(requestId: string, requesterId: string, accept: boolean) {
+    setProcessingRequestId(requestId);
+    if (accept) {
+      await (supabase as any).from('follow_requests').update({ status: 'accepted' }).eq('id', requestId);
+      await (supabase as any).from('follows').insert({ follower_id: requesterId, following_id: currentUserId });
+      setFollowerCount(c => c + 1);
+    } else {
+      await (supabase as any).from('follow_requests').update({ status: 'rejected' }).eq('id', requestId);
+    }
+    setFollowRequests(prev => prev.filter(r => r.id !== requestId));
+    setProcessingRequestId(null);
+  }
+
   async function pickHeader() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -209,9 +272,15 @@ export default function Profile() {
       aspect: [3, 1],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      setPendingHeaderUri(result.assets[0].uri);
+    if (result.canceled || !result.assets[0]) return;
+    setModerating(true);
+    const modResult = await moderateImage(result.assets[0].uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason, contentType: 'profile_avatar' });
+      return;
     }
+    setPendingHeaderUri(result.assets[0].uri);
   }
 
   async function pickAvatar() {
@@ -226,9 +295,15 @@ export default function Profile() {
       aspect: [1, 1],
       quality: 0.7,
     });
-    if (!result.canceled && result.assets[0]) {
-      setPendingAvatarUri(result.assets[0].uri);
+    if (result.canceled || !result.assets[0]) return;
+    setModerating(true);
+    const modResult = await moderateImage(result.assets[0].uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason, contentType: 'profile_avatar' });
+      return;
     }
+    setPendingAvatarUri(result.assets[0].uri);
   }
 
   async function saveProfile() {
@@ -275,6 +350,7 @@ export default function Profile() {
         header_url: headerUrl,
         parent_role: editParentRole || null,
         show_villages: editShowVillages,
+        baby_info_private: editBabyInfoPrivate,
       };
 
       // Try UPDATE first; if no rows matched, INSERT (handles first-time profile creation)
@@ -513,6 +589,20 @@ export default function Profile() {
                 />
               </View>
 
+              {/* Baby info privacy toggle */}
+              <View style={s.privacyRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.privacyLabel}>Keep baby info private</Text>
+                  <Text style={s.privacyHint}>Hide your baby's name, photo, and birthday from others</Text>
+                </View>
+                <Switch
+                  value={editBabyInfoPrivate}
+                  onValueChange={setEditBabyInfoPrivate}
+                  trackColor={{ false: c.cardSage, true: c.sage }}
+                  thumbColor="#fff"
+                />
+              </View>
+
               {saveError ? <Text style={s.saveError}>{saveError}</Text> : null}
             </View>
           ) : (
@@ -563,6 +653,48 @@ export default function Profile() {
                   <Text style={s.statLbl}>Patches</Text>
                 </View>
               </View>
+
+              {/* Follow requests — shown when account is private */}
+              {profile?.is_private && followRequests.length > 0 && (
+                <View style={{ marginTop: 12, width: '100%' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textMuted, marginBottom: 8 }}>
+                    🔒 {followRequests.length} Follow Request{followRequests.length !== 1 ? 's' : ''}
+                  </Text>
+                  {followRequests.map(req => {
+                    const name = req.display_name || req.username || 'Villager';
+                    const initial = name.charAt(0).toUpperCase();
+                    return (
+                      <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.cardBlush, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                          {req.avatar_url
+                            ? <Image source={{ uri: req.avatar_url }} style={{ width: 36, height: 36 }} />
+                            : <Text style={{ fontSize: 14, fontWeight: '700', color: c.primary }}>{initial}</Text>
+                          }
+                        </View>
+                        <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: c.textPrimary }}>{name}</Text>
+                        {processingRequestId === req.id ? (
+                          <ActivityIndicator size="small" color={c.primary} />
+                        ) : (
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            <TouchableOpacity
+                              onPress={() => handleFollowRequest(req.id, req.requester_id, true)}
+                              style={{ backgroundColor: c.primary, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5 }}
+                            >
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Accept</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleFollowRequest(req.id, req.requester_id, false)}
+                              style={{ backgroundColor: c.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1.5, borderColor: c.separator }}
+                            >
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: c.textMuted }}>Decline</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
               {/* My villages chips — shown only when public */}
               {myVillageIds.length > 0 && profile?.show_villages !== false && (
@@ -799,6 +931,29 @@ export default function Profile() {
       <Modal visible={showSettings} animationType="slide" presentationStyle="fullScreen">
         <SettingsScreen onBack={() => { setShowSettings(false); loadAll(); }} />
       </Modal>
+
+      {blockedContent && currentUserId && (
+        <ContentBlockedModal
+          visible={!!blockedContent}
+          severity={blockedContent.severity}
+          reason={blockedContent.reason}
+          contentType={blockedContent.contentType}
+          userId={currentUserId}
+          onClose={() => setBlockedContent(null)}
+        />
+      )}
+
+      {moderating && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
+        }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 }}>
+            <ActivityIndicator size="large" />
+            <Text style={{ fontSize: 14, fontWeight: '600' }}>Scanning content…</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
