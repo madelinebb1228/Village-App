@@ -31,6 +31,7 @@ import EventsScreen from './EventsScreen';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
+import StreakCard from '../components/StreakCard';
 import StoryViewer from '../components/StoryViewer';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
@@ -142,6 +143,7 @@ export default function HomeTab() {
   const [storyVideoUri, setStoryVideoUri] = useState<string | null>(null);
   const [storySubmitting, setStorySubmitting] = useState(false);
   const [storyRefreshKey, setStoryRefreshKey] = useState(0);
+  const [streakRefreshKey, setStreakRefreshKey] = useState(0);
 
   const [feedMode, setFeedMode] = useState<'for-you' | 'following' | 'friends' | 'patches'>('for-you');
   const [followingPosts, setFollowingPosts] = useState<Post[]>([]);
@@ -988,6 +990,7 @@ export default function HomeTab() {
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
+      setStreakRefreshKey(k => k + 1);
 
       async function fetchStats() {
         setLoading(true);
@@ -1371,6 +1374,9 @@ export default function HomeTab() {
           onViewStories={(groups, idx) => { setStoryViewGroups(groups); setStoryViewGroupIndex(idx); setShowStoryViewer(true); }}
           refreshKey={storyRefreshKey}
         />
+
+        {/* Patchy streak card */}
+        <StreakCard userId={currentUserId} refreshKey={streakRefreshKey} />
 
         {/* Baby profile card */}
         {baby && (

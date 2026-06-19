@@ -87,13 +87,13 @@ export default function StoriesBar({ currentUserId, onAddStory, onViewStories, r
         >
           <View style={[s.ring, myGroup ? s.ringOwn : s.ringAdd]}>
             <View style={s.inner}>
-              <UserAvatar userId={currentUserId ?? ''} name="Me" size={50} />
-              {!myGroup && (
-                <View style={s.plusBadge}>
-                  <Text style={s.plusText}>+</Text>
-                </View>
-              )}
+              <UserAvatar userId={currentUserId ?? ''} name="Me" size={58} />
             </View>
+            {!myGroup && (
+              <View style={s.plusBadge}>
+                <Text style={s.plusText}>+</Text>
+              </View>
+            )}
           </View>
           <Text style={s.label} numberOfLines={1}>{myGroup ? 'Your Story' : 'Add Story'}</Text>
         </TouchableOpacity>
@@ -111,7 +111,7 @@ export default function StoriesBar({ currentUserId, onAddStory, onViewStories, r
           >
             <View style={[s.ring, allSeen(group) ? s.ringSeen : s.ringUnseen]}>
               <View style={s.inner}>
-                <UserAvatar userId={group.user_id} name={group.author} size={50} />
+                <UserAvatar userId={group.user_id} name={group.author} size={58} />
               </View>
             </View>
             <Text style={s.label} numberOfLines={1}>{group.author}</Text>

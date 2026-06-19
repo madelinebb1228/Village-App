@@ -19,10 +19,19 @@ import MomGroupDirectory from './MomGroupDirectory';
 import ParentMarketplace from './ParentMarketplace';
 import SmartShoppingLists from './SmartShoppingLists';
 import ServiceProviderReviews from './ServiceProviderReviews';
+import Breastfeeding101 from './Breastfeeding101';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
 const RESOURCES = [
+  {
+    id: 'breastfeeding_101',
+    emoji: '🤱',
+    title: 'Breastfeeding 101',
+    description: 'Tips & tricks, common challenges, pumping guide, milk storage, recipes, and supplement reviews',
+    bg: (c: Colors) => c.cardBlush,
+    border: (c: Colors) => c.blush,
+  },
   {
     id: 'shopping_lists',
     emoji: '🛍️',
@@ -202,6 +211,10 @@ export default function ResourcesTab() {
   const c = useColors();
   const s = styles(c);
   const [selected, setSelected] = useState<ResourceId | null>(null);
+
+  if (selected === 'breastfeeding_101') {
+    return <Breastfeeding101 onBack={() => setSelected(null)} />;
+  }
 
   if (selected === 'shopping_lists') {
     return <SmartShoppingLists onBack={() => setSelected(null)} />;

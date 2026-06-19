@@ -27,6 +27,8 @@ import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
 import PeriodReturnTracker from './PeriodReturnTracker';
 import MovementTracker from './MovementTracker';
 import InsightsSection from '../components/InsightsSection';
+import PostLogCelebration from '../components/PostLogCelebration';
+import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
@@ -753,6 +755,7 @@ export default function Track() {
   const [babyName,      setBabyName]      = useState<string | null>(null);
   const [showFoodChart, setShowFoodChart] = useState(false);
   const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
+  const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
   const scrollRef    = useRef<ScrollView>(null);
   const sectionY     = useRef<Record<string, number>>({});
@@ -999,6 +1002,12 @@ export default function Track() {
       setEditingId(null);
       setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
+      if (!editingId && userId) {
+        try {
+          const r = await recordLog(userId);
+          setCelebration({ streak: r.newStreak, milestone: r.milestone, usedFreeze: r.usedFreeze });
+        } catch {}
+      }
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
@@ -1039,6 +1048,12 @@ export default function Track() {
       setEditingId(null);
       setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
+      if (!editingId && userId) {
+        try {
+          const r = await recordLog(userId);
+          setCelebration({ streak: r.newStreak, milestone: r.milestone, usedFreeze: r.usedFreeze });
+        } catch {}
+      }
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
@@ -1096,6 +1111,12 @@ export default function Track() {
       setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
       setPumpChartKey(k => k + 1);
+      if (!editingId && userId) {
+        try {
+          const r = await recordLog(userId);
+          setCelebration({ streak: r.newStreak, milestone: r.milestone, usedFreeze: r.usedFreeze });
+        } catch {}
+      }
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {
@@ -1960,6 +1981,14 @@ export default function Track() {
           </View>
         </View>
       </Modal>
+
+      <PostLogCelebration
+        visible={celebration !== null}
+        streak={celebration?.streak ?? 0}
+        milestone={celebration?.milestone ?? null}
+        usedFreeze={celebration?.usedFreeze ?? false}
+        onDismiss={() => setCelebration(null)}
+      />
     </SafeAreaView>
   );
 }
