@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
 
 interface PublicProfile {
   id: string;
@@ -262,6 +263,7 @@ function makeStyles(c: Colors) {
 export default function PublicProfileSheet({ userId, visible, onClose, onMessage }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const { isSubscribed } = useSubscription();
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [postCount, setPostCount] = useState(0);
@@ -666,7 +668,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               <View style={s.section}>
                 <View style={s.sectionHeaderRow}>
                   <Text style={s.sectionTitle}>Patches</Text>
-                  {commonIds.length > 0 && (
+                  {isSubscribed && commonIds.length > 0 && (
                     <View style={s.commonBadge}>
                       <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
                     </View>

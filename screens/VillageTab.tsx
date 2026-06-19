@@ -15,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
 
 import { Village, VILLAGES } from '../lib/villageData';
 import VillageFeedSheet from './VillageFeedSheet';
@@ -31,6 +32,8 @@ export default function VillageTab() {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
+  const { isSubscribed, openPaywall } = useSubscription();
+  const FREE_VILLAGE_LIMIT = 5;
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
@@ -97,6 +100,19 @@ export default function VillageTab() {
   async function toggleJoin(villageId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+
+    if (!joinedIds.has(villageId) && !isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT) {
+      Alert.alert(
+        'Patch Limit Reached',
+        `Free accounts can join up to ${FREE_VILLAGE_LIMIT} patches. Upgrade to Premium for unlimited patches!`,
+        [
+          { text: 'Maybe Later', style: 'cancel' },
+          { text: 'Upgrade', onPress: openPaywall },
+        ]
+      );
+      return;
+    }
+
     setJoining(villageId);
     if (joinedIds.has(villageId)) {
       await supabase.from('user_villages').delete().eq('user_id', user.id).eq('village_id', villageId);
@@ -156,11 +172,17 @@ export default function VillageTab() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const toJoin = suggestions.filter(id => !joinedIds.has(id));
-    if (toJoin.length > 0) {
+    const slotsLeft = isSubscribed ? toJoin.length : Math.max(0, FREE_VILLAGE_LIMIT - joinedIds.size);
+    const limited = toJoin.slice(0, slotsLeft);
+    if (limited.length > 0) {
       await supabase.from('user_villages').insert(
-        toJoin.map(village_id => ({ user_id: user.id, village_id }))
+        limited.map(village_id => ({ user_id: user.id, village_id }))
       );
-      setJoinedIds(prev => new Set([...prev, ...toJoin]));
+      setJoinedIds(prev => new Set([...prev, ...limited]));
+    }
+    if (!isSubscribed && toJoin.length > slotsLeft) {
+      openPaywall();
+      return;
     }
     closeQuiz();
   }
@@ -400,6 +422,13 @@ export default function VillageTab() {
                 );
               })}
             </ScrollView>
+            {!isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT && (
+              <TouchableOpacity onPress={openPaywall} activeOpacity={0.8} style={s.limitBanner}>
+                <Text style={s.limitBannerText}>
+                  {FREE_VILLAGE_LIMIT}/{FREE_VILLAGE_LIMIT} patches used · <Text style={s.limitBannerLink}>Upgrade for unlimited →</Text>
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -734,6 +763,16 @@ function makeStyles(c: Colors) {
     joinedChipEmoji: { fontSize: 18 },
     joinedChipName: { fontSize: 13, fontWeight: '700', color: c.textPrimary, flex: 1 },
     joinedChipLeave: { fontSize: 11, color: c.textMuted, paddingLeft: 4 },
+    limitBanner: {
+      marginTop: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      backgroundColor: c.cardHoney,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    limitBannerText: { fontSize: 13, fontWeight: '600', color: c.textSecondary },
+    limitBannerLink: { fontWeight: '800', color: c.textPrimary },
 
     // ── Join button (used in request modal results)
     joinBtn: {

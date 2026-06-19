@@ -27,6 +27,7 @@ import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
 import PeriodReturnTracker from './PeriodReturnTracker';
 import MovementTracker from './MovementTracker';
 import InsightsSection from '../components/InsightsSection';
+import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
@@ -1484,31 +1485,41 @@ export default function Track() {
         </View>
 
         {/* ── Charts */}
-        <FeedChartCard babyId={babyId} />
-        <DiaperChartCard babyId={babyId} />
-        <PumpingChartCard key={pumpChartKey} userId={userId} />
+        <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
+          <FeedChartCard babyId={babyId} />
+          <DiaperChartCard babyId={babyId} />
+          <PumpingChartCard key={pumpChartKey} userId={userId} />
+        </PaywallGate>
 
         {/* ── Insights */}
         <View
           ref={ref => { sectionRefs.current['insights'] = ref; }}
           onLayout={e => { sectionY.current['insights'] = e.nativeEvent.layout.y; }}
         >
-          <InsightsSection babyId={babyId} refreshKey={insightsRefreshKey} />
+          <PaywallGate feature="smart_insights" title="Smart Insights" description="Pattern detection and personalized tips based on your tracking data." emoji="✨">
+            <InsightsSection babyId={babyId} refreshKey={insightsRefreshKey} />
+          </PaywallGate>
         </View>
 
         {/* ── Supplies */}
         <View ref={ref => { sectionRefs.current['supplies'] = ref; }} onLayout={e => { sectionY.current['supplies'] = e.nativeEvent.layout.y; }}>
-          <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
+          <PaywallGate feature="supplies" title="Smart Supplies" description="Track formula, diapers, and milk stash with low-stock alerts and usage insights." emoji="🧴">
+            <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
+          </PaywallGate>
         </View>
 
         {/* ── Sleep Tracker */}
         <View ref={ref => { sectionRefs.current['sleep'] = ref; }} onLayout={e => { sectionY.current['sleep'] = e.nativeEvent.layout.y; }}>
-          <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+          <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
+            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+          </PaywallGate>
         </View>
 
         {/* ── Wake Windows */}
         <View ref={ref => { sectionRefs.current['wake'] = ref; }} onLayout={e => { sectionY.current['wake'] = e.nativeEvent.layout.y; }}>
-          <WakeWindowTracker babyBirthDate={babyBirthDate} />
+          <PaywallGate feature="wake_windows" isTracker title="Wake Windows" description="Age-based wake window guidance to help your baby sleep better." emoji="⏱️">
+            <WakeWindowTracker babyBirthDate={babyBirthDate} />
+          </PaywallGate>
         </View>
 
         {/* ── Development Tracker */}
@@ -1518,17 +1529,21 @@ export default function Track() {
 
         {/* ── Vaccines & Appointments */}
         <View ref={ref => { sectionRefs.current['vaccines'] = ref; }} onLayout={e => { sectionY.current['vaccines'] = e.nativeEvent.layout.y; }}>
-          <VaccineTracker userId={userId} />
+          <PaywallGate feature="vaccines" isTracker title="Vaccines & Appointments" description="Track your baby's vaccine schedule and upcoming appointments." emoji="💉">
+            <VaccineTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── Growth Tracker */}
         <View ref={ref => { sectionRefs.current['growth'] = ref; }} onLayout={e => { sectionY.current['growth'] = e.nativeEvent.layout.y; }}>
-          <GrowthTracker
-            userId={userId}
-            babyId={babyId}
-            babyBirthDate={babyBirthDate}
-            babyGender={babyGender}
-          />
+          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
+            <GrowthTracker
+              userId={userId}
+              babyId={babyId}
+              babyBirthDate={babyBirthDate}
+              babyGender={babyGender}
+            />
+          </PaywallGate>
         </View>
 
         {/* ── Allergen Tracker */}
@@ -1555,7 +1570,9 @@ export default function Track() {
 
         {/* ── Baby Journal */}
         <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
-          <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
+          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
+            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
+          </PaywallGate>
         </View>
 
         {/* ── Timeline */}
@@ -1613,7 +1630,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['nutrition'] = ref; }}
           onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}
         >
-          <NutritionTracker userId={userId} />
+          <PaywallGate feature="nutrition_tracker" isTracker title="Nutrition & Hydration" description="Track your water intake, meals, and vitamins each day." emoji="💧">
+            <NutritionTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── You: Mental Health */}
@@ -1629,7 +1648,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['mood'] = ref; }}
           onLayout={e => { sectionY.current['mood'] = e.nativeEvent.layout.y; }}
         >
-          <MoodEnergyTracker userId={userId} />
+          <PaywallGate feature="mood_energy_tracker" isTracker title="Mood & Energy" description="Log your daily mood and energy levels to spot patterns over time." emoji="🌈">
+            <MoodEnergyTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── You: Sleep */}
@@ -1637,7 +1658,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['momSleep'] = ref; }}
           onLayout={e => { sectionY.current['momSleep'] = e.nativeEvent.layout.y; }}
         >
-          <MomSleepTracker userId={userId} />
+          <PaywallGate feature="mom_sleep_tracker" isTracker title="Your Sleep" description="Track how much sleep you're getting and how rested you feel." emoji="🌙">
+            <MomSleepTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── You: Meds & Supplements */}
@@ -1645,7 +1668,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['meds'] = ref; }}
           onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
         >
-          <MedTracker userId={userId} />
+          <PaywallGate feature="meds_tracker" isTracker title="Meds & Supplements" description="Log medications, vitamins, and supplements with dosage reminders." emoji="💊">
+            <MedTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── You: Postpartum Recovery */}
@@ -1661,7 +1686,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['period'] = ref; }}
           onLayout={e => { sectionY.current['period'] = e.nativeEvent.layout.y; }}
         >
-          <PeriodReturnTracker userId={userId} />
+          <PaywallGate feature="period_tracker" isTracker title="Period Return" description="Track the return of your menstrual cycle after birth." emoji="🩸">
+            <PeriodReturnTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         {/* ── You: Movement */}
@@ -1669,7 +1696,9 @@ export default function Track() {
           ref={ref => { sectionRefs.current['movement'] = ref; }}
           onLayout={e => { sectionY.current['movement'] = e.nativeEvent.layout.y; }}
         >
-          <MovementTracker userId={userId} />
+          <PaywallGate feature="movement_tracker" isTracker title="Movement" description="Log exercise, walks, and physical activity during your recovery." emoji="🏃">
+            <MovementTracker userId={userId} />
+          </PaywallGate>
         </View>
 
         </>)}

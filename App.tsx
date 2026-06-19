@@ -12,6 +12,7 @@ import { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
 import { AppContext } from './lib/AppContext';
+import { SubscriptionProvider } from './lib/subscriptionContext';
 
 import AuthScreen from './screens/Auth';
 import OnboardingScreen from './screens/Onboarding';
@@ -255,6 +256,7 @@ export default function App() {
     <AppContext.Provider value={{ markOnboardingComplete }}>
       <OneHandedProvider>
       <SyncProvider>
+      <SubscriptionProvider>
       <OfflineBanner />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -268,6 +270,7 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
       <OneHandedIndicator />
+      </SubscriptionProvider>
       </SyncProvider>
       </OneHandedProvider>
     </AppContext.Provider>

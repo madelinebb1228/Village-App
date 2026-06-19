@@ -7,6 +7,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,6 +286,7 @@ export default function RecipesScreen({
   const c = useColors();
   const s = styles(c);
   const meta = CATEGORY_META[category];
+  const { isSubscribed, openPaywall } = useSubscription();
 
   const [userId,     setUserId]     = useState<string | null>(null);
   const [recipes,    setRecipes]    = useState<Recipe[]>([]);
@@ -475,8 +477,8 @@ export default function RecipesScreen({
 
         {/* Post CTA */}
         {!loading && (
-          <TouchableOpacity style={s.postBtn} onPress={() => setShowPost(true)} activeOpacity={0.8}>
-            <Text style={s.postBtnText}>+ Share a recipe</Text>
+          <TouchableOpacity style={s.postBtn} onPress={() => isSubscribed ? setShowPost(true) : openPaywall()} activeOpacity={0.8}>
+            <Text style={s.postBtnText}>+ Share a recipe {!isSubscribed && '🔒'}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>

@@ -69,6 +69,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -968,6 +969,7 @@ const detailStyles = (c: Colors) => StyleSheet.create({
 export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
   const c = useColors();
   const s = mainStyles(c);
+  const { isSubscribed, openPaywall } = useSubscription();
 
   const [view, setView] = useState<'browse' | 'detail'>('browse');
   const [selectedList, setSelectedList] = useState<ShoppingList | null>(null);
@@ -1194,8 +1196,8 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
             <Text style={s.pageTitle}>Smart Shopping Lists</Text>
             <Text style={s.pageSubtitle}>Curated lists for every moment of parenting</Text>
           </View>
-          <TouchableOpacity style={s.createBtn} onPress={() => setShowCreate(true)} activeOpacity={0.8}>
-            <Text style={s.createBtnText}>+ New list</Text>
+          <TouchableOpacity style={s.createBtn} onPress={() => isSubscribed ? setShowCreate(true) : openPaywall()} activeOpacity={0.8}>
+            <Text style={s.createBtnText}>+ New list {!isSubscribed && '🔒'}</Text>
           </TouchableOpacity>
         </View>
 

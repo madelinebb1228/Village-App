@@ -23,6 +23,8 @@ import BabyJournal from './BabyJournal';
 import SharedCalendar from './SharedCalendar';
 import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
+import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
@@ -128,6 +130,7 @@ async function uploadAvatar(uri: string, userId: string): Promise<string | null>
 export default function Profile() {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const { isSubscribed, openPaywall } = useSubscription();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -796,20 +799,20 @@ export default function Profile() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
-            onPress={() => setProfileTab('journal')}
+            onPress={() => isSubscribed ? setProfileTab('journal') : openPaywall()}
             activeOpacity={0.8}
           >
             <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
-              📖 Journal
+              📖 Journal {!isSubscribed && '🔒'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'calendar' && s.tabToggleBtnActive]}
-            onPress={() => setProfileTab('calendar')}
+            onPress={() => isSubscribed ? setProfileTab('calendar') : openPaywall()}
             activeOpacity={0.8}
           >
             <Text style={[s.tabToggleText, profileTab === 'calendar' && s.tabToggleTextActive]}>
-              📅 Calendar
+              📅 Calendar {!isSubscribed && '🔒'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -911,13 +914,17 @@ export default function Profile() {
             ))
           )
         ) : profileTab === 'journal' ? (
-          <BabyJournal
-            userId={profile?.id ?? null}
-            babyId={baby?.id ?? null}
-            babyName={baby?.name ?? null}
-          />
+          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
+            <BabyJournal
+              userId={profile?.id ?? null}
+              babyId={baby?.id ?? null}
+              babyName={baby?.name ?? null}
+            />
+          </PaywallGate>
         ) : (
-          <SharedCalendar userId={profile?.id ?? null} />
+          <PaywallGate feature="shared_calendar" title="Shared Parents Calendar" description="Share schedules, appointments, and reminders with your co-parent or support circle." emoji="📅">
+            <SharedCalendar userId={profile?.id ?? null} />
+          </PaywallGate>
         )}
 
         <View style={{ height: 32 }} />

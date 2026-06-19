@@ -47,6 +47,7 @@ import {
   extractMentions, sendMentionNotifications, renderTextWithMentions,
 } from '../lib/feedUtils.tsx';
 import { VideoPostPlayer } from '../components/feed/VideoPostPlayer';
+import PaywallGate from '../components/PaywallGate';
 import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
 
@@ -1458,6 +1459,7 @@ export default function HomeTab() {
         )}
 
         {/* Supplies overview card */}
+        <PaywallGate feature="supplies" title="Supplies Overview" description="Track formula, diapers, and milk stash with low-stock alerts." emoji="🧴">
         {suppliesSnap && (
           <View style={styles.suppliesCard}>
             <Text style={styles.sectionTitle}>Supplies</Text>
@@ -1489,6 +1491,7 @@ export default function HomeTab() {
             )}
           </View>
         )}
+        </PaywallGate>
 
         {/* Followed Q+A questions */}
         {followedQuestions.length > 0 && (
