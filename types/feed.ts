@@ -34,6 +34,9 @@ export type Stats = {
   pumpedMl: number;
 };
 
+export type RepostCounts = Map<string, number>;
+export type RepostIds = Set<string>;
+
 export type ReminderUrgency = 'info' | 'warning' | 'alert' | 'milestone' | 'streak';
 
 export interface Reminder {

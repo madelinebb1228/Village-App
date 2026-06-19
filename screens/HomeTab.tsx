@@ -70,9 +70,13 @@ export default function HomeTab() {
   const [reactionCounts, setReactionCounts] = useState<Map<string, Record<string, number>>>(new Map());
   const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [repostCounts, setRepostCounts] = useState<Map<string, number>>(new Map());
+  const [myRepostIds, setMyRepostIds] = useState<Set<string>>(new Set());
+  const [followingUserIds, setFollowingUserIds] = useState<Set<string>>(new Set());
   const [pollData, setPollData] = useState<Map<string, { options: { id: string; text: string; vote_count: number }[]; myVoteId: string | null }>>(new Map());
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
@@ -139,8 +143,19 @@ export default function HomeTab() {
   const [storySubmitting, setStorySubmitting] = useState(false);
   const [storyRefreshKey, setStoryRefreshKey] = useState(0);
 
+  const [feedMode, setFeedMode] = useState<'for-you' | 'following' | 'friends' | 'patches'>('for-you');
+  const [followingPosts, setFollowingPosts] = useState<Post[]>([]);
+  const [friendsPosts, setFriendsPosts] = useState<Post[]>([]);
+  const [patchTasks, setPatchTasks] = useState<any[]>([]);
+  const [myPatchVolunteered, setMyPatchVolunteered] = useState<Set<string>>(new Set());
+  const [patchVolCounts, setPatchVolCounts] = useState<Record<string, number>>({});
+  const [patchCategoryFilter, setPatchCategoryFilter] = useState<string | null>(null);
+
   const filteredPosts = useMemo(() => {
-    let result = posts.filter(p =>
+    const source = feedMode === 'following' ? followingPosts
+      : feedMode === 'friends' ? friendsPosts
+      : posts;
+    let result = source.filter(p =>
       !blockedUserIds.has(p.user_id) &&
       !mutedUserIds.has(p.user_id) &&
       (p.user_id === currentUserId || !privateUnfollowedIds.has(p.user_id))
@@ -154,7 +169,7 @@ export default function HomeTab() {
     if (activeHashtag) result = result.filter(p => p.content?.toLowerCase().includes(`#${activeHashtag.toLowerCase()}`));
     if (activeTag) result = result.filter(p => p.tags?.includes(activeTag));
     return result;
-  }, [posts, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
+  }, [posts, followingPosts, friendsPosts, feedMode, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
 
   const showMentalHealthBanner = useMemo(() => {
     if (!postContent.trim()) return false;
@@ -164,6 +179,10 @@ export default function HomeTab() {
 
   useEffect(() => {
     fetchPosts();
+    fetchFollowingPosts();
+    fetchFriendsPosts();
+    fetchPatchFeed();
+    fetchFollowingIds();
     fetchTrendingPosts();
     fetchSavedPosts();
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -230,15 +249,218 @@ export default function HomeTab() {
   }
 
   async function fetchPosts() {
-    const data = await safeQuery<Post>(
-      () => supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(20),
-      'home_posts',
-    );
-    setPosts(data);
-    if (data.length > 0) {
-      fetchReactions(data);
-      fetchPollData(data);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // ── Phase 1: pool + user context in parallel ───────────────────────────────
+    const [poolRes, villagesRes, myReactedRes, myCommentedRes] = await Promise.all([
+      supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(80),
+      user
+        ? supabase.from('user_villages').select('village_id').eq('user_id', user.id)
+        : Promise.resolve({ data: [] }),
+      user
+        ? supabase.from('post_reactions').select('post_id').eq('user_id', user.id)
+        : Promise.resolve({ data: [] }),
+      user
+        ? supabase.from('comments').select('post_id').eq('user_id', user.id)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const pool: Post[] = (poolRes.data as Post[]) ?? [];
+    if (pool.length === 0) { setPosts([]); return; }
+
+    const userVillageIds = new Set<string>((villagesRes.data ?? []).map((r: any) => r.village_id));
+    const myEngagedPostIds = new Set<string>([
+      ...(myReactedRes.data ?? []).map((r: any) => r.post_id),
+      ...(myCommentedRes.data ?? []).map((r: any) => r.post_id),
+    ]);
+
+    // ── Phase 2: engagement counts for the pool ────────────────────────────────
+    const poolIds = pool.map(p => p.id);
+    const [allReactionsRes, allCommentsRes] = await Promise.all([
+      supabase.from('post_reactions').select('post_id').in('post_id', poolIds),
+      supabase.from('comments').select('post_id').in('post_id', poolIds),
+    ]);
+
+    const reactionsPerPost = new Map<string, number>();
+    (allReactionsRes.data ?? []).forEach((r: any) =>
+      reactionsPerPost.set(r.post_id, (reactionsPerPost.get(r.post_id) || 0) + 1));
+
+    const commentsPerPost = new Map<string, number>();
+    (allCommentsRes.data ?? []).forEach((r: any) =>
+      commentsPerPost.set(r.post_id, (commentsPerPost.get(r.post_id) || 0) + 1));
+
+    // ── Phase 3: build affinity signals ───────────────────────────────────────
+    // Preferred tags + authors come from pool posts the user has already engaged with
+    const preferredTags = new Set<string>();
+    const preferredAuthorIds = new Set<string>();
+    pool.filter(p => myEngagedPostIds.has(p.id)).forEach(p => {
+      (p.tags ?? []).forEach(t => preferredTags.add(t));
+      preferredAuthorIds.add(p.user_id);
+    });
+
+    // ── Phase 4: score every post ─────────────────────────────────────────────
+    const now = Date.now();
+    const scored = pool.map(post => {
+      const hoursOld = (now - new Date(post.created_at).getTime()) / 3600000;
+
+      // Decays ~1.5 pts/hr; a 24h-old post scores ~64, a 48h-old post ~28
+      const recencyScore    = Math.max(0, 100 - hoursOld * 1.5);
+
+      const reactions       = reactionsPerPost.get(post.id) || 0;
+      const commentCount    = commentsPerPost.get(post.id) || 0;
+      const engagementScore = (post.likes || 0) * 1 + reactions * 2 + commentCount * 4;
+
+      // Personalisation bonuses
+      const villageScore = post.village_id && userVillageIds.has(post.village_id) ? 35 : 0;
+      const tagScore     = (post.tags ?? []).filter(t => preferredTags.has(t)).length * 20;
+      const authorScore  = preferredAuthorIds.has(post.user_id) ? 25 : 0;
+
+      // Slight boost for questions to surface discussion-worthy posts
+      const typeBoost = post.post_type === 'question' ? 8 : 0;
+
+      return { post, score: recencyScore + engagementScore + villageScore + tagScore + authorScore + typeBoost };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    // ── Phase 5: diversity — max 3 posts per author in the final 20 ───────────
+    const authorCount = new Map<string, number>();
+    const finalPosts: Post[] = [];
+    for (const { post } of scored) {
+      const c = authorCount.get(post.user_id) || 0;
+      if (c >= 3) continue;
+      authorCount.set(post.user_id, c + 1);
+      finalPosts.push(post);
+      if (finalPosts.length >= 20) break;
     }
+
+    setPosts(finalPosts);
+    if (finalPosts.length > 0) {
+      fetchReactions(finalPosts);
+      fetchPollData(finalPosts);
+      fetchRepostData(finalPosts);
+    }
+  }
+
+  async function fetchFollowingPosts() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: followRows } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', user.id);
+
+    const followingUserIds = (followRows ?? []).map((r: any) => r.following_id);
+
+    if (followingUserIds.length === 0) {
+      setFollowingPosts([]);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .in('user_id', followingUserIds)
+      .order('created_at', { ascending: false })
+      .limit(40);
+
+    const result: Post[] = (data as Post[]) ?? [];
+    setFollowingPosts(result);
+    if (result.length > 0) {
+      fetchReactions(result);
+      fetchPollData(result);
+      fetchRepostData(result);
+    }
+  }
+
+  async function fetchFriendsPosts() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Friends = mutual follows: people you follow who also follow you back
+    const [followingRes, followersRes] = await Promise.all([
+      supabase.from('follows').select('following_id').eq('follower_id', user.id),
+      supabase.from('follows').select('follower_id').eq('following_id', user.id),
+    ]);
+
+    const followingSet = new Set((followingRes.data ?? []).map((r: any) => r.following_id));
+    const followerSet  = new Set((followersRes.data ?? []).map((r: any) => r.follower_id));
+    const friendIds    = [...followingSet].filter(id => followerSet.has(id));
+
+    if (friendIds.length === 0) {
+      setFriendsPosts([]);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .in('user_id', friendIds)
+      .order('created_at', { ascending: false })
+      .limit(40);
+
+    const result: Post[] = (data as Post[]) ?? [];
+    setFriendsPosts(result);
+    if (result.length > 0) {
+      fetchReactions(result);
+      fetchPollData(result);
+      fetchRepostData(result);
+    }
+  }
+
+  async function fetchPatchFeed() {
+    const { data: { user } } = await supabase.auth.getUser();
+    const [tasksRes, myVolRes, allVolRes] = await Promise.all([
+      (supabase.from('patch_tasks') as any)
+        .select('id,creator_id,category,title,description,urgency,needed_by,status,created_at,profiles!creator_id(display_name,username)')
+        .in('status', ['open', 'completed'])
+        .order('urgency', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(40),
+      user
+        ? (supabase.from('patch_task_volunteers') as any).select('task_id').eq('user_id', user.id)
+        : Promise.resolve({ data: [] }),
+      (supabase.from('patch_task_volunteers') as any).select('task_id'),
+    ]);
+    if (tasksRes.data) {
+      // Sort: emergency open first, then other open, then completed
+      const open  = (tasksRes.data as any[]).filter((t: any) => t.status === 'open');
+      const done  = (tasksRes.data as any[]).filter((t: any) => t.status === 'completed');
+      const emerg = open.filter((t: any) => t.urgency === 'emergency');
+      const rest  = open.filter((t: any) => t.urgency !== 'emergency');
+      setPatchTasks([...emerg, ...rest, ...done]);
+    }
+    setMyPatchVolunteered(new Set((myVolRes.data ?? []).map((r: any) => r.task_id as string)));
+    const counts: Record<string, number> = {};
+    for (const r of (allVolRes.data ?? [])) counts[r.task_id] = (counts[r.task_id] ?? 0) + 1;
+    setPatchVolCounts(counts);
+  }
+
+  async function handlePatchVolunteer(taskId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase.from('patch_task_volunteers') as any).insert({ task_id: taskId, user_id: user.id });
+    setMyPatchVolunteered(prev => new Set([...prev, taskId]));
+    setPatchVolCounts(prev => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
+  }
+
+  async function handlePatchWithdraw(taskId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase.from('patch_task_volunteers') as any).delete().eq('task_id', taskId).eq('user_id', user.id);
+    setMyPatchVolunteered(prev => { const n = new Set(prev); n.delete(taskId); return n; });
+    setPatchVolCounts(prev => ({ ...prev, [taskId]: Math.max(0, (prev[taskId] ?? 1) - 1) }));
+  }
+
+  function handlePatchComplete(taskId: string) {
+    Alert.alert('Mark as done?', 'This will close the request.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Mark Done', onPress: async () => {
+        await (supabase.from('patch_tasks') as any).update({ status: 'completed' }).eq('id', taskId);
+        setPatchTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed' } : t));
+      }},
+    ]);
   }
 
   async function fetchTrendingPosts() {
@@ -322,6 +544,68 @@ export default function HomeTab() {
     if (data) setSavedPostIds(new Set(data.map((r: any) => r.post_id)));
   }
 
+  async function fetchRepostData(loadedPosts: Post[]) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || loadedPosts.length === 0) return;
+    const ids = loadedPosts.map(p => p.id);
+    const [allRes, myRes] = await Promise.all([
+      (supabase as any).from('reposts').select('post_id').in('post_id', ids),
+      (supabase as any).from('reposts').select('post_id').eq('user_id', user.id).in('post_id', ids),
+    ]);
+    const counts = new Map<string, number>();
+    (allRes.data ?? []).forEach((r: any) => counts.set(r.post_id, (counts.get(r.post_id) || 0) + 1));
+    setRepostCounts(counts);
+    setMyRepostIds(new Set((myRes.data ?? []).map((r: any) => r.post_id)));
+  }
+
+  async function handleRepost(post: Post) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const isReposted = myRepostIds.has(post.id);
+    if (isReposted) {
+      await (supabase as any).from('reposts').delete().eq('user_id', user.id).eq('post_id', post.id);
+      setMyRepostIds(prev => { const n = new Set(prev); n.delete(post.id); return n; });
+      setRepostCounts(prev => { const n = new Map(prev); n.set(post.id, Math.max(0, (n.get(post.id) || 1) - 1)); return n; });
+    } else {
+      await (supabase as any).from('reposts').insert({ user_id: user.id, post_id: post.id });
+      setMyRepostIds(prev => { const n = new Set(prev); n.add(post.id); return n; });
+      setRepostCounts(prev => { const n = new Map(prev); n.set(post.id, (n.get(post.id) || 0) + 1); return n; });
+    }
+  }
+
+  async function fetchFollowingIds() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', user.id);
+    if (data) setFollowingUserIds(new Set(data.map((r: any) => r.following_id)));
+  }
+
+  async function handleFollowToggle(userId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || userId === user.id) return;
+    const isFollowing = followingUserIds.has(userId);
+
+    if (isFollowing) {
+      Alert.alert('Unfollow?', 'You will stop seeing their posts in your Following feed.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unfollow', style: 'destructive',
+          onPress: async () => {
+            setFollowingUserIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
+            await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', userId);
+            fetchFollowingPosts();
+            fetchFriendsPosts();
+          },
+        },
+      ]);
+    } else {
+      setFollowingUserIds(prev => new Set(prev).add(userId));
+      await supabase.from('follows').insert({ follower_id: user.id, following_id: userId });
+      fetchFollowingPosts();
+      fetchFriendsPosts();
+    }
+  }
+
   async function toggleSave(postId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -388,9 +672,15 @@ export default function HomeTab() {
   }
 
   async function openComments(postId: string) {
+    const found = [...posts, ...trendingPosts].find(p => p.id === postId) ?? null;
+    setSelectedPost(found);
     setComments([]);
     setReplyingTo(null);
     setCommentPostId(postId);
+    if (!found) {
+      const { data: postData } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
+      if (postData) setSelectedPost(postData as Post);
+    }
     const { data } = await supabase
       .from('comments')
       .select('*')
@@ -974,6 +1264,10 @@ export default function HomeTab() {
       fetchReminders();
       fetchFollowedQuestions();
       fetchPosts();
+      fetchFollowingPosts();
+      fetchFriendsPosts();
+      fetchPatchFeed();
+      fetchFollowingIds();
       fetchTrendingPosts();
 
       return () => {
@@ -1253,27 +1547,43 @@ export default function HomeTab() {
           </View>
         )}
 
-        {/* For You feed */}
-        <View style={styles.forYouHeader}>
-          <View style={styles.forYouDot} />
-          <Text style={styles.forYouTitle}>For You</Text>
-        </View>
-
-        {/* Topic filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 4 }}>
-          {POST_TAGS.map(tag => (
+        {/* Feed mode toggle */}
+        <View style={styles.feedToggleRow}>
+          {(['for-you', 'following', 'friends', 'patches'] as const).map(mode => (
             <TouchableOpacity
-              key={tag}
-              onPress={() => setActiveTag(activeTag === tag ? null : tag)}
-              style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}
+              key={mode}
+              style={styles.feedToggleBtn}
+              onPress={() => setFeedMode(mode)}
+              activeOpacity={0.75}
             >
-              <Text style={[styles.tagChipText, activeTag === tag && styles.tagChipTextActive]}>{tag}</Text>
+              <Text style={[styles.feedToggleText, feedMode === mode && styles.feedToggleTextActive]}>
+                {mode === 'for-you' ? 'For You'
+                  : mode === 'following' ? 'Following'
+                  : mode === 'friends' ? 'Friends'
+                  : '🤝 Patches'}
+              </Text>
+              {feedMode === mode && <View style={styles.feedToggleUnderline} />}
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
+
+        {/* Topic filter chips — hidden on Patches tab */}
+        {feedMode !== 'patches' && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 4 }}>
+            {POST_TAGS.map(tag => (
+              <TouchableOpacity
+                key={tag}
+                onPress={() => setActiveTag(activeTag === tag ? null : tag)}
+                style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}
+              >
+                <Text style={[styles.tagChipText, activeTag === tag && styles.tagChipTextActive]}>{tag}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Active hashtag banner */}
-        {activeHashtag && (
+        {feedMode !== 'patches' && activeHashtag && (
           <TouchableOpacity
             onPress={() => setActiveHashtag(null)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#E8F4FB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
@@ -1283,13 +1593,183 @@ export default function HomeTab() {
           </TouchableOpacity>
         )}
 
-        {filteredPosts.length === 0 && (
+        {/* ── Patches feed ─────────────────────────────────────────────────────── */}
+        {feedMode === 'patches' && (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: c.card, borderBottomWidth: 1, borderBottomColor: c.separator }}>
+              <Text style={{ fontSize: 13, color: c.textMuted, flex: 1, lineHeight: 18 }}>
+                Neighbors helping neighbors — ask for anything, offer when you can 💛
+              </Text>
+              {patchTasks.filter(t => t.status === 'open').length > 0 && (
+                <View style={{ backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 8 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.sage }}>
+                    {patchTasks.filter(t => t.status === 'open').length} open
+                  </Text>
+                </View>
+              )}
+            </View>
+            {/* Safety banner */}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginHorizontal: 16, marginTop: 10, marginBottom: 2, backgroundColor: '#FEF9C3', borderRadius: 12, borderWidth: 1, borderColor: '#FDE047', padding: 12 }}>
+              <Text style={{ fontSize: 18, lineHeight: 22 }}>⚠️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E', marginBottom: 2 }}>Safety Reminder</Text>
+                <Text style={{ fontSize: 12, color: '#713F12', lineHeight: 17 }}>
+                  Always verify who you're speaking with before meeting up. Never meet someone for the first time alone or in a private place — bring a friend or meet in a public location.
+                </Text>
+              </View>
+            </View>
+            {/* Category filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: c.card, borderBottomWidth: 1, borderBottomColor: c.separator }} contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 8, gap: 8 }}>
+              {[
+                { key: null,             label: 'All',         emoji: '🏘️' },
+                { key: 'meal_train',     label: 'Meal Train',  emoji: '🍲' },
+                { key: 'errand',         label: 'Errand',      emoji: '🛒' },
+                { key: 'recommendation', label: 'Recommend',   emoji: '📋' },
+                { key: 'playdate',       label: 'Playdate',    emoji: '🛝' },
+                { key: 'emergency',      label: 'Emergency',   emoji: '🚨' },
+                { key: 'general',        label: 'General Help', emoji: '💬' },
+              ].map(({ key, label, emoji }) => {
+                const active = patchCategoryFilter === key;
+                return (
+                  <TouchableOpacity
+                    key={String(key)}
+                    onPress={() => setPatchCategoryFilter(key)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 4,
+                      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                      borderWidth: 1.5,
+                      borderColor: active ? c.primary : c.separator,
+                      backgroundColor: active ? c.cardLavender : c.background,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: active ? '700' : '500', color: active ? c.primary : c.textMuted }}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {(() => {
+              const visibleTasks = patchCategoryFilter ? patchTasks.filter(t => t.category === patchCategoryFilter) : patchTasks;
+              return visibleTasks.length === 0 ? (
+              <View style={styles.emptyFeed}>
+                <Text style={[styles.emptyFeedText, { fontSize: 32, marginBottom: 8 }]}>🏘️</Text>
+                <Text style={styles.emptyFeedText}>{patchTasks.length === 0 ? 'No patch requests yet.\nBe the first to ask for help!' : 'No requests in this category yet.'}</Text>
+              </View>
+            ) : (
+              visibleTasks.map(task => {
+                const PATCH_COLORS: Record<string, { bg: string; border: string }> = {
+                  meal_train:     { bg: c.cardHoney,   border: c.honey },
+                  errand:         { bg: c.cardBlush,   border: c.blush },
+                  recommendation: { bg: c.cardBlue,    border: c.blue },
+                  playdate:       { bg: c.cardSage,    border: c.sage },
+                  emergency:      { bg: '#FEE2E2',     border: '#DC2626' },
+                  general:        { bg: c.cardLavender, border: c.lavender },
+                };
+                const PATCH_EMOJI: Record<string, string> = {
+                  meal_train: '🍲', errand: '🛒', recommendation: '📋',
+                  playdate: '🛝', emergency: '🚨', general: '💬',
+                };
+                const PATCH_LABEL: Record<string, string> = {
+                  meal_train: 'Meal Train', errand: 'Errand Run', recommendation: 'Recommend',
+                  playdate: 'Playdate', emergency: 'Emergency', general: 'General Help',
+                };
+                const pc = PATCH_COLORS[task.category] ?? PATCH_COLORS.general;
+                const isOwn = task.creator_id === currentUserId;
+                const volunteered = myPatchVolunteered.has(task.id);
+                const volCount = patchVolCounts[task.id] ?? 0;
+                const authorName = task.profiles?.display_name || task.profiles?.username || 'A parent';
+                return (
+                  <View key={task.id} style={[styles.postCard, { borderLeftWidth: 5, borderLeftColor: pc.border, backgroundColor: pc.bg }]}>
+                    {/* Top row: category + urgency + time */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                      <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, backgroundColor: pc.border + '22', borderColor: pc.border }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: pc.border }}>
+                          {PATCH_EMOJI[task.category] ?? '💬'} {PATCH_LABEL[task.category] ?? 'General Help'}
+                        </Text>
+                      </View>
+                      {task.urgency === 'emergency' && (
+                        <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#DC2626' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>🚨 ASAP</Text>
+                        </View>
+                      )}
+                      {task.urgency === 'urgent' && (
+                        <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#D97706' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>⚡ Urgent</Text>
+                        </View>
+                      )}
+                      <Text style={{ fontSize: 11, color: c.textMuted, marginLeft: 'auto' as any }}>
+                        {getTimeAgo(task.created_at)}
+                      </Text>
+                    </View>
+                    {/* Title */}
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 4, lineHeight: 21 }}>{task.title}</Text>
+                    {/* Description */}
+                    {task.description ? (
+                      <Text style={{ fontSize: 13, color: c.textSecondary, lineHeight: 19, marginBottom: 10 }} numberOfLines={3}>{task.description}</Text>
+                    ) : null}
+                    {/* Footer */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 12, color: c.textMuted }}>from {authorName}</Text>
+                        {volCount > 0 && (
+                          <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>
+                            💛 {volCount} {volCount === 1 ? 'parent' : 'parents'} helping
+                          </Text>
+                        )}
+                      </View>
+                      {task.status === 'completed' ? (
+                        <View style={{ backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: c.sage }}>✓ Done</Text>
+                        </View>
+                      ) : isOwn ? (
+                        <TouchableOpacity
+                          onPress={() => handlePatchComplete(task.id)}
+                          style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: pc.border }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: pc.border }}>Mark Done</Text>
+                        </TouchableOpacity>
+                      ) : volunteered ? (
+                        <TouchableOpacity
+                          onPress={() => handlePatchWithdraw(task.id)}
+                          style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: c.honey }}>💛 Helping</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => handlePatchVolunteer(task.id)}
+                          style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pc.border }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>🙋 I Can Help!</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            );
+          })()}
+          </>
+        )}
+
+        {/* ── Post feeds (For You / Following / Friends) ───────────────────────── */}
+        {feedMode !== 'patches' && filteredPosts.length === 0 && (
           <View style={styles.emptyFeed}>
-            <Text style={styles.emptyFeedText}>{posts.length === 0 ? 'No posts yet. Be the first to share!' : 'No posts match this filter.'}</Text>
+            <Text style={styles.emptyFeedText}>
+              {feedMode === 'friends'
+                ? (friendsPosts.length === 0
+                  ? 'No friends yet.\nFollow someone and when they follow you back, their posts appear here!'
+                  : 'No posts match this filter.')
+                : feedMode === 'following'
+                ? (followingPosts.length === 0
+                  ? 'You\'re not following anyone yet.\nTap a username to visit their profile and follow them!'
+                  : 'No posts match this filter.')
+                : (posts.length === 0 ? 'No posts yet. Be the first to share!' : 'No posts match this filter.')}
+            </Text>
           </View>
         )}
 
-        {filteredPosts.map((post) => (
+        {feedMode !== 'patches' && filteredPosts.map((post) => (
           <View key={post.id} style={[styles.postCard, {
             borderLeftWidth: 4,
             borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
@@ -1346,6 +1826,17 @@ export default function HomeTab() {
                   ]}>
                     <Text>{post.post_type === 'milestone' ? '🎉' : post.post_type === 'poll' ? '📊' : '❓'}</Text>
                   </View>
+                )}
+                {currentUserId && post.user_id !== currentUserId && (
+                  <TouchableOpacity
+                    onPress={() => handleFollowToggle(post.user_id)}
+                    style={[styles.followBtn, followingUserIds.has(post.user_id) && styles.followBtnActive]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.followBtnText, followingUserIds.has(post.user_id) && styles.followBtnTextActive]}>
+                      {followingUserIds.has(post.user_id) ? '✓ Following' : '+ Follow'}
+                    </Text>
+                  </TouchableOpacity>
                 )}
                 {post.user_id === currentUserId && (
                   <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}>
@@ -1468,6 +1959,16 @@ export default function HomeTab() {
               <TouchableOpacity style={styles.postAction} onPress={() => openComments(post.id)}>
                 <Text style={styles.postActionText}>💬 Reply</Text>
               </TouchableOpacity>
+              {currentUserId && post.user_id !== currentUserId && (
+                <TouchableOpacity
+                  style={styles.postAction}
+                  onPress={() => handleRepost(post)}
+                >
+                  <Text style={[styles.postActionText, myRepostIds.has(post.id) && { color: c.primary, fontWeight: '700' }]}>
+                    🔁{repostCounts.get(post.id) ? ` ${repostCounts.get(post.id)}` : ''}
+                  </Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}>
                 <Text style={styles.postActionText}>↗️ Share</Text>
               </TouchableOpacity>
@@ -1539,17 +2040,122 @@ export default function HomeTab() {
         visible={commentPostId !== null}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setCommentPostId(null)}
+        onRequestClose={() => { setCommentPostId(null); setSelectedPost(null); }}
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Comments</Text>
-            <TouchableOpacity onPress={() => setCommentPostId(null)}>
+            <Text style={styles.modalTitle}>Post</Text>
+            <TouchableOpacity onPress={() => { setCommentPostId(null); setSelectedPost(null); }}>
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsContent}>
+            {/* Full post content */}
+            {selectedPost && (
+              <View style={{ marginBottom: 4 }}>
+                <View style={styles.postHeader}>
+                  <TouchableOpacity
+                    style={styles.postAuthorRow}
+                    onPress={() => { setCommentPostId(null); setSelectedPost(null); setPublicProfileUserId(selectedPost.user_id); }}
+                    activeOpacity={0.7}
+                  >
+                    <UserAvatar userId={selectedPost.user_id} name={selectedPost.author} size={36} />
+                    <View>
+                      <Text style={styles.postAuthorName}>{selectedPost.author}</Text>
+                      <Text style={styles.postTimestamp}>{getTimeAgo(selectedPost.created_at)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  {currentUserId && selectedPost.user_id !== currentUserId && (
+                    <TouchableOpacity
+                      onPress={() => handleFollowToggle(selectedPost.user_id)}
+                      style={[styles.followBtn, followingUserIds.has(selectedPost.user_id) && styles.followBtnActive]}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.followBtnText, followingUserIds.has(selectedPost.user_id) && styles.followBtnTextActive]}>
+                        {followingUserIds.has(selectedPost.user_id) ? '✓ Following' : '+ Follow'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {selectedPost.content
+                  ? renderTextWithMentions(selectedPost.content, styles.postContent, c.primary, openMentionedUser, tag => { setCommentPostId(null); setSelectedPost(null); setActiveHashtag(tag); })
+                  : null}
+                {selectedPost.image_url ? (
+                  <Image source={{ uri: selectedPost.image_url }} style={styles.postImage} resizeMode="cover" />
+                ) : null}
+                {selectedPost.video_url ? <VideoPostPlayer uri={selectedPost.video_url} /> : null}
+                {selectedPost.tags && selectedPost.tags.length > 0 && (
+                  <View style={styles.postTagsRow}>
+                    {selectedPost.tags.map(tag => (
+                      <TouchableOpacity key={tag} onPress={() => { setCommentPostId(null); setSelectedPost(null); setActiveTag(tag); }} style={styles.postTagChip}>
+                        <Text style={styles.postTagChipText}>{tag}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                <View style={styles.postFooter}>
+                  <View>
+                    {reactionPickerPostId === selectedPost.id && (
+                      <View style={{
+                        flexDirection: 'row', gap: 4, marginBottom: 6,
+                        backgroundColor: c.card, borderRadius: 24,
+                        paddingHorizontal: 10, paddingVertical: 6,
+                        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.12, shadowRadius: 6, elevation: 4,
+                        alignSelf: 'flex-start',
+                      }}>
+                        {['❤️','😂','😢','💪','🙌','👶'].map(emoji => (
+                          <TouchableOpacity key={emoji} onPress={() => setReaction(selectedPost.id, emoji)} style={{ padding: 4 }}>
+                            <Text style={{
+                              fontSize: myReactions.get(selectedPost.id) === emoji ? 26 : 22,
+                              opacity: myReactions.get(selectedPost.id) && myReactions.get(selectedPost.id) !== emoji ? 0.5 : 1,
+                            }}>{emoji}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={styles.postAction}
+                      onPress={() => setReactionPickerPostId(prev => prev === selectedPost.id ? null : selectedPost.id)}
+                    >
+                      {(() => {
+                        const myR = myReactions.get(selectedPost.id);
+                        const counts = reactionCounts.get(selectedPost.id) || {};
+                        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                        const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                        return (
+                          <Text style={[styles.postActionText, myR ? styles.likedText : null]}>
+                            {myR || (topEmojis.length ? topEmojis.join('') : '🤍')} {total > 0 ? total : ''}
+                          </Text>
+                        );
+                      })()}
+                    </TouchableOpacity>
+                  </View>
+                  {currentUserId && selectedPost.user_id !== currentUserId && (
+                    <TouchableOpacity style={styles.postAction} onPress={() => handleRepost(selectedPost)}>
+                      <Text style={[styles.postActionText, myRepostIds.has(selectedPost.id) && { color: c.primary, fontWeight: '700' }]}>
+                        🔁{repostCounts.get(selectedPost.id) ? ` ${repostCounts.get(selectedPost.id)}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.postAction} onPress={() => handleShare(selectedPost)}>
+                    <Text style={styles.postActionText}>↗️ Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.postAction, { marginLeft: 'auto' as any }]}
+                    onPress={() => toggleSave(selectedPost.id)}
+                  >
+                    <Text style={styles.postActionText}>{savedPostIds.has(selectedPost.id) ? '🔖' : '🏷️'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ height: 1, backgroundColor: c.separator, marginTop: 8, marginBottom: 12 }} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: c.textMuted, marginBottom: 8 }}>
+                  {comments.length > 0 ? `${comments.length} Comment${comments.length !== 1 ? 's' : ''}` : 'Comments'}
+                </Text>
+              </View>
+            )}
+
             {comments.length === 0 ? (
               <Text style={styles.noComments}>No comments yet. Start the conversation!</Text>
             ) : (
@@ -2418,6 +3024,24 @@ function makeStyles(c: Colors) {
     postDeleteText: {
       fontSize: 15,
     },
+    followBtn: {
+      borderRadius: 14,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderWidth: 1.5,
+      borderColor: c.primary,
+    },
+    followBtnActive: {
+      backgroundColor: c.cardLavender,
+    },
+    followBtnText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    followBtnTextActive: {
+      color: c.primary,
+    },
     villageTag: {
       alignSelf: 'flex-start',
       backgroundColor: c.cardLavender,
@@ -2611,7 +3235,38 @@ function makeStyles(c: Colors) {
       color: c.textMuted,
       textAlign: 'center',
     },
-    // ── For You header
+    // ── Feed toggle (For You / Following) ──────────────────────────────────────
+    feedToggleRow: {
+      flexDirection: 'row',
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
+      marginBottom: 4,
+    },
+    feedToggleBtn: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 12,
+      position: 'relative',
+    },
+    feedToggleText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    feedToggleTextActive: {
+      color: c.textPrimary,
+      fontWeight: '700',
+    },
+    feedToggleUnderline: {
+      position: 'absolute',
+      bottom: 0,
+      left: '20%' as any,
+      right: '20%' as any,
+      height: 2.5,
+      borderRadius: 2,
+      backgroundColor: c.primary,
+    },
+    // ── For You header (kept for Trending section)
     forYouHeader: {
       flexDirection: 'row',
       alignItems: 'center',
