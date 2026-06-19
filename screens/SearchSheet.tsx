@@ -230,7 +230,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                 <Text style={s.emptyText}>No people found for "{trimmedQuery}"</Text>
               ) : (
                 people.map(p => {
-                  const name = p.display_name || p.username || 'Villager';
+                  const name = p.display_name || p.username || 'Parent';
                   const initial = name.charAt(0).toUpperCase();
                   const isMe = p.id === currentUserId;
                   const isFollowing = followingIds.has(p.id);

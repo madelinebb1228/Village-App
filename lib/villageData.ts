@@ -215,18 +215,6 @@ const LOCATION_VILLAGES: Village[] = [
 ];
 
 export const VILLAGES: Village[] = [
-  { id: 'bereaved_parents',      name: 'Bereaved Parents Patch',                   emoji: '🕊️', description: 'A safe, compassionate space for parents who have experienced the loss of a child or pregnancy' },
-  { id: 'pregnancy_loss',        name: 'Pregnancy Loss Patch',                     emoji: '🌸', description: 'Support for parents who have experienced any form of pregnancy loss' },
-  { id: 'miscarriage_parents',   name: 'Miscarriage Parents Patch',                emoji: '💜', description: '1 in 4 pregnancies end in miscarriage — you are not alone' },
-  { id: 'ectopic_loss',          name: 'Ectopic & Molar Pregnancy Loss',             emoji: '🌸', description: 'Support for parents who experienced ectopic or molar pregnancy loss', hidden: true },
-  { id: 'tfmr_parents',          name: 'TFMR Parents Patch',                       emoji: '💙', description: 'A safe and judgment-free space for parents who experienced termination for medical reasons', hidden: true },
-  { id: 'stillbirth_parents',    name: 'Stillbirth Parents Patch',                 emoji: '🕊️', description: 'Support and community for stillbirth parents' },
-  { id: 'infant_loss',           name: 'Infant Loss Patch',                        emoji: '💙', description: 'Support for parents who have lost an infant' },
-  { id: 'sids_parents',          name: 'SIDS Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Infant Death Syndrome' },
-  { id: 'sudc_parents',          name: 'SUDC Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Unexplained Death in Childhood', hidden: true },
-  { id: 'sads_parents',          name: 'SADS Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Arrhythmia Death Syndrome', hidden: true },
-  { id: 'pediatric_cancer_loss', name: 'Pediatric Cancer Loss Patch',              emoji: '💛', description: 'A community for parents who have lost a child to cancer', hidden: true },
-  { id: 'child_loss',            name: 'Child Loss Patch',                         emoji: '🕊️', description: 'Support for parents who have lost a child at any age' },
   { id: 'boy_parents',  name: "Parents of Boys Patch",   emoji: '💙', description: 'A community for parents raising baby boys' },
   { id: 'girl_parents', name: "Parents of Girls Patch",  emoji: '🩷', description: 'A community for parents raising baby girls' },
   { id: 'twins',           name: 'Parents of Twins',           emoji: '👯', description: 'Double the love, double the fun' },
@@ -716,6 +704,18 @@ export const VILLAGES: Village[] = [
   ...DUE_DATE_VILLAGES,
   ...CHILD_AGE_VILLAGES,
   ...LOCATION_VILLAGES,
+  { id: 'bereaved_parents',      name: 'Bereaved Parents Patch',                   emoji: '🕊️', description: 'A safe, compassionate space for parents who have experienced the loss of a child or pregnancy' },
+  { id: 'pregnancy_loss',        name: 'Pregnancy Loss Patch',                     emoji: '🌸', description: 'Support for parents who have experienced any form of pregnancy loss' },
+  { id: 'miscarriage_parents',   name: 'Miscarriage Parents Patch',                emoji: '💜', description: '1 in 4 pregnancies end in miscarriage — you are not alone' },
+  { id: 'ectopic_loss',          name: 'Ectopic & Molar Pregnancy Loss',             emoji: '🌸', description: 'Support for parents who experienced ectopic or molar pregnancy loss', hidden: true },
+  { id: 'tfmr_parents',          name: 'TFMR Parents Patch',                       emoji: '💙', description: 'A safe and judgment-free space for parents who experienced termination for medical reasons', hidden: true },
+  { id: 'stillbirth_parents',    name: 'Stillbirth Parents Patch',                 emoji: '🕊️', description: 'Support and community for stillbirth parents' },
+  { id: 'infant_loss',           name: 'Infant Loss Patch',                        emoji: '💙', description: 'Support for parents who have lost an infant' },
+  { id: 'sids_parents',          name: 'SIDS Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Infant Death Syndrome' },
+  { id: 'sudc_parents',          name: 'SUDC Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Unexplained Death in Childhood', hidden: true },
+  { id: 'sads_parents',          name: 'SADS Parents Patch',                       emoji: '💙', description: 'Community for families affected by Sudden Arrhythmia Death Syndrome', hidden: true },
+  { id: 'pediatric_cancer_loss', name: 'Pediatric Cancer Loss Patch',              emoji: '💛', description: 'A community for parents who have lost a child to cancer', hidden: true },
+  { id: 'child_loss',            name: 'Child Loss Patch',                         emoji: '🕊️', description: 'Support for parents who have lost a child at any age' },
 ];
 
 // Build a fast ID → {name, emoji} lookup used by profile views

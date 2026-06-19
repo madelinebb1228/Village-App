@@ -156,7 +156,7 @@ export default function MessagesInbox({
         return {
           id: r.id,
           otherUserId: otherId,
-          otherName: prof.display_name || prof.username || 'Villager',
+          otherName: prof.display_name || prof.username || 'Parent',
           otherAvatar: prof.avatar_url ?? null,
           lastMessage: lastMsg?.content ?? '',
           lastMessageAt: lastMsg?.created_at ?? r.last_message_at,
@@ -206,7 +206,7 @@ export default function MessagesInbox({
     setOpenConv({
       id: existing.id,
       otherUserId: otherId,
-      otherName: prof?.display_name || prof?.username || 'Villager',
+      otherName: prof?.display_name || prof?.username || 'Parent',
       otherAvatar: prof?.avatar_url ?? null,
       lastMessage: '',
       lastMessageAt: existing.last_message_at,

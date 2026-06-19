@@ -307,8 +307,8 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
                   <Text style={s.emptyFeedTitle}>No posts yet</Text>
                   <Text style={s.emptyFeedSub}>
                     {joined
-                      ? 'Be the first to post to this village!'
-                      : 'Join this village to start posting here.'}
+                      ? 'Be the first to post to this patch!'
+                      : 'Join this patch to start posting here.'}
                   </Text>
                 </View>
               ) : posts.map(post => (

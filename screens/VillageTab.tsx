@@ -18,6 +18,8 @@ import { useColors, Colors } from '../lib/theme';
 
 import { Village, VILLAGES } from '../lib/villageData';
 import VillageFeedSheet from './VillageFeedSheet';
+import FindYourPatchSheet from './FindYourPatchSheet';
+import PatchTasksSheet from './PatchTasksSheet';
 import { QUIZ_QUESTIONS } from '../lib/quizData';
 import { suggestVillages, getNextVisibleStep, getPrevVisibleStep } from '../lib/quizLogic';
 import { VillageCard } from '../components/village/VillageCard';
@@ -50,6 +52,8 @@ export default function VillageTab() {
   const [requestText, setRequestText]             = useState('');
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestDone, setRequestDone]             = useState(false);
+  const [showFindPatch, setShowFindPatch]         = useState(false);
+  const [showPatchTasks, setShowPatchTasks]       = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -193,7 +197,19 @@ export default function VillageTab() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={s.heading}>Community</Text>
+        <Text style={s.heading}>Your Patch</Text>
+
+        {/* Find Your Patch modal */}
+        <FindYourPatchSheet
+          visible={showFindPatch}
+          onClose={() => setShowFindPatch(false)}
+        />
+
+        {/* Patch Tasks modal */}
+        <PatchTasksSheet
+          visible={showPatchTasks}
+          onClose={() => setShowPatchTasks(false)}
+        />
 
         {/* Search bar */}
         <View style={s.searchRow}>
@@ -230,7 +246,7 @@ export default function VillageTab() {
               <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowRequestModal(false)}>
                 <Text style={s.modalCloseText}>✕</Text>
               </TouchableOpacity>
-              <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Community</Text>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Patch</Text>
               <View style={s.modalCloseBtn} />
             </View>
 
@@ -309,6 +325,42 @@ export default function VillageTab() {
           </TouchableOpacity>
         )}
 
+        {/* Meet Parents Like You — individual matching */}
+        {!search && (
+          <TouchableOpacity
+            style={s.findPatchCard}
+            onPress={() => setShowFindPatch(true)}
+            activeOpacity={0.88}
+          >
+            <View style={s.findPatchLeft}>
+              <Text style={s.findPatchEmoji}>🤝</Text>
+              <View>
+                <Text style={s.findPatchTitle}>Meet Parents Like You</Text>
+                <Text style={s.findPatchSub}>Get matched with parents in similar situations</Text>
+              </View>
+            </View>
+            <Text style={s.findPatchArrow}>›</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Patch Requests */}
+        {!search && (
+          <TouchableOpacity
+            style={s.patchTasksCard}
+            onPress={() => setShowPatchTasks(true)}
+            activeOpacity={0.88}
+          >
+            <View style={s.findPatchLeft}>
+              <Text style={s.patchTasksEmoji}>🙋</Text>
+              <View>
+                <Text style={s.patchTasksTitle}>Patch Requests</Text>
+                <Text style={s.patchTasksSub}>Ask for help or offer it to a neighbor</Text>
+              </View>
+            </View>
+            <Text style={s.findPatchArrow}>›</Text>
+          </TouchableOpacity>
+        )}
+
         {/* My Patches */}
         {myVillages.length > 0 && !search && (
           <>
@@ -355,13 +407,14 @@ export default function VillageTab() {
         {discoverList.length > 0 && (
           <>
             <Text style={s.sectionTitle}>{search ? 'Results' : 'Discover'}</Text>
-            {discoverList.map(v => (
+            {discoverList.map((v, idx) => (
               <VillageCard
                 key={v.id}
                 village={v}
                 joining={joining === v.id}
                 onJoin={() => toggleJoin(v.id)}
                 onOpen={() => setSelectedVillage(v)}
+                colorIndex={idx}
               />
             ))}
           </>
@@ -415,7 +468,7 @@ export default function VillageTab() {
                   : 'Explore all our patches below and join the ones that feel right.'}
               </Text>
 
-              {VILLAGES.filter(v => suggestions.includes(v.id)).map(v => (
+              {VILLAGES.filter(v => suggestions.includes(v.id)).map((v, idx) => (
                 <VillageCard
                   key={v.id}
                   village={v}
@@ -424,6 +477,7 @@ export default function VillageTab() {
                   onJoin={() => toggleJoin(v.id)}
                   onOpen={() => setSelectedVillage(v)}
                   fullWidth
+                  colorIndex={idx}
                 />
               ))}
 
@@ -531,6 +585,28 @@ function makeStyles(c: Colors) {
     safe: { flex: 1, backgroundColor: c.bg },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     content: { padding: 24, paddingBottom: 40 },
+
+    // Find Your Patch hero card
+    findPatchCard: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: c.cardLavender, borderRadius: 16, padding: 16, marginBottom: 16,
+      borderLeftWidth: 5, borderLeftColor: c.lavender,
+    },
+    findPatchLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    findPatchEmoji: { fontSize: 28 },
+    findPatchTitle: { fontSize: 16, fontWeight: '700', color: c.lavender },
+    findPatchSub:   { fontSize: 12, color: c.lavender + 'AA', marginTop: 2 },
+    findPatchArrow: { fontSize: 22, color: c.lavender, fontWeight: '700' },
+
+    // Patch Requests card
+    patchTasksCard: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: c.cardHoney, borderRadius: 16, padding: 16, marginBottom: 16,
+      borderLeftWidth: 5, borderLeftColor: c.honey,
+    },
+    patchTasksEmoji: { fontSize: 28 },
+    patchTasksTitle: { fontSize: 16, fontWeight: '700', color: c.honey },
+    patchTasksSub:   { fontSize: 12, color: c.honey + 'AA', marginTop: 2 },
 
     heading: {
       fontSize: 26,

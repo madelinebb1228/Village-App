@@ -4,7 +4,7 @@ import { useColors, Colors } from '../../lib/theme';
 import { Village } from '../../lib/villageData';
 
 export function VillageCard({
-  village, joining, joined = false, onJoin, onOpen, fullWidth = false,
+  village, joining, joined = false, onJoin, onOpen, fullWidth = false, colorIndex,
 }: {
   village: Village;
   joining: boolean;
@@ -12,12 +12,21 @@ export function VillageCard({
   onJoin: () => void;
   onOpen?: () => void;
   fullWidth?: boolean;
+  colorIndex?: number;
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+
+  const PALETTE = [c.reminderInfo, c.reminderWarning, c.reminderAlert, c.reminderMilestone, c.reminderStreak];
+  const color = colorIndex !== undefined ? PALETTE[colorIndex % PALETTE.length] : null;
+
   return (
     <TouchableOpacity
-      style={[s.villageCard, fullWidth && { width: '100%' }]}
+      style={[
+        s.villageCard,
+        fullWidth && { width: '100%' },
+        color && { backgroundColor: color.bg, borderColor: color.border },
+      ]}
       onPress={onOpen}
       activeOpacity={onOpen ? 0.78 : 1}
     >
@@ -27,13 +36,25 @@ export function VillageCard({
         <Text style={s.villageDesc}>{village.description}</Text>
       </View>
       <TouchableOpacity
-        style={[s.joinBtn, joined && s.joinBtnJoined]}
+        style={[
+          s.joinBtn,
+          joined && !color && s.joinBtnJoined,
+          color && {
+            backgroundColor: joined ? color.bg : color.border,
+            borderWidth: joined ? 2 : 0,
+            borderColor: color.border,
+          },
+        ]}
         onPress={onJoin}
         disabled={joining}
       >
         {joining
-          ? <ActivityIndicator size="small" color="#fff" />
-          : <Text style={[s.joinBtnText, joined && s.joinBtnTextJoined]}>
+          ? <ActivityIndicator size="small" color={color ? (joined ? color.border : '#fff') : '#fff'} />
+          : <Text style={[
+              s.joinBtnText,
+              !color && joined && s.joinBtnTextJoined,
+              color && { color: joined ? color.border : '#fff' },
+            ]}>
               {joined ? '✓ Joined' : '+ Join'}
             </Text>
         }

@@ -468,7 +468,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     if (!activeCalendar) return;
     try {
       await Share.share({
-        message: `Join "${activeCalendar.name}" on Village! In the app, go to Profile → Calendar → Join with a code and enter: ${activeCalendar.invite_code}`,
+        message: `Join "${activeCalendar.name}" on Parent Patch! In the app, go to Profile → Calendar → Join with a code and enter: ${activeCalendar.invite_code}`,
       });
     } catch { /* user dismissed */ }
   }

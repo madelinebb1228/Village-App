@@ -121,7 +121,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Hospital Bag — What Mom Actually Needs',
     category: 'hospital',
     description: 'Skip the 50-item Pinterest list. Here\'s what you\'ll actually reach for.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'hm1', name: 'Long phone charger (10 ft)', whyItHelps: 'Hospital outlets are across the room. A short cable will drive you crazy.', price: '$8–15', linkUrl: '', imageUrl: '', sortOrder: 0 },
@@ -141,7 +141,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Hospital Bag — For Your Partner / Support Person',
     category: 'hospital',
     description: 'The support person is often forgotten. Don\'t let them be unprepared.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'hp1', name: 'Clothes for 2–3 days', whyItHelps: 'You may be there longer than expected. Pack at least 2 changes.', price: 'varies', linkUrl: '', imageUrl: '', sortOrder: 0 },
@@ -158,7 +158,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Flying with a Baby (Under 1 Year)',
     category: 'travel',
     description: 'Surviving your first flight with a lap infant. You\'ve got this.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'fb1', name: 'Baby carrier or wrap', whyItHelps: 'Keeps your hands free through security and during boarding. Baby often sleeps in it too.', price: '$30–150', linkUrl: '', imageUrl: '', sortOrder: 0 },
@@ -178,7 +178,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Newborn First Week at Home',
     category: 'newborn',
     description: 'Everything you\'ll actually reach for in those first wild days.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'nw1', name: 'Swaddle blankets × 4+', whyItHelps: 'You\'ll go through these fast. Muslin ones are easy to fold, soft, and breathable.', price: '$15–40', linkUrl: '', imageUrl: '', sortOrder: 0 },
@@ -198,7 +198,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Diaper Bag: The Real Essentials',
     category: 'diaper_bag',
     description: 'What actually needs to be in your bag every single time you leave the house.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'db1', name: 'Diapers (4+ for a day out)', whyItHelps: 'Under-packing diapers is the most common mistake. Always bring more than you think you\'ll need.', price: 'varies', linkUrl: '', imageUrl: '', sortOrder: 0 },
@@ -217,7 +217,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Breastfeeding Starter Kit',
     category: 'feeding',
     description: 'Set yourself up for success in the early weeks.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'bf1', name: 'Haakaa silicone pump', whyItHelps: 'Attaches to the other breast while you nurse. Catches passive letdown — you can collect oz without any effort.', price: '$12–25', linkUrl: 'https://www.amazon.com/s?k=haakaa+pump', imageUrl: '', sortOrder: 0 },
@@ -235,7 +235,7 @@ const SEEDED_LISTS: ShoppingList[] = [
     title: 'Safe Sleep Setup',
     category: 'sleep',
     description: 'Everything you need for safe, sane sleep — for baby and for you.',
-    authorName: 'village team',
+    authorName: 'patch team',
     isSeeded: true,
     items: [
       { id: 'ss1', name: 'Firm, flat sleep surface', whyItHelps: 'A firm mattress in a crib, bassinet, or play yard is the safest place for baby to sleep. No soft surfaces.', price: 'varies', linkUrl: '', imageUrl: '', sortOrder: 0 },

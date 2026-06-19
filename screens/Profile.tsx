@@ -661,7 +661,7 @@ export default function Profile() {
                     🔒 {followRequests.length} Follow Request{followRequests.length !== 1 ? 's' : ''}
                   </Text>
                   {followRequests.map(req => {
-                    const name = req.display_name || req.username || 'Villager';
+                    const name = req.display_name || req.username || 'Parent';
                     const initial = name.charAt(0).toUpperCase();
                     return (
                       <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>

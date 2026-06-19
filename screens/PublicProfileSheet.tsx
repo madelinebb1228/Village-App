@@ -438,7 +438,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   }
 
   const commonIds = theirVillageIds.filter(id => myVillageIds.includes(id));
-  const displayName = profile?.display_name || profile?.username || 'Villager';
+  const displayName = profile?.display_name || profile?.username || 'Parent';
   const initial = displayName.charAt(0).toUpperCase();
   const showVillages = profile?.show_villages !== false;
 

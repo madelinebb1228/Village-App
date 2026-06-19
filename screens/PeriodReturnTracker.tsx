@@ -1,0 +1,219 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Colors, useColors } from '../lib/theme';
+import { supabase } from '../lib/supabase';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const FLOW_OPTS = [
+  { value: 'none',     label: '⚪ None',     color: '#6B7280' },
+  { value: 'spotting', label: '🩸 Spotting', color: '#DB2777' },
+  { value: 'light',    label: '🩸 Light',    color: '#DC2626' },
+  { value: 'moderate', label: '🩸 Moderate', color: '#B91C1C' },
+  { value: 'heavy',    label: '🩸 Heavy',    color: '#7F1D1D' },
+];
+
+const SYMPTOMS = ['Cramping','Bloating','Breast tenderness','Mood swings','Headache','Fatigue','Back pain','Spotting only'];
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+interface PeriodLog {
+  id: string;
+  logged_date: string;
+  flow_level: string | null;
+  symptoms: string[];
+  notes: string | null;
+}
+
+export default function PeriodReturnTracker({ userId }: { userId: string | null }) {
+  const c = useColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+
+  const [logs,     setLogs]     = useState<PeriodLog[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [adding,   setAdding]   = useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const [flow,     setFlow]     = useState('spotting');
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [notes,    setNotes]    = useState('');
+
+  const load = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    const { data } = await (supabase.from('mom_period_logs') as any)
+      .select('*').eq('user_id', userId)
+      .order('logged_date', { ascending: false }).limit(20);
+    setLogs(data ?? []);
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save() {
+    if (!userId) return;
+    setSaving(true);
+    await (supabase.from('mom_period_logs') as any).insert({
+      user_id: userId, logged_date: todayStr(),
+      flow_level: flow, symptoms,
+      notes: notes.trim() || null,
+    });
+    setSaving(false);
+    setAdding(false);
+    setFlow('spotting'); setSymptoms([]); setNotes('');
+    load();
+  }
+
+  function toggleSym(sym: string) {
+    setSymptoms(prev => prev.includes(sym) ? prev.filter(x => x !== sym) : [...prev, sym]);
+  }
+
+  const todayLog  = logs.find(l => l.logged_date === todayStr());
+  const lastEntry = logs[0];
+  const hasReturned = logs.length > 0;
+
+  if (loading) return <ActivityIndicator color={c.primary} style={{ margin: 24 }} />;
+
+  return (
+    <View style={s.wrap}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+        <View style={s.headerLeft}>
+          <Text style={s.headerEmoji}>🩸</Text>
+          <View>
+            <Text style={s.headerTitle}>Period Return</Text>
+            <Text style={s.headerSub}>
+              {hasReturned
+                ? `Last logged: ${fmtDate(lastEntry.logged_date)} · ${lastEntry.flow_level}`
+                : 'Track when your cycle returns'}
+            </Text>
+          </View>
+        </View>
+        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={s.body}>
+          {!hasReturned && !adding && (
+            <View style={s.infoCard}>
+              <Text style={s.infoText}>
+                Postpartum periods can return anywhere from 6 weeks to 18 months. Start logging when you notice spotting or flow.
+              </Text>
+            </View>
+          )}
+
+          {/* Today's entry */}
+          {todayLog && !adding && (
+            <View style={s.todayCard}>
+              <Text style={s.todayLabel}>Today</Text>
+              <Text style={s.todayFlow}>{FLOW_OPTS.find(f => f.value === todayLog.flow_level)?.label ?? todayLog.flow_level}</Text>
+              {todayLog.symptoms?.length > 0 && <Text style={s.todaySyms}>{todayLog.symptoms.join(' · ')}</Text>}
+            </View>
+          )}
+
+          {/* Recent log list */}
+          {!adding && logs.slice(0, 7).map(l => (
+            <View key={l.id} style={s.logRow}>
+              <Text style={s.logDate}>{fmtDate(l.logged_date)}</Text>
+              <Text style={[s.logFlow, { color: FLOW_OPTS.find(f => f.value === l.flow_level)?.color ?? c.textPrimary }]}>
+                {FLOW_OPTS.find(f => f.value === l.flow_level)?.label ?? l.flow_level}
+              </Text>
+              {l.symptoms?.length > 0 && <Text style={s.logSyms} numberOfLines={1}>{l.symptoms.join(', ')}</Text>}
+            </View>
+          ))}
+
+          {!adding ? (
+            <TouchableOpacity style={s.logBtn} onPress={() => setAdding(true)}>
+              <Text style={s.logBtnText}>{todayLog ? '✏️ Update Today' : '+ Log Today'}</Text>
+            </TouchableOpacity>
+          ) : (
+            <View>
+              <Text style={s.formLabel}>Flow level</Text>
+              <View style={s.flowRow}>
+                {FLOW_OPTS.map(f => (
+                  <TouchableOpacity key={f.value}
+                    style={[s.flowBtn, flow === f.value && { backgroundColor: f.color + '22', borderColor: f.color }]}
+                    onPress={() => setFlow(f.value)}>
+                    <Text style={[s.flowBtnText, flow === f.value && { color: f.color, fontWeight: '700' }]}>{f.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Symptoms <Text style={s.optional}>(pick any)</Text></Text>
+              <View style={s.chipRow}>
+                {SYMPTOMS.map(sym => (
+                  <TouchableOpacity key={sym}
+                    style={[s.chip, symptoms.includes(sym) && { backgroundColor: '#FEE2E2', borderColor: '#DC2626' }]}
+                    onPress={() => toggleSym(sym)}>
+                    <Text style={[s.chipText, symptoms.includes(sym) && { color: '#DC2626', fontWeight: '700' }]}>{sym}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Notes <Text style={s.optional}>(optional)</Text></Text>
+              <TextInput style={s.notesInput} placeholder="Anything else..."
+                placeholderTextColor={c.textMuted} value={notes} onChangeText={setNotes}
+                multiline maxLength={300} textAlignVertical="top" />
+
+              <View style={s.btnRow}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => setAdding(false)}>
+                  <Text style={s.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#DC2626' },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    headerEmoji: { fontSize: 28 },
+    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
+    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
+    chevron:     { fontSize: 12, color: c.textMuted },
+    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+
+    infoCard:   { backgroundColor: c.cardBlue, borderRadius: 12, padding: 14, marginBottom: 14 },
+    infoText:   { fontSize: 13, color: '#1E3A8A', lineHeight: 19 },
+
+    todayCard:  { backgroundColor: '#FEE2E2', borderRadius: 12, padding: 14, marginBottom: 12 },
+    todayLabel: { fontSize: 11, fontWeight: '700', color: '#7F1D1D', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+    todayFlow:  { fontSize: 16, fontWeight: '800', color: '#DC2626', marginBottom: 4 },
+    todaySyms:  { fontSize: 12, color: '#B91C1C' },
+
+    logRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.separator },
+    logDate:   { fontSize: 12, color: c.textMuted, width: 70 },
+    logFlow:   { fontSize: 13, fontWeight: '700', width: 90 },
+    logSyms:   { flex: 1, fontSize: 11, color: c.textMuted },
+
+    logBtn:     { backgroundColor: '#FEE2E2', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12, borderWidth: 1.5, borderColor: '#FECACA' },
+    logBtnText: { fontSize: 14, fontWeight: '700', color: '#DC2626' },
+
+    formLabel: { fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 8, marginTop: 14 },
+    optional:  { fontWeight: '400', color: c.textMuted },
+    flowRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    flowBtn:   { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.bg },
+    flowBtnText: { fontSize: 12, color: c.textSecondary },
+    chipRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip:      { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.bg },
+    chipText:  { fontSize: 12, color: c.textSecondary },
+    notesInput:{ backgroundColor: c.bg, borderRadius: 10, borderWidth: 1.5, borderColor: c.separator, padding: 12, fontSize: 14, color: c.textPrimary, minHeight: 60, marginBottom: 16 },
+    btnRow:    { flexDirection: 'row', gap: 10 },
+    cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: c.separator },
+    cancelBtnText: { fontSize: 14, fontWeight: '600', color: c.textMuted },
+    saveBtn:   { flex: 2, alignItems: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#DC2626' },
+    saveBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  });
+}

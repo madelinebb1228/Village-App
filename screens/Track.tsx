@@ -20,6 +20,13 @@ import BabyJournal from './BabyJournal';
 import BabyFoodChart from './BabyFoodChart';
 import NutritionTracker from './NutritionTracker';
 import MomMentalHealthTracker from './MomMentalHealthTracker';
+import MoodEnergyTracker from './MoodEnergyTracker';
+import MomSleepTracker from './MomSleepTracker';
+import MedTracker from './MedTracker';
+import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
+import PeriodReturnTracker from './PeriodReturnTracker';
+import MovementTracker from './MovementTracker';
+import InsightsSection from '../components/InsightsSection';
 import { useColors, Colors } from '../lib/theme';
 
 const screenWidth = Dimensions.get('window').width;
@@ -774,8 +781,9 @@ export default function Track() {
       if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
     }
   }, []);
-  const [suppliesRefreshKey, setSuppliesRefreshKey] = useState(0);
-  const [pumpChartKey,      setPumpChartKey]       = useState(0);
+  const [suppliesRefreshKey,  setSuppliesRefreshKey]  = useState(0);
+  const [pumpChartKey,       setPumpChartKey]        = useState(0);
+  const [insightsRefreshKey, setInsightsRefreshKey]  = useState(0);
   const [editingId,         setEditingId]          = useState<string | null>(null);
 
   // History navigation
@@ -989,6 +997,7 @@ export default function Track() {
       feedTimer.stop();
       setActiveModal(null);
       setEditingId(null);
+      setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
@@ -1028,6 +1037,7 @@ export default function Track() {
 
       setActiveModal(null);
       setEditingId(null);
+      setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
@@ -1083,6 +1093,7 @@ export default function Track() {
       pumpTimer.stop();
       setActiveModal(null);
       setEditingId(null);
+      setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
       setPumpChartKey(k => k + 1);
     } catch (err: any) {
@@ -1397,6 +1408,7 @@ export default function Track() {
         >
           {(activeView === 'baby' ? [
             { key: 'logging',    label: '📋 Logging' },
+            { key: 'insights',   label: '✨ Insights' },
             { key: 'supplies',   label: '🧴 Supplies' },
             { key: 'sleep',      label: '🌙 Sleep' },
             { key: 'wake',       label: '⏱️ Wake Windows' },
@@ -1408,8 +1420,14 @@ export default function Track() {
             { key: 'journal',    label: '📓 Journal' },
             { key: 'timeline',   label: '🕐 Timeline' },
           ] : [
-            { key: 'nutrition',  label: '💧 Nutrition' },
-            { key: 'mental',     label: '🧠 Mental Health' },
+            { key: 'nutrition',   label: '💧 Nutrition' },
+            { key: 'mental',      label: '🧠 Mental Health' },
+            { key: 'mood',        label: '🌈 Mood & Energy' },
+            { key: 'momSleep',    label: '🌙 Your Sleep' },
+            { key: 'meds',        label: '💊 Meds' },
+            { key: 'recovery',    label: '🌸 Recovery' },
+            { key: 'period',      label: '🩸 Period' },
+            { key: 'movement',    label: '🏃 Movement' },
           ]).map(sec => (
             <TouchableOpacity
               key={sec.key}
@@ -1448,6 +1466,14 @@ export default function Track() {
         <FeedChartCard babyId={babyId} />
         <DiaperChartCard babyId={babyId} />
         <PumpingChartCard key={pumpChartKey} userId={userId} />
+
+        {/* ── Insights */}
+        <View
+          ref={ref => { sectionRefs.current['insights'] = ref; }}
+          onLayout={e => { sectionY.current['insights'] = e.nativeEvent.layout.y; }}
+        >
+          <InsightsSection babyId={babyId} refreshKey={insightsRefreshKey} />
+        </View>
 
         {/* ── Supplies */}
         <View ref={ref => { sectionRefs.current['supplies'] = ref; }} onLayout={e => { sectionY.current['supplies'] = e.nativeEvent.layout.y; }}>
@@ -1575,6 +1601,54 @@ export default function Track() {
           onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}
         >
           <MomMentalHealthTracker userId={userId} />
+        </View>
+
+        {/* ── You: Mood & Energy */}
+        <View
+          ref={ref => { sectionRefs.current['mood'] = ref; }}
+          onLayout={e => { sectionY.current['mood'] = e.nativeEvent.layout.y; }}
+        >
+          <MoodEnergyTracker userId={userId} />
+        </View>
+
+        {/* ── You: Sleep */}
+        <View
+          ref={ref => { sectionRefs.current['momSleep'] = ref; }}
+          onLayout={e => { sectionY.current['momSleep'] = e.nativeEvent.layout.y; }}
+        >
+          <MomSleepTracker userId={userId} />
+        </View>
+
+        {/* ── You: Meds & Supplements */}
+        <View
+          ref={ref => { sectionRefs.current['meds'] = ref; }}
+          onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
+        >
+          <MedTracker userId={userId} />
+        </View>
+
+        {/* ── You: Postpartum Recovery */}
+        <View
+          ref={ref => { sectionRefs.current['recovery'] = ref; }}
+          onLayout={e => { sectionY.current['recovery'] = e.nativeEvent.layout.y; }}
+        >
+          <PostpartumRecoveryTracker userId={userId} />
+        </View>
+
+        {/* ── You: Period Return */}
+        <View
+          ref={ref => { sectionRefs.current['period'] = ref; }}
+          onLayout={e => { sectionY.current['period'] = e.nativeEvent.layout.y; }}
+        >
+          <PeriodReturnTracker userId={userId} />
+        </View>
+
+        {/* ── You: Movement */}
+        <View
+          ref={ref => { sectionRefs.current['movement'] = ref; }}
+          onLayout={e => { sectionY.current['movement'] = e.nativeEvent.layout.y; }}
+        >
+          <MovementTracker userId={userId} />
         </View>
 
         </>)}

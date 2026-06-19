@@ -138,7 +138,7 @@ export default function Home() {
 
         {/* Community Feed Header */}
         <View style={styles.feedHeader}>
-          <Text style={styles.feedTitle}>Village Feed</Text>
+          <Text style={styles.feedTitle}>Patch Feed</Text>
           <TouchableOpacity
             style={styles.createPostButton}
             onPress={() => setShowCreatePost(!showCreatePost)}
