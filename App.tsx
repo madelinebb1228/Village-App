@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
 import { AppContext } from './lib/AppContext';
 import { SubscriptionProvider } from './lib/subscriptionContext';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import AuthScreen from './screens/Auth';
 import OnboardingScreen from './screens/Onboarding';
@@ -253,6 +254,7 @@ export default function App() {
   }
 
   return (
+    <SafeAreaProvider>
     <AppContext.Provider value={{ markOnboardingComplete }}>
       <OneHandedProvider>
       <SyncProvider>
@@ -274,5 +276,6 @@ export default function App() {
       </SyncProvider>
       </OneHandedProvider>
     </AppContext.Provider>
+    </SafeAreaProvider>
   );
 }

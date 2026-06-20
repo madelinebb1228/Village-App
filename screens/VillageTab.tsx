@@ -102,14 +102,6 @@ export default function VillageTab() {
     if (!user) return;
 
     if (!joinedIds.has(villageId) && !isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT) {
-      Alert.alert(
-        'Patch Limit Reached',
-        `Free accounts can join up to ${FREE_VILLAGE_LIMIT} patches. Upgrade to Premium for unlimited patches!`,
-        [
-          { text: 'Maybe Later', style: 'cancel' },
-          { text: 'Upgrade', onPress: openPaywall },
-        ]
-      );
       return;
     }
 
@@ -179,10 +171,6 @@ export default function VillageTab() {
         limited.map(village_id => ({ user_id: user.id, village_id }))
       );
       setJoinedIds(prev => new Set([...prev, ...limited]));
-    }
-    if (!isSubscribed && toJoin.length > slotsLeft) {
-      openPaywall();
-      return;
     }
     closeQuiz();
   }
@@ -422,13 +410,6 @@ export default function VillageTab() {
                 );
               })}
             </ScrollView>
-            {!isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT && (
-              <TouchableOpacity onPress={openPaywall} activeOpacity={0.8} style={s.limitBanner}>
-                <Text style={s.limitBannerText}>
-                  {FREE_VILLAGE_LIMIT}/{FREE_VILLAGE_LIMIT} patches used · <Text style={s.limitBannerLink}>Upgrade for unlimited →</Text>
-                </Text>
-              </TouchableOpacity>
-            )}
           </>
         )}
 

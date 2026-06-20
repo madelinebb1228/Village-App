@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
+import ReportModal from '../components/ReportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,36 +244,48 @@ function PostModal({
 // ─── Recipe card ──────────────────────────────────────────────────────────────
 
 function RecipeCard({
-  recipe, upvoted, saved, onPress,
+  recipe, upvoted, saved, onPress, onReport, reported,
 }: {
-  recipe: Recipe; upvoted: boolean; saved: boolean; onPress: () => void;
+  recipe: Recipe; upvoted: boolean; saved: boolean;
+  onPress: () => void; onReport: () => void; reported: boolean;
 }) {
   const c = useColors();
   const s = cardStyles(c);
   const lineCount = ingredientLines(recipe.ingredients).length;
 
   return (
-    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.8}>
-      <View style={s.cardTop}>
-        <View style={s.cardBody}>
-          <Text style={s.cardTitle} numberOfLines={2}>{recipe.title}</Text>
-          {recipe.description ? (
-            <Text style={s.cardDesc} numberOfLines={1}>{recipe.description}</Text>
-          ) : null}
-          <Text style={s.cardMeta}>
-            by {recipe.author} · {lineCount} ingredient{lineCount !== 1 ? 's' : ''} · {timeAgo(recipe.created_at)}
-          </Text>
+    <View style={s.card}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+        <View style={s.cardTop}>
+          <View style={s.cardBody}>
+            <Text style={s.cardTitle} numberOfLines={2}>{recipe.title}</Text>
+            {recipe.description ? (
+              <Text style={s.cardDesc} numberOfLines={1}>{recipe.description}</Text>
+            ) : null}
+            <Text style={s.cardMeta}>
+              by {recipe.author} · {lineCount} ingredient{lineCount !== 1 ? 's' : ''} · {timeAgo(recipe.created_at)}
+            </Text>
+          </View>
+          {saved && <Text style={s.savedBadge}>🔖</Text>}
         </View>
-        {saved && <Text style={s.savedBadge}>🔖</Text>}
-      </View>
+      </TouchableOpacity>
       <View style={s.cardFooter}>
         <View style={[s.upvoteChip, upvoted && s.upvoteChipActive]}>
           <Text style={[s.upvoteArrow, upvoted && s.upvoteArrowActive]}>▲</Text>
           <Text style={[s.upvoteCount, upvoted && s.upvoteCountActive]}>{recipe.upvote_count}</Text>
         </View>
-        <Text style={s.tapHint}>Tap to view full recipe →</Text>
+        <View style={s.cardFooterRight}>
+          {reported ? (
+            <Text style={s.reportedLabel}>Reported</Text>
+          ) : (
+            <TouchableOpacity onPress={onReport} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={s.flagBtn}>🚩</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={s.tapHint}>View →</Text>
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -295,8 +308,10 @@ export default function RecipesScreen({
   const [loading,    setLoading]    = useState(true);
   const [sortMode,   setSortMode]   = useState<SortMode>('top');
   const [query,      setQuery]      = useState('');
-  const [detail,     setDetail]     = useState<Recipe | null>(null);
-  const [showPost,   setShowPost]   = useState(false);
+  const [detail,       setDetail]       = useState<Recipe | null>(null);
+  const [showPost,     setShowPost]     = useState(false);
+  const [reportingId,  setReportingId]  = useState<string | null>(null);
+  const [reportedIds,  setReportedIds]  = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -372,6 +387,21 @@ export default function RecipesScreen({
         },
       },
     ]);
+  }
+
+  // ── Report ────────────────────────────────────────────────────────────────
+
+  async function submitReport(reason: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !reportingId) return;
+    await supabase.from('community_reports').insert({
+      reporter_id: user.id,
+      content_type: 'recipe',
+      content_id: reportingId,
+      reason,
+    });
+    setReportedIds(prev => new Set([...prev, reportingId]));
+    setReportingId(null);
   }
 
   // ── Sorted / filtered list ────────────────────────────────────────────────
@@ -471,14 +501,16 @@ export default function RecipesScreen({
               upvoted={upvotedIds.has(recipe.id)}
               saved={savedIds.has(recipe.id)}
               onPress={() => setDetail(recipe)}
+              onReport={() => setReportingId(recipe.id)}
+              reported={reportedIds.has(recipe.id)}
             />
           ))
         )}
 
-        {/* Post CTA */}
-        {!loading && (
-          <TouchableOpacity style={s.postBtn} onPress={() => isSubscribed ? setShowPost(true) : openPaywall()} activeOpacity={0.8}>
-            <Text style={s.postBtnText}>+ Share a recipe {!isSubscribed && '🔒'}</Text>
+        {/* Post CTA — only shown to subscribers */}
+        {!loading && isSubscribed && (
+          <TouchableOpacity style={s.postBtn} onPress={() => setShowPost(true)} activeOpacity={0.8}>
+            <Text style={s.postBtnText}>+ Share a recipe</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -504,6 +536,13 @@ export default function RecipesScreen({
           onClose={() => setShowPost(false)}
         />
       )}
+
+      <ReportModal
+        visible={reportingId !== null}
+        title="Report Recipe"
+        onClose={() => setReportingId(null)}
+        onSubmit={submitReport}
+      />
     </SafeAreaView>
   );
 }
@@ -579,6 +618,9 @@ const cardStyles = (c: Colors) =>
     upvoteCount: { fontSize: 13, fontWeight: '800', color: c.textMuted },
     upvoteCountActive: { color: c.sage },
     tapHint: { fontSize: 12, color: c.textMuted, fontWeight: '500' },
+    cardFooterRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    flagBtn: { fontSize: 14, opacity: 0.5 },
+    reportedLabel: { fontSize: 11, color: c.textMuted, fontStyle: 'italic' },
   });
 
 const detailStyles = (c: Colors) =>

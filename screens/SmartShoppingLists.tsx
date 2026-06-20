@@ -70,6 +70,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
+import ReportModal from '../components/ReportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -272,7 +273,12 @@ async function uploadItemImage(uri: string, userId: string): Promise<string | nu
 
 // ─── ListCard ─────────────────────────────────────────────────────────────────
 
-function ListCard({ list, onPress, c }: { list: ShoppingList; onPress: () => void; c: Colors }) {
+function ListCard({
+  list, onPress, onReport, reported, c,
+}: {
+  list: ShoppingList; onPress: () => void;
+  onReport?: () => void; reported?: boolean; c: Colors;
+}) {
   const s = listCardStyles(c);
   const cardColors = [
     { bg: c.cardLavender, border: c.lavender },
@@ -285,26 +291,35 @@ function ListCard({ list, onPress, c }: { list: ShoppingList; onPress: () => voi
   const { bg, border } = cardColors[colorIdx];
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      style={[s.card, { backgroundColor: bg, borderColor: border }]}
-      onPress={onPress}
-    >
-      <View style={s.row}>
-        <Text style={s.emoji}>{categoryEmoji(list.category)}</Text>
-        <View style={s.info}>
-          <Text style={s.title} numberOfLines={2}>{list.title}</Text>
-          <Text style={s.desc} numberOfLines={2}>{list.description}</Text>
-          <View style={s.meta}>
-            <View style={s.countBadge}>
-              <Text style={s.countText}>{list.items.length} items</Text>
+    <View style={[s.card, { backgroundColor: bg, borderColor: border }]}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        <View style={s.row}>
+          <Text style={s.emoji}>{categoryEmoji(list.category)}</Text>
+          <View style={s.info}>
+            <Text style={s.title} numberOfLines={2}>{list.title}</Text>
+            <Text style={s.desc} numberOfLines={2}>{list.description}</Text>
+            <View style={s.meta}>
+              <View style={s.countBadge}>
+                <Text style={s.countText}>{list.items.length} items</Text>
+              </View>
+              <Text style={s.author}>by {list.authorName}</Text>
             </View>
-            <Text style={s.author}>by {list.authorName}</Text>
           </View>
+          <Text style={s.chevron}>›</Text>
         </View>
-        <Text style={s.chevron}>›</Text>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {onReport && (
+        <View style={s.reportRow}>
+          {reported ? (
+            <Text style={s.reportedLabel}>Reported</Text>
+          ) : (
+            <TouchableOpacity onPress={onReport} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Text style={s.flagBtn}>🚩 Report</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -321,6 +336,9 @@ const listCardStyles = (c: Colors) =>
     countText: { fontSize: 12, fontWeight: '700', color: c.textSecondary },
     author: { fontSize: 12, color: c.textMuted, fontWeight: '500' },
     chevron: { fontSize: 22, color: c.textMuted, fontWeight: '700', alignSelf: 'center' },
+    reportRow: { borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.08)', paddingHorizontal: 16, paddingVertical: 8 },
+    flagBtn: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
+    reportedLabel: { fontSize: 12, color: c.textMuted, fontStyle: 'italic' },
   });
 
 // ─── ItemCard ─────────────────────────────────────────────────────────────────
@@ -979,6 +997,8 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [reportingListId, setReportingListId] = useState<string | null>(null);
+  const [reportedListIds, setReportedListIds] = useState<Set<string>>(new Set());
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState('Parent');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1160,6 +1180,19 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
     setView('detail');
   };
 
+  const submitListReport = async (reason: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !reportingListId) return;
+    await supabase.from('community_reports').insert({
+      reporter_id: user.id,
+      content_type: 'shopping_list',
+      content_id: reportingListId,
+      reason,
+    });
+    setReportedListIds(prev => new Set([...prev, reportingListId]));
+    setReportingListId(null);
+  };
+
   if (view === 'detail' && selectedList) {
     return (
       <>
@@ -1196,9 +1229,11 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
             <Text style={s.pageTitle}>Smart Shopping Lists</Text>
             <Text style={s.pageSubtitle}>Curated lists for every moment of parenting</Text>
           </View>
-          <TouchableOpacity style={s.createBtn} onPress={() => isSubscribed ? setShowCreate(true) : openPaywall()} activeOpacity={0.8}>
-            <Text style={s.createBtnText}>+ New list {!isSubscribed && '🔒'}</Text>
-          </TouchableOpacity>
+          {isSubscribed && (
+            <TouchableOpacity style={s.createBtn} onPress={() => setShowCreate(true)} activeOpacity={0.8}>
+              <Text style={s.createBtnText}>+ New list</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={s.searchRow}>
@@ -1241,7 +1276,14 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
           </View>
         ) : (
           filtered.map(list => (
-            <ListCard key={list.id} list={list} onPress={() => openList(list)} c={c} />
+            <ListCard
+              key={list.id}
+              list={list}
+              onPress={() => openList(list)}
+              onReport={!list.isSeeded ? () => setReportingListId(list.id) : undefined}
+              reported={reportedListIds.has(list.id)}
+              c={c}
+            />
           ))
         )}
       </ScrollView>
@@ -1256,6 +1298,13 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
         currentUserId={currentUserId}
         currentUserName={currentUserName}
         c={c}
+      />
+
+      <ReportModal
+        visible={reportingListId !== null}
+        title="Report List"
+        onClose={() => setReportingListId(null)}
+        onSubmit={submitListReport}
       />
     </SafeAreaView>
   );

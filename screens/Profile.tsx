@@ -797,24 +797,28 @@ export default function Profile() {
               🔖 Saved
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
-            onPress={() => isSubscribed ? setProfileTab('journal') : openPaywall()}
-            activeOpacity={0.8}
-          >
-            <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
-              📖 Journal {!isSubscribed && '🔒'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tabToggleBtn, profileTab === 'calendar' && s.tabToggleBtnActive]}
-            onPress={() => isSubscribed ? setProfileTab('calendar') : openPaywall()}
-            activeOpacity={0.8}
-          >
-            <Text style={[s.tabToggleText, profileTab === 'calendar' && s.tabToggleTextActive]}>
-              📅 Calendar {!isSubscribed && '🔒'}
-            </Text>
-          </TouchableOpacity>
+          {isSubscribed && (
+            <TouchableOpacity
+              style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
+              onPress={() => setProfileTab('journal')}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
+                📖 Journal
+              </Text>
+            </TouchableOpacity>
+          )}
+          {isSubscribed && (
+            <TouchableOpacity
+              style={[s.tabToggleBtn, profileTab === 'calendar' && s.tabToggleBtnActive]}
+              onPress={() => setProfileTab('calendar')}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.tabToggleText, profileTab === 'calendar' && s.tabToggleTextActive]}>
+                📅 Calendar
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {profileTab === 'posts' ? (

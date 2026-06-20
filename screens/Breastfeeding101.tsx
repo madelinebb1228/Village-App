@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { supabase } from '../lib/supabase';
+import { useSubscription } from '../lib/subscriptionContext';
 import { useColors, Colors } from '../lib/theme';
+import ReportModal from '../components/ReportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +28,17 @@ type SubpageId =
   | 'returning_to_work'
   | 'mental_health';
 
-// ─── Subpage data ─────────────────────────────────────────────────────────────
+type Suggestion = {
+  id: string;
+  subpage_id: string;
+  section_index: number;
+  text: string;
+  votes: number;
+  user_id: string | null;
+  created_at: string;
+};
+
+// ─── Subpage metadata ─────────────────────────────────────────────────────────
 
 const SUBPAGES = [
   {
@@ -836,36 +852,488 @@ const MENTAL_HEALTH_SECTIONS = [
   },
 ];
 
-// ─── Subpage component ────────────────────────────────────────────────────────
+// ─── Section map ──────────────────────────────────────────────────────────────
 
-function SubpageSections({
-  sections,
+const SECTION_MAP: Record<SubpageId, { title: string; emoji: string; items: string[] }[]> = {
+  tips: TIPS_SECTIONS,
+  challenges: CHALLENGES_SECTIONS,
+  pumping: PUMPING_SECTIONS,
+  storage: STORAGE_SECTIONS,
+  recipes: RECIPE_SECTIONS,
+  supplements: SUPPLEMENT_SECTIONS,
+  weaning: WEANING_SECTIONS,
+  returning_to_work: RETURNING_TO_WORK_SECTIONS,
+  mental_health: MENTAL_HEALTH_SECTIONS,
+};
+
+// ─── Article component (3rd level: full content + community tips) ──────────────
+
+function Article({
+  id,
+  sectionIndex,
+  onBack,
 }: {
-  sections: { title: string; emoji: string; items: string[] }[];
+  id: SubpageId;
+  sectionIndex: number;
+  onBack: () => void;
 }) {
   const c = useColors();
-  const s = subpageStyles(c);
+  const s = articleStyles(c);
+  const { isSubscribed, openPaywall } = useSubscription();
+  const meta = SUBPAGES.find(p => p.id === id)!;
+  const section = SECTION_MAP[id][sectionIndex];
+
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+  const [newText, setNewText] = useState('');
+  const [showInput, setShowInput] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(true);
+  const [reportingTipId, setReportingTipId] = useState<string | null>(null);
+  const [reportedTipIds, setReportedTipIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadSuggestions();
+  }, []);
+
+  const loadSuggestions = async () => {
+    setLoadingSuggestions(true);
+
+    const { data: rows } = await supabase
+      .from('bf_suggestions')
+      .select('*')
+      .eq('subpage_id', id)
+      .eq('section_index', sectionIndex)
+      .order('votes', { ascending: false });
+
+    const fetched = (rows as Suggestion[]) ?? [];
+    setSuggestions(fetched);
+
+    if (fetched.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: votes } = await supabase
+          .from('bf_suggestion_votes')
+          .select('suggestion_id')
+          .eq('user_id', user.id)
+          .in('suggestion_id', fetched.map(sg => sg.id));
+        setVotedIds(new Set((votes ?? []).map((v: any) => v.suggestion_id)));
+      }
+    }
+
+    setLoadingSuggestions(false);
+  };
+
+  const handleShareTip = () => {
+    if (!isSubscribed) { openPaywall(); return; }
+    setShowInput(true);
+  };
+
+  const addSuggestion = async () => {
+    if (!newText.trim()) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('bf_suggestions')
+      .insert({ subpage_id: id, section_index: sectionIndex, text: newText.trim(), user_id: user.id })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setSuggestions(prev => [data as Suggestion, ...prev]);
+      setNewText('');
+      setShowInput(false);
+    }
+  };
+
+  const upvote = async (suggId: string) => {
+    if (votedIds.has(suggId)) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Optimistic update
+    setVotedIds(prev => new Set([...prev, suggId]));
+    setSuggestions(prev =>
+      prev.map(sg => sg.id === suggId ? { ...sg, votes: sg.votes + 1 } : sg)
+          .sort((a, b) => b.votes - a.votes)
+    );
+
+    const { error } = await supabase
+      .from('bf_suggestion_votes')
+      .insert({ suggestion_id: suggId, user_id: user.id });
+
+    if (error) {
+      // Rollback on failure
+      setVotedIds(prev => { const next = new Set(prev); next.delete(suggId); return next; });
+      setSuggestions(prev =>
+        prev.map(sg => sg.id === suggId ? { ...sg, votes: sg.votes - 1 } : sg)
+            .sort((a, b) => b.votes - a.votes)
+      );
+    }
+  };
+
+  const submitTipReport = async (reason: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !reportingTipId) return;
+    await supabase.from('community_reports').insert({
+      reporter_id: user.id,
+      content_type: 'bf_suggestion',
+      content_id: reportingTipId,
+      reason,
+    });
+    setReportedTipIds(prev => new Set([...prev, reportingTipId]));
+    setReportingTipId(null);
+  };
+
   return (
-    <>
-      {sections.map((section, i) => (
-        <View key={i} style={s.section}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionEmoji}>{section.emoji}</Text>
-            <Text style={s.sectionTitle}>{section.title}</Text>
+    <SafeAreaView style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={s.backBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={s.backArrow}>←</Text>
+          <Text style={s.backLabel}>{meta.title}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          <View style={[s.hero, { backgroundColor: meta.bg(c), borderColor: meta.border(c) }]}>
+            <Text style={s.heroEmoji}>{section.emoji}</Text>
+            <Text style={s.heroTitle}>{section.title}</Text>
           </View>
-          <View style={s.sectionBody}>
-            {section.items.map((item, j) => (
-              <View key={j} style={s.bulletRow}>
+
+          <View style={s.bulletCard}>
+            {section.items.map((item, i) => (
+              <View key={i} style={[s.bulletRow, i < section.items.length - 1 && s.bulletRowBorder]}>
                 <Text style={s.bullet}>•</Text>
                 <Text style={s.bulletText}>{item}</Text>
               </View>
             ))}
           </View>
-        </View>
-      ))}
-    </>
+
+          {/* Community tips */}
+          <View style={s.communitySection}>
+            <View style={s.communityHeader}>
+              <Text style={s.communityTitle}>Community Tips</Text>
+              {!showInput && isSubscribed && (
+                <TouchableOpacity onPress={handleShareTip} style={s.addBtn}>
+                  <Text style={s.addBtnText}>+ Share a tip</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {showInput && (
+              <View style={s.inputCard}>
+                <TextInput
+                  style={s.input}
+                  placeholder="Share what worked for you..."
+                  placeholderTextColor={c.textMuted}
+                  value={newText}
+                  onChangeText={setNewText}
+                  multiline
+                  maxLength={200}
+                  autoFocus
+                />
+                <View style={s.inputActions}>
+                  <TouchableOpacity
+                    onPress={() => { setShowInput(false); setNewText(''); }}
+                    style={s.cancelBtn}
+                  >
+                    <Text style={s.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={addSuggestion}
+                    style={[s.submitBtn, !newText.trim() && s.submitBtnDisabled]}
+                    disabled={!newText.trim()}
+                  >
+                    <Text style={s.submitBtnText}>Post</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {!loadingSuggestions && suggestions.length === 0 && !showInput && (
+              <View style={s.emptyState}>
+                <Text style={s.emptyEmoji}>💬</Text>
+                <Text style={s.emptyText}>No tips yet — be the first to share!</Text>
+              </View>
+            )}
+
+            {suggestions.map(sugg => {
+              const voted = votedIds.has(sugg.id);
+              const reported = reportedTipIds.has(sugg.id);
+              return (
+                <View key={sugg.id} style={s.suggCard}>
+                  <Text style={s.suggText}>{sugg.text}</Text>
+                  <View style={s.suggActions}>
+                    {!reported ? (
+                      <TouchableOpacity
+                        onPress={() => setReportingTipId(sugg.id)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text style={s.flagBtn}>🚩</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={s.reportedLabel}>Reported</Text>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => upvote(sugg.id)}
+                      style={s.voteBtn}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Text style={[s.voteEmoji, voted && s.voteEmojiActive]}>♥</Text>
+                      <Text style={[s.voteCount, voted && s.voteCountActive]}>{sugg.votes}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+
+            <ReportModal
+              visible={reportingTipId !== null}
+              title="Report Tip"
+              onClose={() => setReportingTipId(null)}
+              onSubmit={submitTipReport}
+            />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
+// ─── Community Recipes (rendered inside the Recipes subpage) ─────────────────
+
+type CommunityRecipe = {
+  id: string;
+  title: string;
+  content: string;
+  votes: number;
+  user_id: string | null;
+  created_at: string;
+};
+
+function CommunityRecipes() {
+  const c = useColors();
+  const s = communityRecipeStyles(c);
+  const { isSubscribed, openPaywall } = useSubscription();
+
+  const [recipes, setRecipes] = useState<CommunityRecipe[]>([]);
+  const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [formTitle, setFormTitle] = useState('');
+  const [formContent, setFormContent] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [reportingId, setReportingId] = useState<string | null>(null);
+  const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => { loadRecipes(); }, []);
+
+  const loadRecipes = async () => {
+    const { data: rows } = await supabase
+      .from('bf_community_recipes')
+      .select('*')
+      .order('votes', { ascending: false });
+
+    const fetched = (rows as CommunityRecipe[]) ?? [];
+    setRecipes(fetched);
+
+    if (fetched.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: votes } = await supabase
+          .from('bf_community_recipe_votes')
+          .select('recipe_id')
+          .eq('user_id', user.id)
+          .in('recipe_id', fetched.map(r => r.id));
+        setVotedIds(new Set((votes ?? []).map((v: any) => v.recipe_id)));
+      }
+    }
+  };
+
+  const handleAdd = () => {
+    if (!isSubscribed) { openPaywall(); return; }
+    setShowForm(true);
+  };
+
+  const submit = async () => {
+    if (!formTitle.trim() || !formContent.trim() || submitting) return;
+    setSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSubmitting(false); return; }
+
+    const { data, error } = await supabase
+      .from('bf_community_recipes')
+      .insert({ title: formTitle.trim(), content: formContent.trim(), user_id: user.id })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setRecipes(prev => [data as CommunityRecipe, ...prev]);
+      setFormTitle('');
+      setFormContent('');
+      setShowForm(false);
+    }
+    setSubmitting(false);
+  };
+
+  const upvote = async (recipeId: string) => {
+    if (votedIds.has(recipeId)) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Optimistic update
+    setVotedIds(prev => new Set([...prev, recipeId]));
+    setRecipes(prev =>
+      prev.map(r => r.id === recipeId ? { ...r, votes: r.votes + 1 } : r)
+          .sort((a, b) => b.votes - a.votes)
+    );
+
+    const { error } = await supabase
+      .from('bf_community_recipe_votes')
+      .insert({ recipe_id: recipeId, user_id: user.id });
+
+    if (error) {
+      setVotedIds(prev => { const next = new Set(prev); next.delete(recipeId); return next; });
+      setRecipes(prev =>
+        prev.map(r => r.id === recipeId ? { ...r, votes: r.votes - 1 } : r)
+            .sort((a, b) => b.votes - a.votes)
+      );
+    }
+  };
+
+  const submitRecipeReport = async (reason: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !reportingId) return;
+    await supabase.from('community_reports').insert({
+      reporter_id: user.id,
+      content_type: 'bf_recipe',
+      content_id: reportingId,
+      reason,
+    });
+    setReportedIds(prev => new Set([...prev, reportingId]));
+    setReportingId(null);
+  };
+
+  return (
+    <View style={s.wrap}>
+      <View style={s.header}>
+        <Text style={s.title}>Community Recipes</Text>
+        {!showForm && isSubscribed && (
+          <TouchableOpacity onPress={handleAdd} style={s.addBtn}>
+            <Text style={s.addBtnText}>+ Add recipe</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {showForm && (
+        <View style={s.formCard}>
+          <TextInput
+            style={s.formTitleInput}
+            placeholder="Recipe name"
+            placeholderTextColor={c.textMuted}
+            value={formTitle}
+            onChangeText={setFormTitle}
+            maxLength={100}
+          />
+          <View style={s.formDivider} />
+          <TextInput
+            style={s.formContentInput}
+            placeholder={'Ingredients:\n• ...\n\nInstructions:\n1. ...'}
+            placeholderTextColor={c.textMuted}
+            value={formContent}
+            onChangeText={setFormContent}
+            multiline
+            maxLength={2000}
+            textAlignVertical="top"
+          />
+          <View style={s.formActions}>
+            <TouchableOpacity
+              onPress={() => { setShowForm(false); setFormTitle(''); setFormContent(''); }}
+              style={s.cancelBtn}
+            >
+              <Text style={s.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={submit}
+              style={[s.submitBtn, (!formTitle.trim() || !formContent.trim() || submitting) && s.submitBtnDisabled]}
+              disabled={!formTitle.trim() || !formContent.trim() || submitting}
+            >
+              <Text style={s.submitBtnText}>{submitting ? 'Posting...' : 'Post'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {recipes.length === 0 && !showForm && (
+        <View style={s.empty}>
+          <Text style={s.emptyEmoji}>🍪</Text>
+          <Text style={s.emptyText}>No community recipes yet — be the first to share!</Text>
+        </View>
+      )}
+
+      {recipes.map(recipe => {
+        const voted = votedIds.has(recipe.id);
+        const expanded = expandedId === recipe.id;
+        return (
+          <View key={recipe.id} style={s.recipeCard}>
+            <TouchableOpacity
+              onPress={() => setExpandedId(expanded ? null : recipe.id)}
+              activeOpacity={0.8}
+            >
+              <Text style={s.recipeTitle}>{recipe.title}</Text>
+              <Text style={s.recipeContent} numberOfLines={expanded ? undefined : 3}>
+                {recipe.content}
+              </Text>
+              <Text style={s.expandHint}>{expanded ? 'Show less ↑' : 'Read more ↓'}</Text>
+            </TouchableOpacity>
+            <View style={s.recipeMeta}>
+              <Text style={s.recipeDate}>
+                {new Date(recipe.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+              <View style={s.recipeMetaRight}>
+                {!reportedIds.has(recipe.id) ? (
+                  <TouchableOpacity
+                    onPress={() => setReportingId(recipe.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={s.flagBtn}>🚩</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={s.reportedLabel}>Reported</Text>
+                )}
+                <TouchableOpacity
+                  onPress={() => upvote(recipe.id)}
+                  style={s.voteBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[s.voteHeart, voted && s.voteHeartActive]}>♥</Text>
+                  <Text style={[s.voteCount, voted && s.voteCountActive]}>{recipe.votes}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        );
+      })}
+
+      <ReportModal
+        visible={reportingId !== null}
+        title="Report Recipe"
+        onClose={() => setReportingId(null)}
+        onSubmit={submitRecipeReport}
+      />
+    </View>
+  );
+}
+
+// ─── Subpage component (2nd level: article card list) ─────────────────────────
 
 function Subpage({
   id,
@@ -877,18 +1345,18 @@ function Subpage({
   const c = useColors();
   const s = subpageStyles(c);
   const meta = SUBPAGES.find(p => p.id === id)!;
+  const sections = SECTION_MAP[id];
+  const [activeArticle, setActiveArticle] = useState<number | null>(null);
 
-  const sectionMap: Record<SubpageId, { title: string; emoji: string; items: string[] }[]> = {
-    tips: TIPS_SECTIONS,
-    challenges: CHALLENGES_SECTIONS,
-    pumping: PUMPING_SECTIONS,
-    storage: STORAGE_SECTIONS,
-    recipes: RECIPE_SECTIONS,
-    supplements: SUPPLEMENT_SECTIONS,
-    weaning: WEANING_SECTIONS,
-    returning_to_work: RETURNING_TO_WORK_SECTIONS,
-    mental_health: MENTAL_HEALTH_SECTIONS,
-  };
+  if (activeArticle !== null) {
+    return (
+      <Article
+        id={id}
+        sectionIndex={activeArticle}
+        onBack={() => setActiveArticle(null)}
+      />
+    );
+  }
 
   return (
     <SafeAreaView style={s.container}>
@@ -903,20 +1371,42 @@ function Subpage({
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <View style={[s.hero, { backgroundColor: meta.bg(c), borderColor: meta.border(c) }]}>
-          <Text style={s.heroEmoji}>{meta.emoji}</Text>
-          <Text style={s.heroTitle}>{meta.title}</Text>
-          <Text style={s.heroDesc}>{meta.description}</Text>
-        </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          <View style={[s.hero, { backgroundColor: meta.bg(c), borderColor: meta.border(c) }]}>
+            <Text style={s.heroEmoji}>{meta.emoji}</Text>
+            <Text style={s.heroTitle}>{meta.title}</Text>
+            <Text style={s.heroDesc}>{meta.description}</Text>
+          </View>
 
-        <SubpageSections sections={sectionMap[id]} />
-      </ScrollView>
+          <View style={s.articleList}>
+            {sections.map((section, i) => (
+              <TouchableOpacity
+                key={i}
+                activeOpacity={0.8}
+                style={s.articleCard}
+                onPress={() => setActiveArticle(i)}
+              >
+                <Text style={s.articleEmoji}>{section.emoji}</Text>
+                <View style={s.articleText}>
+                  <Text style={s.articleTitle}>{section.title}</Text>
+                  <Text style={s.articlePreview} numberOfLines={1}>
+                    {section.items[0]}
+                  </Text>
+                </View>
+                <Text style={s.articleChevron}>›</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {id === 'recipes' && <CommunityRecipes />}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// ─── Hub screen ───────────────────────────────────────────────────────────────
+// ─── Hub screen (1st level) ───────────────────────────────────────────────────
 
 export default function Breastfeeding101({ onBack }: { onBack: () => void }) {
   const c = useColors();
@@ -1075,34 +1565,75 @@ const subpageStyles = (c: Colors) =>
       textAlign: 'center',
       lineHeight: 20,
     },
-    section: {
+    articleList: { gap: 10 },
+    articleCard: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    articleEmoji: { fontSize: 28 },
+    articleText: { flex: 1 },
+    articleTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: c.textPrimary,
+      marginBottom: 3,
+    },
+    articlePreview: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '500',
+      lineHeight: 16,
+    },
+    articleChevron: { fontSize: 22, color: c.textMuted, fontWeight: '700' },
+  });
+
+const articleStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
+    backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    backArrow: { fontSize: 20, color: c.textSecondary, fontWeight: '700' },
+    backLabel: { fontSize: 15, color: c.textSecondary, fontWeight: '700' },
+    scroll: { padding: 20, paddingBottom: 60, gap: 16 },
+    hero: {
+      borderRadius: 20,
+      borderWidth: 2,
+      padding: 24,
+      alignItems: 'center',
+      gap: 8,
+    },
+    heroEmoji: { fontSize: 44 },
+    heroTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: c.textPrimary,
+      textAlign: 'center',
+    },
+    bulletCard: {
       backgroundColor: c.card,
       borderRadius: 16,
       overflow: 'hidden',
     },
-    sectionHeader: {
+    bulletRow: {
       flexDirection: 'row',
-      alignItems: 'center',
       gap: 10,
-      padding: 16,
-      paddingBottom: 12,
+      alignItems: 'flex-start',
+      padding: 14,
+      paddingVertical: 12,
+    },
+    bulletRowBorder: {
       borderBottomWidth: 1,
       borderBottomColor: c.separator,
     },
-    sectionEmoji: { fontSize: 22 },
-    sectionTitle: {
-      fontSize: 16,
-      fontWeight: '800',
-      color: c.textPrimary,
-      flex: 1,
-    },
-    sectionBody: { padding: 16, gap: 10 },
-    bulletRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
     bullet: {
       fontSize: 14,
       color: c.primary,
       fontWeight: '800',
-      marginTop: 1,
+      marginTop: 2,
     },
     bulletText: {
       flex: 1,
@@ -1110,5 +1641,299 @@ const subpageStyles = (c: Colors) =>
       color: c.textSecondary,
       fontWeight: '500',
       lineHeight: 20,
+    },
+    communitySection: {
+      gap: 10,
+    },
+    communityHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    communityTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: c.textPrimary,
+    },
+    addBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.primary,
+    },
+    addBtnText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    inputCard: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 14,
+      gap: 10,
+    },
+    input: {
+      fontSize: 14,
+      color: c.textPrimary,
+      fontWeight: '500',
+      lineHeight: 20,
+      minHeight: 72,
+      textAlignVertical: 'top',
+    },
+    inputActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    cancelBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    cancelBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.textMuted,
+    },
+    submitBtn: {
+      paddingHorizontal: 20,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: c.primary,
+    },
+    submitBtnDisabled: {
+      backgroundColor: c.primaryDisabled,
+    },
+    submitBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.primaryText,
+    },
+    emptyState: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 24,
+      alignItems: 'center',
+      gap: 8,
+    },
+    emptyEmoji: { fontSize: 28 },
+    emptyText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontWeight: '500',
+      textAlign: 'center',
+    },
+    suggCard: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    suggText: {
+      flex: 1,
+      fontSize: 14,
+      color: c.textSecondary,
+      fontWeight: '500',
+      lineHeight: 20,
+    },
+    voteBtn: {
+      alignItems: 'center',
+      gap: 2,
+      minWidth: 36,
+    },
+    voteBtnActive: {},
+    voteEmoji: {
+      fontSize: 20,
+      color: c.textMuted,
+    },
+    voteEmojiActive: {
+      color: c.blush,
+    },
+    voteCount: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: c.textMuted,
+    },
+    voteCountActive: {
+      color: c.blush,
+    },
+    suggActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    flagBtn: { fontSize: 14, opacity: 0.5 },
+    reportedLabel: {
+      fontSize: 11,
+      color: c.textMuted,
+      fontStyle: 'italic',
+    },
+  });
+
+const communityRecipeStyles = (c: Colors) =>
+  StyleSheet.create({
+    wrap: { gap: 12 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: c.textPrimary,
+    },
+    addBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.primary,
+    },
+    addBtnText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    formCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 14,
+      gap: 10,
+    },
+    formTitleInput: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: c.textPrimary,
+    },
+    formDivider: {
+      height: 1,
+      backgroundColor: c.separator,
+    },
+    formContentInput: {
+      fontSize: 14,
+      color: c.textPrimary,
+      fontWeight: '500',
+      lineHeight: 20,
+      minHeight: 140,
+    },
+    formActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    cancelBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    cancelBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.textMuted,
+    },
+    submitBtn: {
+      paddingHorizontal: 20,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: c.primary,
+    },
+    submitBtnDisabled: {
+      backgroundColor: c.primaryDisabled,
+    },
+    submitBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.primaryText,
+    },
+    empty: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      padding: 24,
+      alignItems: 'center',
+      gap: 8,
+    },
+    emptyEmoji: { fontSize: 28 },
+    emptyText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontWeight: '500',
+      textAlign: 'center',
+    },
+    recipeCard: {
+      backgroundColor: c.card,
+      borderRadius: 14,
+      overflow: 'hidden',
+    },
+    recipeTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: c.textPrimary,
+      padding: 14,
+      paddingBottom: 6,
+    },
+    recipeContent: {
+      fontSize: 14,
+      color: c.textSecondary,
+      fontWeight: '500',
+      lineHeight: 20,
+      paddingHorizontal: 14,
+    },
+    expandHint: {
+      fontSize: 12,
+      color: c.primary,
+      fontWeight: '700',
+      padding: 14,
+      paddingTop: 6,
+    },
+    recipeMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderTopWidth: 1,
+      borderTopColor: c.separator,
+    },
+    recipeDate: {
+      fontSize: 12,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    recipeMetaRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    flagBtn: { fontSize: 14, opacity: 0.5 },
+    reportedLabel: {
+      fontSize: 11,
+      color: c.textMuted,
+      fontStyle: 'italic',
+    },
+    voteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    voteHeart: {
+      fontSize: 16,
+      color: c.textMuted,
+    },
+    voteHeartActive: {
+      color: c.blush,
+    },
+    voteCount: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textMuted,
+    },
+    voteCountActive: {
+      color: c.blush,
     },
   });

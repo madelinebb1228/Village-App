@@ -9,6 +9,9 @@ const RC_API_KEY = 'test_aKoxsimzJRFcHMqvzVjlVzGjkZX';
 const ENTITLEMENT = 'premium';
 const FREE_PICK_KEY = 'village_free_tracker_pick';
 
+// Developer accounts always have premium
+const DEV_EMAILS = ['madelinebb1228@gmail.com'];
+
 type SubscriptionContextType = {
   isSubscribed: boolean;
   isLoading: boolean;
@@ -42,6 +45,11 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       try {
         if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
         const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email && DEV_EMAILS.includes(user.email)) {
+          setIsSubscribed(true);
+          setIsLoading(false);
+          return;
+        }
         Purchases.configure({ apiKey: RC_API_KEY, appUserID: user?.id ?? null });
         Purchases.addCustomerInfoUpdateListener((info: any) => {
           setIsSubscribed(!!info.entitlements.active[ENTITLEMENT]);

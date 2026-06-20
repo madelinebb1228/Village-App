@@ -31,6 +31,7 @@ import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
+import { useSubscription } from '../lib/subscriptionContext';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -740,6 +741,7 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
 
 export default function Track() {
   const c = useColors();
+  const { isSubscribed, openPaywall } = useSubscription();
   const styles = useMemo(() => makeStyles(c), [c]);
   const cal = useMemo(() => makeCalStyles(c), [c]);
   const det = useMemo(() => makeDetStyles(c), [c]);
@@ -1701,6 +1703,20 @@ export default function Track() {
           </PaywallGate>
         </View>
 
+        {/* ── Village Premium upsell (bottom of page, non-subscribers only) ── */}
+        {!isSubscribed && (
+          <View style={styles.premiumCard}>
+            <Text style={styles.premiumEmoji}>✨</Text>
+            <Text style={styles.premiumTitle}>Village Premium</Text>
+            <Text style={styles.premiumBody}>
+              Unlock all trackers, your journal & calendar, unlimited patches, community sharing, and more — for $5.99/mo.
+            </Text>
+            <TouchableOpacity style={styles.premiumBtn} onPress={openPaywall} activeOpacity={0.85}>
+              <Text style={styles.premiumBtnText}>Learn More & Upgrade</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         </>)}
       </ScrollView>
 
@@ -2184,6 +2200,28 @@ function makeStyles(c: Colors) {
     dateNavLabel:        { fontSize: 16, fontWeight: '700', color: c.textPrimary },
     dateNavCal:          { fontSize: 12, color: c.trackFeed },
     dateNavToday:        { fontSize: 12, color: c.trackFeed, fontWeight: '600' },
+
+    premiumCard: {
+      margin: 16,
+      marginTop: 8,
+      marginBottom: 32,
+      backgroundColor: c.cardLavender,
+      borderRadius: 20,
+      padding: 24,
+      alignItems: 'center',
+      gap: 10,
+    },
+    premiumEmoji:   { fontSize: 32 },
+    premiumTitle:   { fontSize: 18, fontWeight: '800', color: c.textPrimary },
+    premiumBody:    { fontSize: 14, color: c.textSecondary, fontWeight: '500', textAlign: 'center', lineHeight: 20 },
+    premiumBtn: {
+      marginTop: 4,
+      backgroundColor: c.lavender,
+      borderRadius: 14,
+      paddingVertical: 13,
+      paddingHorizontal: 28,
+    },
+    premiumBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   });
 }
 
