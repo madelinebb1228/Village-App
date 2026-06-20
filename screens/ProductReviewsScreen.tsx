@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { amazonSearchUrl } from '../lib/affiliate';
 
 // ─── Static catalog ───────────────────────────────────────────────────────────
 
@@ -567,13 +568,13 @@ function ProductCard({
           <Text style={s.reviewsBtnText}>💬 {reviewCount > 0 ? `${reviewCount} review${reviewCount !== 1 ? 's' : ''}` : 'Reviews'}</Text>
         </TouchableOpacity>
 
-        {/* Website */}
+        {/* Amazon affiliate link */}
         <TouchableOpacity
-          style={s.linkBtn}
-          onPress={() => Linking.openURL(product.url)}
+          style={s.amazonBtn}
+          onPress={() => Linking.openURL(amazonSearchUrl(`${product.name} ${product.brand}`))}
           activeOpacity={0.75}
         >
-          <Text style={s.linkBtnText}>🔗 Website</Text>
+          <Text style={s.amazonBtnText}>🛒 Buy on Amazon</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -967,12 +968,12 @@ const productCardStyles = (c: Colors) =>
       paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.bgAlt,
     },
     reviewsBtnText: { fontSize: 13, fontWeight: '700', color: c.textSecondary },
-    linkBtn: {
+    amazonBtn: {
       flexDirection: 'row', alignItems: 'center',
-      borderWidth: 1.5, borderColor: c.primary, borderRadius: 20,
-      paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.cardLavender,
+      borderWidth: 1.5, borderColor: '#FF9900', borderRadius: 20,
+      paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#FFF8EC',
     },
-    linkBtnText: { fontSize: 13, fontWeight: '700', color: c.primary },
+    amazonBtnText: { fontSize: 13, fontWeight: '700', color: '#B35900' },
 
     ratingsRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
     ratingChip:    { flexDirection: 'row', alignItems: 'center', gap: 3 },

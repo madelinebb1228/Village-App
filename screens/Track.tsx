@@ -30,6 +30,8 @@ import InsightsSection from '../components/InsightsSection';
 import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
+import PatchyPeek from '../components/PatchyPeek';
+import { usePatchyCards } from '../lib/usePatchyCards';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 
@@ -760,6 +762,7 @@ export default function Track() {
   const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
+  const { cards: patchyCards, onSelfLayout: patchySelf } = usePatchyCards();
   const scrollRef    = useRef<ScrollView>(null);
   const sectionY     = useRef<Record<string, number>>({});
   const sectionRefs  = useRef<Record<string, View | null>>({});
@@ -1475,7 +1478,7 @@ export default function Track() {
           ref={ref => { sectionRefs.current['logging'] = ref; }}
           onLayout={e => { sectionY.current['logging'] = e.nativeEvent.layout.y; }}
         >
-          {mainButtons.map(btn => (
+          {mainButtons.map((btn, idx) => (
             <TouchableOpacity key={btn.type}
               style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
               activeOpacity={0.8} onPress={() => openModal(btn.type)}>
@@ -1487,11 +1490,14 @@ export default function Track() {
         </View>
 
         {/* ── Charts */}
-        <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
-          <FeedChartCard babyId={babyId} />
-          <DiaperChartCard babyId={babyId} />
-          <PumpingChartCard key={pumpChartKey} userId={userId} />
-        </PaywallGate>
+        <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
+          <PatchyPeek cards={patchyCards} dir="top" offsetY={-16} />
+          <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
+            <FeedChartCard babyId={babyId} />
+            <DiaperChartCard babyId={babyId} />
+            <PumpingChartCard key={pumpChartKey} userId={userId} />
+          </PaywallGate>
+        </View>
 
         {/* ── Insights */}
         <View

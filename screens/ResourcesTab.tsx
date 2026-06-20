@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import ParentMarketplace from './ParentMarketplace';
 import SmartShoppingLists from './SmartShoppingLists';
 import ServiceProviderReviews from './ServiceProviderReviews';
 import Breastfeeding101 from './Breastfeeding101';
+import PatchyPeek from '../components/PatchyPeek';
+import { usePatchyCards } from '../lib/usePatchyCards';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -101,6 +103,7 @@ function ResourceDetail({
 export default function ResourcesTab() {
   const c = useColors();
   const s = styles(c);
+  const { cards: patchyCards, onContainerLayout: patchyContainer, onCardLayout: patchyCard } = usePatchyCards();
   const [selected, setSelected] = useState<ResourceId | null>(null);
 
   if (selected === 'breastfeeding_101') {
@@ -161,11 +164,15 @@ export default function ResourcesTab() {
 
   return (
     <SafeAreaView style={s.container}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={s.pageTitle}>Resources</Text>
         <Text style={s.pageSubtitle}>Everything you need to support your parenting journey</Text>
 
-        <View style={s.cards}>
+        <View style={s.cards} onLayout={patchyContainer}>
+          <PatchyPeek cards={patchyCards} dir="bottom" offsetY={17} />
           {RESOURCES.map((r, i) => {
             const palette = CARD_PALETTE[i % CARD_PALETTE.length];
             return (
@@ -174,6 +181,7 @@ export default function ResourcesTab() {
               activeOpacity={0.8}
               style={[s.card, { backgroundColor: palette.bg(c), borderColor: palette.border(c) }]}
               onPress={() => setSelected(r.id)}
+              onLayout={i === 14 ? patchyCard : undefined}
             >
               <Text style={s.cardEmoji}>{r.emoji}</Text>
               <View style={s.cardText}>

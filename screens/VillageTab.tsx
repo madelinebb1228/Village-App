@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 
 import { Village, VILLAGES } from '../lib/villageData';
+import PatchyPeek from '../components/PatchyPeek';
+import { usePatchyCards } from '../lib/usePatchyCards';
 import VillageFeedSheet from './VillageFeedSheet';
 import FindYourPatchSheet from './FindYourPatchSheet';
 import PatchTasksSheet from './PatchTasksSheet';
@@ -34,6 +36,8 @@ export default function VillageTab() {
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
   const FREE_VILLAGE_LIMIT = 5;
+
+  const { cards: patchyCards, onCardLayout: patchyCard } = usePatchyCards();
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
@@ -417,16 +421,20 @@ export default function VillageTab() {
         {discoverList.length > 0 && (
           <>
             <Text style={s.sectionTitle}>{search ? 'Results' : 'Discover'}</Text>
-            {discoverList.map((v, idx) => (
-              <VillageCard
-                key={v.id}
-                village={v}
-                joining={joining === v.id}
-                onJoin={() => toggleJoin(v.id)}
-                onOpen={() => setSelectedVillage(v)}
-                colorIndex={idx}
-              />
-            ))}
+            <View>
+              <PatchyPeek cards={patchyCards} dir="left" offsetX={20} />
+              {discoverList.map((v, idx) => (
+              <View key={v.id} onLayout={idx < 5 ? patchyCard : undefined}>
+                <VillageCard
+                  village={v}
+                  joining={joining === v.id}
+                  onJoin={() => toggleJoin(v.id)}
+                  onOpen={() => setSelectedVillage(v)}
+                  colorIndex={idx}
+                />
+              </View>
+              ))}
+            </View>
           </>
         )}
 

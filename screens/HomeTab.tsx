@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,8 @@ import StreakCard from '../components/StreakCard';
 import StoryViewer from '../components/StoryViewer';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
+import PatchyPeek from '../components/PatchyPeek';
+import { usePatchyCards } from '../lib/usePatchyCards';
 
 import {
   Post, Comment, Stats, ReminderUrgency, Reminder,
@@ -59,6 +61,8 @@ export default function HomeTab() {
   const { isOneHanded } = useOneHanded();
   const insets = useSafeAreaInsets();
   const REMINDER_COLORS = useMemo(() => getReminderColors(c), [c]);
+
+  const { cards: patchyCards, onContainerLayout: patchyContainer, onCardLayout: patchyCard } = usePatchyCards();
 
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
@@ -1421,11 +1425,13 @@ export default function HomeTab() {
         )}
 
         {/* Stat cards */}
-        <View style={styles.statRow}>
-          {statCards.map((card) => (
+        <View style={styles.statRow} onLayout={patchyContainer}>
+          <PatchyPeek cards={patchyCards} dir="right" offsetX={-19} offsetY={-5} />
+          {statCards.map((card, idx) => (
             <View
               key={card.label}
               style={[styles.statCard, { borderTopColor: card.accent, backgroundColor: card.bg }]}
+              onLayout={idx < 3 ? patchyCard : undefined}
             >
               {loading ? (
                 <ActivityIndicator

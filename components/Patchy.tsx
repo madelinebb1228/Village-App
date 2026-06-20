@@ -14,7 +14,7 @@ const IMAGES: Record<PatchyMood, ReturnType<typeof require>> = {
   sleepy:      require('../assets/patchy/sleepy.png'),
   celebrating: require('../assets/patchy/celebrating.png'),
   encouraging: require('../assets/patchy/encouraging.png'),
-  sad:         require('../assets/patchy/encouraging.png'), // placeholder until sad is generated
+  sad:         require('../assets/patchy/sad.png'),
 };
 
 export default function Patchy({ mood = 'happy', size = 120, style }: Props) {

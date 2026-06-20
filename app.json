@@ -18,8 +18,7 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-video",
-      "react-native-purchases"
+      "expo-video"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,8 @@ import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
+import PatchyPeek from '../components/PatchyPeek';
+import { usePatchyCards } from '../lib/usePatchyCards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -131,6 +133,8 @@ export default function Profile() {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
+
+  const { cards: patchyCards, onSelfLayout: patchySelf } = usePatchyCards();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -459,7 +463,6 @@ export default function Profile() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-
         {/* ── Top bar ── */}
         <View style={s.topBar}>
           <Text style={s.heading}>Profile</Text>
@@ -736,6 +739,8 @@ export default function Profile() {
 
         {/* ── Baby card ── */}
         <Text style={s.sectionTitle}>Baby Profile</Text>
+        <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
+          <PatchyPeek cards={patchyCards} dir="top" offsetX={-1000} offsetY={-15} />
         {baby ? (
           <TouchableOpacity
             style={[
@@ -776,6 +781,7 @@ export default function Profile() {
             <Text style={s.babyCardEmptyText}>+ Add baby profile</Text>
           </TouchableOpacity>
         )}
+        </View>
 
         {/* ── Posts / Journal / Calendar tab toggle ── */}
         <View style={[s.tabToggleRow, { marginTop: 28 }]}>

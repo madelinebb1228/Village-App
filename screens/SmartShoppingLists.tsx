@@ -71,6 +71,7 @@ import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 import ReportModal from '../components/ReportModal';
+import { AMAZON_AFFILIATE_TAG } from '../lib/affiliate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,15 @@ interface ShoppingList {
   seedKey?: string;
   items: ListItem[];
   createdAt?: string;
+}
+
+interface AmazonProduct {
+  asin: string;
+  title: string;
+  brand: string;
+  price: string;
+  imageUrl: string;
+  affiliateUrl: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -499,6 +509,178 @@ const itemFormStyles = (c: Colors) => StyleSheet.create({
   submitText: { fontSize: 14, fontWeight: '800', color: '#fff' },
 });
 
+// ─── AmazonSearchModal ────────────────────────────────────────────────────────
+
+function AmazonSearchModal({
+  visible, onClose, onSelect, c,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (product: { name: string; price: string; linkUrl: string; imageUrl: string }) => void;
+  c: Colors;
+}) {
+  const s = amazonSearchStyles(c);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<AmazonProduct[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const search = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    setSearchError(null);
+    setSearched(true);
+    try {
+      const { data, error: fnError } = await (supabase as any).functions.invoke('amazon-search', {
+        body: { query: query.trim() },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) {
+        if (data.error.includes('not configured')) {
+          setSearchError('Amazon search is not set up yet — add items manually for now.');
+        } else {
+          setSearchError(data.error);
+        }
+        setResults([]);
+        return;
+      }
+      setResults(data?.items ?? []);
+    } catch {
+      setSearchError('Search failed. Check your connection and try again.');
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reset = () => { setQuery(''); setResults([]); setSearched(false); setSearchError(null); };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => { reset(); onClose(); }}
+    >
+      <SafeAreaView style={s.container}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => { reset(); onClose(); }}>
+            <Text style={s.cancelBtn}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={s.title}>Search Amazon</Text>
+          <View style={{ width: 60 }} />
+        </View>
+
+        <View style={s.searchRow}>
+          <TextInput
+            style={s.searchInput}
+            placeholder="e.g. white noise machine…"
+            placeholderTextColor={c.textMuted}
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={search}
+            returnKeyType="search"
+            autoFocus
+          />
+          <TouchableOpacity
+            style={[s.searchBtn, (!query.trim() || loading) && s.searchBtnDisabled]}
+            onPress={search}
+            disabled={!query.trim() || loading}
+            activeOpacity={0.8}
+          >
+            <Text style={s.searchBtnText}>Search</Text>
+          </TouchableOpacity>
+        </View>
+
+        {AMAZON_AFFILIATE_TAG ? (
+          <Text style={s.disclosureText}>
+            Shopping links earn village-app a small commission from Amazon at no extra cost to you.
+          </Text>
+        ) : null}
+
+        <ScrollView contentContainerStyle={s.resultsScroll} keyboardShouldPersistTaps="handled">
+          {loading ? (
+            <ActivityIndicator size="large" color={c.lavender} style={{ marginTop: 48 }} />
+          ) : searchError ? (
+            <View style={s.emptyState}>
+              <Text style={s.emptyEmoji}>⚠️</Text>
+              <Text style={s.emptyText}>{searchError}</Text>
+            </View>
+          ) : results.length === 0 && searched ? (
+            <View style={s.emptyState}>
+              <Text style={s.emptyEmoji}>🔍</Text>
+              <Text style={s.emptyText}>No results for "{query}". Try a different search term.</Text>
+            </View>
+          ) : results.length === 0 ? (
+            <View style={s.emptyState}>
+              <Text style={s.emptyEmoji}>🛒</Text>
+              <Text style={s.emptyText}>Search for any baby product and we'll find it on Amazon with an affiliate link.</Text>
+            </View>
+          ) : (
+            results.map(product => (
+              <TouchableOpacity
+                key={product.asin}
+                style={s.productCard}
+                onPress={() => {
+                  onSelect({
+                    name:     product.title,
+                    price:    product.price,
+                    linkUrl:  product.affiliateUrl,
+                    imageUrl: product.imageUrl,
+                  });
+                  reset();
+                  onClose();
+                }}
+                activeOpacity={0.8}
+              >
+                {product.imageUrl ? (
+                  <Image source={{ uri: product.imageUrl }} style={s.productImage} resizeMode="contain" />
+                ) : (
+                  <View style={s.productImagePlaceholder}>
+                    <Text style={{ fontSize: 24 }}>📦</Text>
+                  </View>
+                )}
+                <View style={s.productInfo}>
+                  <Text style={s.productTitle} numberOfLines={3}>{product.title}</Text>
+                  {product.brand ? <Text style={s.productBrand}>{product.brand}</Text> : null}
+                  {product.price ? <Text style={s.productPrice}>{product.price}</Text> : null}
+                  <Text style={s.addHint}>Tap to add to list →</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const amazonSearchStyles = (c: Colors) => StyleSheet.create({
+  container:              { flex: 1, backgroundColor: c.bg },
+  header:                 { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator },
+  title:                  { fontSize: 17, fontWeight: '800', color: c.textPrimary },
+  cancelBtn:              { fontSize: 16, color: c.textMuted, fontWeight: '600', width: 60 },
+  searchRow:              { flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 6 },
+  searchInput:            { flex: 1, backgroundColor: c.card, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: c.textPrimary, fontWeight: '500' },
+  searchBtn:              { backgroundColor: c.lavender, borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center' },
+  searchBtnDisabled:      { opacity: 0.4 },
+  searchBtnText:          { fontSize: 14, fontWeight: '800', color: '#fff' },
+  disclosureText:         { fontSize: 11, color: c.textMuted, fontWeight: '500', paddingHorizontal: 16, paddingBottom: 8, lineHeight: 16 },
+  resultsScroll:          { padding: 16, paddingBottom: 48, gap: 12 },
+  emptyState:             { alignItems: 'center', paddingTop: 60, gap: 10 },
+  emptyEmoji:             { fontSize: 36 },
+  emptyText:              { fontSize: 14, color: c.textMuted, fontWeight: '500', textAlign: 'center', lineHeight: 20, maxWidth: 280 },
+  productCard:            { flexDirection: 'row', backgroundColor: c.card, borderRadius: 14, overflow: 'hidden', marginBottom: 10 },
+  productImage:           { width: 90, height: 90 },
+  productImagePlaceholder:{ width: 90, height: 90, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bgAlt },
+  productInfo:            { flex: 1, padding: 12, gap: 3, justifyContent: 'center' },
+  productTitle:           { fontSize: 13, fontWeight: '700', color: c.textPrimary, lineHeight: 18 },
+  productBrand:           { fontSize: 11, color: c.textMuted, fontWeight: '500' },
+  productPrice:           { fontSize: 14, fontWeight: '800', color: c.sage },
+  addHint:                { fontSize: 11, color: c.lavender, fontWeight: '700', marginTop: 4 },
+});
+
 // ─── CreateListModal ──────────────────────────────────────────────────────────
 
 function CreateListModal({
@@ -525,14 +707,16 @@ function CreateListModal({
   const [fPrice, setFPrice] = useState('');
   const [fLink, setFLink] = useState('');
   const [fImageUri, setFImageUri] = useState<string | null>(null);
+  const [fAmazonImageUrl, setFAmazonImageUrl] = useState('');
   const [addingItem, setAddingItem] = useState(false);
+  const [showAmazonSearch, setShowAmazonSearch] = useState(false);
 
   const reset = () => {
     setTitle(''); setCategory('newborn'); setDescription(''); setDraftItems([]);
-    clearItem(); setAddingItem(false);
+    clearItem(); setAddingItem(false); setShowAmazonSearch(false);
   };
 
-  const clearItem = () => { setFName(''); setFWhy(''); setFPrice(''); setFLink(''); setFImageUri(null); };
+  const clearItem = () => { setFName(''); setFWhy(''); setFPrice(''); setFLink(''); setFImageUri(null); setFAmazonImageUrl(''); };
 
   const addItem = () => {
     if (!fName.trim()) return;
@@ -542,7 +726,7 @@ function CreateListModal({
       whyItHelps: fWhy.trim() || undefined,
       price: fPrice.trim() || undefined,
       linkUrl: fLink.trim() || undefined,
-      imageUrl: fImageUri ?? undefined,
+      imageUrl: fImageUri ?? (fAmazonImageUrl || undefined),
       sortOrder: draftItems.length,
     }]);
     clearItem(); setAddingItem(false);
@@ -562,7 +746,7 @@ function CreateListModal({
       const uploadedItems: ListItem[] = [];
       for (let i = 0; i < draftItems.length; i++) {
         const item = draftItems[i];
-        let imageUrl: string | undefined = undefined;
+        let imageUrl: string | undefined = item.imageUrl;
         if (item.imageUrl && item.imageUrl.startsWith('file')) {
           setUploadingItem(true);
           imageUrl = (await uploadItemImage(item.imageUrl, currentUserId)) ?? undefined;
@@ -601,6 +785,20 @@ function CreateListModal({
             </TouchableOpacity>
           </View>
 
+        <AmazonSearchModal
+          visible={showAmazonSearch}
+          onClose={() => setShowAmazonSearch(false)}
+          onSelect={({ name, price, linkUrl, imageUrl }) => {
+            setFName(name);
+            setFPrice(price);
+            setFLink(linkUrl);
+            setFAmazonImageUrl(imageUrl);
+            setFImageUri(null);
+            setAddingItem(true);
+          }}
+          c={c}
+        />
+
           <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
             <Text style={s.fieldLabel}>List title *</Text>
             <TextInput style={s.input} placeholder="e.g. Hospital bag must-haves" placeholderTextColor={c.textMuted} value={title} onChangeText={setTitle} />
@@ -634,18 +832,24 @@ function CreateListModal({
             ))}
 
             {addingItem ? (
-              <ItemForm
-                fName={fName} setFName={setFName}
-                fWhy={fWhy} setFWhy={setFWhy}
-                fPrice={fPrice} setFPrice={setFPrice}
-                fLink={fLink} setFLink={setFLink}
-                fImageUri={fImageUri} setFImageUri={setFImageUri}
-                title="Add an item"
-                onCancel={() => { clearItem(); setAddingItem(false); }}
-                onSubmit={addItem}
-                submitLabel="Add item"
-                c={c}
-              />
+              <>
+                <TouchableOpacity style={s.amazonSearchTrigger} onPress={() => setShowAmazonSearch(true)} activeOpacity={0.8}>
+                  <Text style={s.amazonSearchTriggerText}>🛒 Search Amazon to auto-fill</Text>
+                </TouchableOpacity>
+                <ItemForm
+                  fName={fName} setFName={setFName}
+                  fWhy={fWhy} setFWhy={setFWhy}
+                  fPrice={fPrice} setFPrice={setFPrice}
+                  fLink={fLink} setFLink={setFLink}
+                  fImageUri={fImageUri} setFImageUri={setFImageUri}
+                  existingImageUrl={fAmazonImageUrl || undefined}
+                  title="Add an item"
+                  onCancel={() => { clearItem(); setAddingItem(false); }}
+                  onSubmit={addItem}
+                  submitLabel="Add item"
+                  c={c}
+                />
+              </>
             ) : (
               <TouchableOpacity style={s.addItemTrigger} onPress={() => setAddingItem(true)} activeOpacity={0.8}>
                 <Text style={s.addItemTriggerText}>+ Add an item</Text>
@@ -691,6 +895,8 @@ const createStyles = (c: Colors) => StyleSheet.create({
   removeText: { fontSize: 16, color: c.textMuted },
   addItemTrigger: { borderWidth: 2, borderStyle: 'dashed', borderColor: c.lavender, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   addItemTriggerText: { fontSize: 15, fontWeight: '700', color: c.lavender },
+  amazonSearchTrigger: { backgroundColor: c.cardHoney, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center', marginTop: 4, marginBottom: 4 },
+  amazonSearchTriggerText: { fontSize: 13, fontWeight: '800', color: c.honey },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, justifyContent: 'center' },
   loadingText: { fontSize: 14, color: c.textMuted, fontWeight: '500' },
 });
@@ -720,6 +926,8 @@ function AdminEditModal({
   const [fPrice, setFPrice] = useState('');
   const [fLink, setFLink] = useState('');
   const [fImageUri, setFImageUri] = useState<string | null>(null);
+  const [fAmazonImageUrl, setFAmazonImageUrl] = useState('');
+  const [showAmazonSearch, setShowAmazonSearch] = useState(false);
 
   useEffect(() => {
     if (list && visible) {
@@ -732,7 +940,7 @@ function AdminEditModal({
     }
   }, [list, visible]);
 
-  const clearForm = () => { setFName(''); setFWhy(''); setFPrice(''); setFLink(''); setFImageUri(null); };
+  const clearForm = () => { setFName(''); setFWhy(''); setFPrice(''); setFLink(''); setFImageUri(null); setFAmazonImageUrl(''); };
 
   const startEdit = (idx: number) => {
     const item = items[idx];
@@ -774,7 +982,7 @@ function AdminEditModal({
       whyItHelps: fWhy.trim() || undefined,
       price: fPrice.trim() || undefined,
       linkUrl: fLink.trim() || undefined,
-      imageUrl: fImageUri || undefined,
+      imageUrl: fImageUri || fAmazonImageUrl || undefined,
       sortOrder: prev.length,
     }]);
     clearForm();
@@ -858,18 +1066,24 @@ function AdminEditModal({
             ))}
 
             {addingItem ? (
-              <ItemForm
-                fName={fName} setFName={setFName}
-                fWhy={fWhy} setFWhy={setFWhy}
-                fPrice={fPrice} setFPrice={setFPrice}
-                fLink={fLink} setFLink={setFLink}
-                fImageUri={fImageUri} setFImageUri={setFImageUri}
-                title="New item"
-                onCancel={() => { clearForm(); setAddingItem(false); }}
-                onSubmit={addItem}
-                submitLabel="Add"
-                c={c}
-              />
+              <>
+                <TouchableOpacity style={s.amazonSearchTrigger} onPress={() => setShowAmazonSearch(true)} activeOpacity={0.8}>
+                  <Text style={s.amazonSearchTriggerText}>🛒 Search Amazon to auto-fill</Text>
+                </TouchableOpacity>
+                <ItemForm
+                  fName={fName} setFName={setFName}
+                  fWhy={fWhy} setFWhy={setFWhy}
+                  fPrice={fPrice} setFPrice={setFPrice}
+                  fLink={fLink} setFLink={setFLink}
+                  fImageUri={fImageUri} setFImageUri={setFImageUri}
+                  existingImageUrl={fAmazonImageUrl || undefined}
+                  title="New item"
+                  onCancel={() => { clearForm(); setAddingItem(false); }}
+                  onSubmit={addItem}
+                  submitLabel="Add"
+                  c={c}
+                />
+              </>
             ) : (
               <TouchableOpacity
                 style={s.addTrigger}
@@ -882,6 +1096,19 @@ function AdminEditModal({
           </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
+      <AmazonSearchModal
+        visible={showAmazonSearch}
+        onClose={() => setShowAmazonSearch(false)}
+        onSelect={({ name, price, linkUrl, imageUrl }) => {
+          setFName(name);
+          setFPrice(price);
+          setFLink(linkUrl);
+          setFAmazonImageUrl(imageUrl);
+          setFImageUri(null);
+          setAddingItem(true);
+        }}
+        c={c}
+      />
     </Modal>
   );
 }
@@ -913,6 +1140,8 @@ const adminEditStyles = (c: Colors) => StyleSheet.create({
   deleteBtnText: { fontSize: 18, color: c.textMuted },
   addTrigger: { borderWidth: 2, borderStyle: 'dashed', borderColor: c.lavender, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   addTriggerText: { fontSize: 15, fontWeight: '700', color: c.lavender },
+  amazonSearchTrigger: { backgroundColor: c.cardHoney, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center', marginTop: 4, marginBottom: 4 },
+  amazonSearchTriggerText: { fontSize: 13, fontWeight: '800', color: c.honey },
 });
 
 // ─── Detail view ──────────────────────────────────────────────────────────────
