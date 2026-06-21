@@ -95,7 +95,7 @@ export default function EventsScreen({ onBack }: Props) {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setCurrentUserId(user.id);
-    });
+    }).catch(() => {});
     load();
   }, []);
 

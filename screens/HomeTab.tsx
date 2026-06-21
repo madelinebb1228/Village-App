@@ -202,7 +202,7 @@ export default function HomeTab() {
         fetchPrivateFilter(user.id);
         fetchWordFilter(user.id);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   async function fetchBlockedUsers(uid: string) {

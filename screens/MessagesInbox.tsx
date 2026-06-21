@@ -106,7 +106,7 @@ export default function MessagesInbox({
         loadInbox(user.id);
         loadBlockedUsers(user.id);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   async function loadBlockedUsers(uid: string) {

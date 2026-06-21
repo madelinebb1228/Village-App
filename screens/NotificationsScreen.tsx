@@ -69,7 +69,7 @@ export default function NotificationsScreen({ onBack }: { onBack: () => void }) 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) { setMyId(user.id); load(user.id); }
-    });
+    }).catch(() => {});
   }, []);
 
   const load = useCallback(async (uid: string) => {

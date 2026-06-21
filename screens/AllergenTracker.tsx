@@ -374,7 +374,7 @@ export default function AllergenTracker() {
         setCustom(d.custom ?? []);
       }
       setLoaded(true);
-    });
+    }).catch(() => { setLoaded(true); });
   }, []);
 
   const persist = useCallback((nextEntries: Record<string, AllergenEntry>, nextCustom: CustomAllergen[]) => {

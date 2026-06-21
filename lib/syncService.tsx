@@ -28,7 +28,7 @@ type SyncStatus = {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const QUEUE_KEY   = 'sync_queue_v1';
-const HEALTH_URL  = 'https://vhrhosdegyomgipzlyet.supabase.co';
+const HEALTH_URL  = 'https://clients3.google.com/generate_204';
 const MAX_RETRIES = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ function isNetworkError(err: any): boolean {
 async function checkConnectivity(): Promise<boolean> {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const timer = setTimeout(() => ctrl.abort(), 6000);
     await fetch(HEALTH_URL, { method: 'HEAD', signal: ctrl.signal });
     clearTimeout(timer);
     return true;

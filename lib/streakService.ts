@@ -73,14 +73,17 @@ export async function recordLog(userId: string): Promise<RecordLogResult> {
   const newLongest = Math.max(longest_streak, newStreak);
   const milestone = MILESTONES.includes(newStreak) ? newStreak : null;
 
-  await (supabase.from('logging_streaks') as any).upsert({
-    user_id: userId,
-    current_streak: newStreak,
-    longest_streak: newLongest,
-    last_log_date: today,
-    freeze_count: newFreezeCount,
-    updated_at: new Date().toISOString(),
-  });
+  await (supabase.from('logging_streaks') as any).upsert(
+    {
+      user_id: userId,
+      current_streak: newStreak,
+      longest_streak: newLongest,
+      last_log_date: today,
+      freeze_count: newFreezeCount,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' }
+  );
 
   return { newStreak, milestone, usedFreeze };
 }
