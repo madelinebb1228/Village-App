@@ -44,6 +44,7 @@ interface UserProfile {
   avatar_url: string | null;
   header_url: string | null;
   parent_role: string | null;
+  preferred_term: string | null;
   show_villages: boolean | null;
   baby_info_private: boolean | null;
   pinned_post_id: string | null;
@@ -159,6 +160,7 @@ export default function Profile() {
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editParentRole, setEditParentRole] = useState('');
+  const [editPreferredTerm, setEditPreferredTerm] = useState('');
   const [editShowVillages, setEditShowVillages] = useState(true);
   const [editBabyInfoPrivate, setEditBabyInfoPrivate] = useState(false);
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
@@ -238,6 +240,7 @@ export default function Profile() {
     setEditDisplayName(profile?.display_name ?? '');
     setEditBio(profile?.bio ?? '');
     setEditParentRole(profile?.parent_role ?? '');
+    setEditPreferredTerm(profile?.preferred_term ?? '');
     setEditShowVillages(profile?.show_villages !== false);
     setEditBabyInfoPrivate(profile?.baby_info_private === true);
     setPendingAvatarUri(null);
@@ -356,6 +359,7 @@ export default function Profile() {
         avatar_url: avatarUrl,
         header_url: headerUrl,
         parent_role: editParentRole || null,
+        preferred_term: editPreferredTerm || null,
         show_villages: editShowVillages,
         baby_info_private: editBabyInfoPrivate,
       };
@@ -581,6 +585,21 @@ export default function Profile() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={s.fieldLabel}>Call me...</Text>
+              <Text style={s.fieldHint}>How the app addresses you</Text>
+              <View style={s.roleRow}>
+                {PARENT_ROLES.map(term => (
+                  <TouchableOpacity
+                    key={term}
+                    style={[s.roleChip, editPreferredTerm === term && s.roleChipActive]}
+                    onPress={() => setEditPreferredTerm(prev => prev === term ? '' : term)}
+                  >
+                    <Text style={[s.roleChipText, editPreferredTerm === term && s.roleChipTextActive]}>{term}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               {/* Village privacy toggle */}
               <View style={s.privacyRow}>
                 <View style={{ flex: 1 }}>
@@ -1317,6 +1336,13 @@ function makeStyles(c: Colors) {
     letterSpacing: 0.6,
     paddingHorizontal: 2,
     marginTop: 4,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: c.textMuted,
+    paddingHorizontal: 2,
+    marginBottom: 6,
+    marginTop: 2,
   },
   roleRow: {
     flexDirection: 'row',

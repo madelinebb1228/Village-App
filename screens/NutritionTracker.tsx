@@ -477,7 +477,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           Nutrition & Hydration
         </Text>
         <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
-          Track daily calories and water with goals personalized for breastfeeding moms.
+          Track daily calories and water with goals personalized for breastfeeding parents.
         </Text>
         <TouchableOpacity style={primaryBtn(c)} onPress={openSetup}>
           <Text style={[primaryBtnText, { paddingHorizontal: 24 }]}>Set Up My Goals</Text>

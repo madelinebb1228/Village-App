@@ -38,7 +38,7 @@ const RESOURCES = [
   { id: 'shopping_lists',    emoji: '🛍️',  title: 'Smart Shopping Lists',          description: 'Curated packing lists for hospital bags, travel, newborns, and more — or post your own' },
   { id: 'babynames',         emoji: '🌸',  title: 'Baby Name Finder',              description: 'Browse hundreds of names with meanings, origins, and style tags' },
   { id: 'marketplace',       emoji: '🛍️',  title: 'Parent Marketplace',            description: 'Buy and sell gently used baby gear with parents in your city' },
-  { id: 'mom_groups',        emoji: '👩‍👧', title: 'Mom Group Directory',           description: 'Find local meetups, online communities, and support groups near you' },
+  { id: 'mom_groups',        emoji: '👨‍👩‍👧', title: 'Parent Groups',                  description: 'Find local meetups, online communities, and support groups near you' },
   { id: 'parenting_az',      emoji: '📖',  title: 'Parenting A–Z',                 description: 'Plain-English explanations of methods, terms, and techniques every parent should know' },
   { id: 'qa',                emoji: '💬',  title: 'Parenting Q+A',                 description: 'Ask questions and get answers from other parents' },
   { id: 'articles',          emoji: '📰',  title: 'Articles',                      description: 'Expert tips, guides, and parenting reads' },

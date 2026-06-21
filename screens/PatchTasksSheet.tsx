@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { Village, VILLAGES } from '../lib/villageData';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ type SheetView = 'feed' | 'create'
 interface PatchTask {
   id: string
   creator_id: string
+  village_id: string | null
   category: string
   title: string
   description: string | null
@@ -88,10 +90,11 @@ function TaskCard({
   s: ReturnType<typeof makeStyles>
   c: Colors
 }) {
-  const meta   = getCategoryMeta(task.category)
-  const colors = getCategoryColors(task.category, c)
-  const isOwn  = task.creator_id === myId
-  const name   = task.profiles?.display_name || task.profiles?.username || 'A parent'
+  const meta        = getCategoryMeta(task.category)
+  const colors      = getCategoryColors(task.category, c)
+  const isOwn       = task.creator_id === myId
+  const name        = task.profiles?.display_name || task.profiles?.username || 'A parent'
+  const patchInfo   = task.village_id ? VILLAGES.find(v => v.id === task.village_id) : null
 
   return (
     <View style={[s.taskCard, { backgroundColor: colors.bg, borderLeftColor: colors.border }]}>
@@ -124,7 +127,7 @@ function TaskCard({
       <View style={s.taskFooter}>
         <View style={{ flex: 1 }}>
           <Text style={s.taskAuthor}>
-            from {name}
+            from {name}{patchInfo ? ` · ${patchInfo.emoji} ${patchInfo.name}` : ''}
           </Text>
           {volunteerCount > 0 && (
             <Text style={s.volunteerCount}>
@@ -163,9 +166,10 @@ function TaskCard({
 interface Props {
   visible: boolean
   onClose: () => void
+  myVillages?: Village[]
 }
 
-export default function PatchTasksSheet({ visible, onClose }: Props) {
+export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: Props) {
   const c = useColors()
   const s = useMemo(() => makeStyles(c), [c])
 
@@ -182,6 +186,10 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
   const [formTitle,       setFormTitle]       = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formUrgency,     setFormUrgency]     = useState('normal')
+  const [formVillageId,   setFormVillageId]   = useState<string | null>(null)
+
+  // Feed filter
+  const [filterVillageId, setFilterVillageId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -191,13 +199,17 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
 
   const loadTasks = useCallback(async () => {
     setLoading(true)
+    let tasksQuery = (supabase
+      .from('patch_tasks') as any)
+      .select('id,creator_id,village_id,category,title,description,urgency,needed_by,status,created_at,profiles!creator_id(display_name,username)')
+      .in('status', ['open', 'completed'])
+      .order('created_at', { ascending: false })
+      .limit(60)
+    if (filterVillageId !== null) {
+      tasksQuery = tasksQuery.eq('village_id', filterVillageId)
+    }
     const [tasksRes, myVolRes, allVolRes] = await Promise.all([
-      (supabase
-        .from('patch_tasks') as any)
-        .select('id,creator_id,category,title,description,urgency,needed_by,status,created_at,profiles!creator_id(display_name,username)')
-        .in('status', ['open', 'completed'])
-        .order('created_at', { ascending: false })
-        .limit(60),
+      tasksQuery,
       myId
         ? (supabase.from('patch_task_volunteers') as any)
             .select('task_id')
@@ -218,7 +230,7 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
     }
     setVolCounts(counts)
     setLoading(false)
-  }, [myId])
+  }, [myId, filterVillageId])
 
   useEffect(() => {
     if (visible && myId) loadTasks()
@@ -229,6 +241,7 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
     setFormTitle('')
     setFormDescription('')
     setFormUrgency('normal')
+    setFormVillageId(null)
   }
 
   async function handleCreate() {
@@ -236,6 +249,7 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
     setSubmitting('create')
     const { error } = await (supabase.from('patch_tasks') as any).insert({
       creator_id:  myId,
+      village_id:  formVillageId,
       category:    formCategory,
       title:       formTitle.trim(),
       description: formDescription.trim() || null,
@@ -327,6 +341,36 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
               )}
             </View>
 
+            {/* Patch filter pills */}
+            {myVillages.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={s.filterScroll}
+                contentContainerStyle={s.filterScrollContent}
+              >
+                <TouchableOpacity
+                  style={[s.filterPill, filterVillageId === null && s.filterPillActive]}
+                  onPress={() => setFilterVillageId(null)}
+                >
+                  <Text style={[s.filterPillText, filterVillageId === null && s.filterPillTextActive]}>
+                    All Patches
+                  </Text>
+                </TouchableOpacity>
+                {myVillages.map(v => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[s.filterPill, filterVillageId === v.id && s.filterPillActive]}
+                    onPress={() => setFilterVillageId(prev => prev === v.id ? null : v.id)}
+                  >
+                    <Text style={[s.filterPillText, filterVillageId === v.id && s.filterPillTextActive]}>
+                      {v.emoji} {v.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
             {loading ? (
               <View style={s.center}>
                 <ActivityIndicator color={c.primary} size="large" />
@@ -371,6 +415,49 @@ export default function PatchTasksSheet({ visible, onClose }: Props) {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <ScrollView contentContainerStyle={s.createContent} showsVerticalScrollIndicator={false}>
+
+              {/* Post to (patch selector) */}
+              {myVillages.length > 0 && (
+                <>
+                  <Text style={s.formLabel}>Post to</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginBottom: 4 }}
+                    contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+                  >
+                    <TouchableOpacity
+                      style={[s.patchPill, formVillageId === null && s.patchPillActive]}
+                      onPress={() => setFormVillageId(null)}
+                    >
+                      <Text style={[s.patchPillText, formVillageId === null && s.patchPillTextActive]}>
+                        🏘️ All Patches
+                      </Text>
+                    </TouchableOpacity>
+                    {myVillages.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={[s.patchPill, formVillageId === v.id && s.patchPillActive]}
+                        onPress={() => setFormVillageId(v.id)}
+                      >
+                        <Text style={[s.patchPillText, formVillageId === v.id && s.patchPillTextActive]}>
+                          {v.emoji} {v.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {formVillageId !== null && (
+                    <Text style={s.patchPillHint}>
+                      Only members of this patch will see your request
+                    </Text>
+                  )}
+                  {formVillageId === null && (
+                    <Text style={s.patchPillHint}>
+                      Visible to everyone in your patches
+                    </Text>
+                  )}
+                </>
+              )}
 
               {/* Category */}
               <Text style={s.formLabel}>What kind of help?</Text>
@@ -604,5 +691,28 @@ function makeStyles(c: Colors) {
       paddingVertical: 15, alignItems: 'center', marginTop: 28,
     },
     submitBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+
+    // Feed filter pills
+    filterScroll: { maxHeight: 44, borderBottomWidth: 1, borderBottomColor: c.separator },
+    filterScrollContent: { paddingHorizontal: 14, paddingVertical: 8, gap: 8 },
+    filterPill: {
+      paddingHorizontal: 14, paddingVertical: 5,
+      borderRadius: 20, borderWidth: 1.5, borderColor: c.separator,
+      backgroundColor: c.card,
+    },
+    filterPillActive: { backgroundColor: c.primary + '18', borderColor: c.primary },
+    filterPillText:   { fontSize: 13, color: c.textMuted, fontWeight: '500' },
+    filterPillTextActive: { color: c.primary, fontWeight: '700' },
+
+    // Create form patch pills
+    patchPill: {
+      paddingHorizontal: 14, paddingVertical: 7,
+      borderRadius: 20, borderWidth: 1.5, borderColor: c.separator,
+      backgroundColor: c.card,
+    },
+    patchPillActive:     { backgroundColor: c.primary + '18', borderColor: c.primary },
+    patchPillText:       { fontSize: 13, color: c.textMuted, fontWeight: '500' },
+    patchPillTextActive: { color: c.primary, fontWeight: '700' },
+    patchPillHint:       { fontSize: 12, color: c.textMuted, marginBottom: 4, marginTop: 4 },
   })
 }

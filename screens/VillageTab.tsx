@@ -223,6 +223,7 @@ export default function VillageTab() {
         <PatchTasksSheet
           visible={showPatchTasks}
           onClose={() => setShowPatchTasks(false)}
+          myVillages={myVillages}
         />
 
         {/* Search bar */}

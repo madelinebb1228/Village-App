@@ -815,7 +815,7 @@ export default function Track() {
   const [spitUp,            setSpitUp]             = useState('none');
   const [feedBurps,         setFeedBurps]          = useState(0);
   const [feedNotes,         setFeedNotes]          = useState('');
-  const [feedCaregiver,     setFeedCaregiver]      = useState('mom');
+  const [feedCaregiver,     setFeedCaregiver]      = useState('parent');
   const [feedUseManual,     setFeedUseManual]      = useState(false);
   const [feedManualMin,     setFeedManualMin]      = useState('');
   const [breastLeft,        setBreastLeft]         = useState(true);
@@ -1227,7 +1227,7 @@ export default function Track() {
       setSpitUp(data.spit_up || 'none');
       setFeedBurps(data.burps || 0);
       setFeedNotes(data.notes || '');
-      setFeedCaregiver(data.caregiver || 'mom');
+      setFeedCaregiver(data.caregiver || 'parent');
       setFeedUseManual(true);
       setFeedManualMin(data.duration_seconds ? String(Math.round(data.duration_seconds / 60)) : '');
       setBreastLeft(data.breast_side === 'left' || data.breast_side === 'both');

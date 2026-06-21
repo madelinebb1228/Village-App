@@ -16,6 +16,22 @@ import { useColors, Colors } from '../lib/theme';
 
 type Option = { id: string; label: string; emoji: string };
 
+type Step = {
+  title: string;
+  subtitle: string;
+  options: Option[];
+  accent: string;
+  singleSelect?: boolean;
+};
+
+const ROLE_OPTIONS: Option[] = [
+  { id: 'Mom',         label: 'Mom',         emoji: '👩' },
+  { id: 'Dad',         label: 'Dad',         emoji: '👨' },
+  { id: 'Parent',      label: 'Parent',      emoji: '🧡' },
+  { id: 'Grandparent', label: 'Grandparent', emoji: '🧓' },
+  { id: 'Caregiver',   label: 'Caregiver',   emoji: '🤲' },
+];
+
 const FEEDING_OPTIONS: Option[] = [
   { id: 'breast',  label: 'Breastfeeding',  emoji: '🤱' },
   { id: 'bottle',  label: 'Bottle Feeding', emoji: '🍼' },
@@ -45,7 +61,14 @@ const VILLAGE_OPTIONS: Option[] = [
   { id: 'single_parents',    label: 'Single Parents',         emoji: '⭐' },
 ];
 
-const STEPS = [
+const STEPS: Step[] = [
+  {
+    title: 'What should\nwe call you?',
+    subtitle: 'Help us personalize your experience — you can change this any time.',
+    options: ROLE_OPTIONS,
+    accent: '#B8A9C9',
+    singleSelect: true,
+  },
   {
     title: 'How are you\nfeeding?',
     subtitle: 'Select all that apply — you can change this any time.',
@@ -182,7 +205,7 @@ export default function Onboarding() {
   const { markOnboardingComplete } = useContext(AppContext);
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [selections, setSelections] = useState<string[][]>([[], [], []]);
+  const [selections, setSelections] = useState<string[][]>([[], [], [], []]);
   const [saving, setSaving] = useState(false);
 
   const c = useColors();
@@ -193,6 +216,10 @@ export default function Onboarding() {
 
   function toggleOption(id: string) {
     setSelections(prev => {
+      const step = STEPS[stepIndex];
+      if (step.singleSelect) {
+        return prev.map((s, i) => i === stepIndex ? [id] : s);
+      }
       const current = prev[stepIndex];
       const updated = current.includes(id)
         ? current.filter(x => x !== id)
@@ -203,11 +230,17 @@ export default function Onboarding() {
 
   async function handleComplete() {
     setSaving(true);
-    const [feedingMethods, helpfulTopics, villages] = selections;
+    const [roleSelection, feedingMethods, helpfulTopics, villages] = selections;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        if (roleSelection.length > 0) {
+          await supabase
+            .from('profiles')
+            .upsert({ id: user.id, preferred_term: roleSelection[0] }, { onConflict: 'id' });
+        }
+
         const { data: baby } = await supabase
           .from('babies')
           .select('id')

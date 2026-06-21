@@ -427,7 +427,7 @@ function ReviewsModal({
                   </View>
                 ))}
 
-                <Text style={[s.formLabel, { marginTop: 8 }]}>Tell other moms about it</Text>
+                <Text style={[s.formLabel, { marginTop: 8 }]}>Tell other parents about it</Text>
                 <TextInput
                   style={s.textArea}
                   value={content}

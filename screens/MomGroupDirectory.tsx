@@ -724,7 +724,7 @@ export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
                 <Text style={s.emptyEmoji}>🌱</Text>
                 <Text style={s.emptyTitle}>No groups listed yet</Text>
                 <Text style={s.emptyText}>
-                  Know a great mom group in {searchedLabel}? Be the first to add it!
+                  Know a great group in {searchedLabel}? Be the first to add it!
                 </Text>
                 <TouchableOpacity style={s.suggestBtnLarge} onPress={() => setShowSuggest(true)}>
                   <Text style={s.suggestBtnLargeText}>+ Add a Group</Text>
@@ -741,7 +741,7 @@ export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
         {/* Online / national groups */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Online & National Groups</Text>
-          <Text style={s.sectionSubtitle}>These groups welcome moms everywhere</Text>
+          <Text style={s.sectionSubtitle}>These groups are open to everyone</Text>
           {onlineLoading ? (
             <ActivityIndicator color={c.blush} style={{ marginTop: 20 }} />
           ) : onlineGroups.length === 0 ? (
@@ -759,7 +759,7 @@ export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
         <View style={s.suggestCta}>
           <Text style={s.suggestCtaTitle}>Know a group that's not listed?</Text>
           <Text style={s.suggestCtaText}>
-            Help other moms find their people — suggest a group and we'll review it.
+            Help parents find their people — suggest a group and we'll review it.
           </Text>
           <TouchableOpacity style={s.suggestCtaBtn} onPress={() => setShowSuggest(true)}>
             <Text style={s.suggestCtaBtnText}>+ Suggest a Group</Text>
