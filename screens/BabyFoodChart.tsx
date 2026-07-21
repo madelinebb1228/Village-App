@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors, Colors } from '../lib/theme';
+import { supabase } from '../lib/supabase';
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
@@ -364,6 +365,38 @@ const ALWAYS_AVOID = [
   },
 ];
 
+// ─── Prep tip lookup (exported for use in BabyFoodTracker) ───────────────────
+
+const STOP_WORDS = new Set(['with', 'from', 'and', 'into', 'soft', 'cooked', 'most', 'plain', 'whole', 'small', 'high', 'milk', 'style', 'type', 'some', 'very'])
+
+function significantWords(name: string): string[] {
+  return name.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.has(w))
+}
+
+export function findPrepTip(flavorName: string): { prep: string; emoji: string; name: string } | null {
+  const lower = flavorName.toLowerCase()
+  for (const stage of STAGES) {
+    for (const group of stage.groups) {
+      for (const item of group.items) {
+        const words = significantWords(item.name)
+        if (words.length > 0 && words.some(w => lower.includes(w))) {
+          return { prep: item.prep, emoji: item.emoji, name: item.name }
+        }
+      }
+    }
+  }
+  return null
+}
+
+function isItemTried(itemName: string, triedFlavors: Set<string>): boolean {
+  const words = significantWords(itemName)
+  if (words.length === 0) return false
+  for (const flavor of triedFlavors) {
+    if (words.some(w => flavor.includes(w))) return true
+  }
+  return false
+}
+
 // ─── Search index ─────────────────────────────────────────────────────────────
 
 interface SearchResult {
@@ -389,7 +422,7 @@ const SEARCH_INDEX = buildSearchIndex();
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
-function FoodRow({ item, showStage, stageLabel }: { item: FoodItem; showStage?: boolean; stageLabel?: string }) {
+function FoodRow({ item, showStage, stageLabel, tried }: { item: FoodItem; showStage?: boolean; stageLabel?: string; tried?: boolean }) {
   const c = useColors();
   const s = rowStyles(c);
 
@@ -399,6 +432,11 @@ function FoodRow({ item, showStage, stageLabel }: { item: FoodItem; showStage?: 
       <View style={s.body}>
         <View style={s.nameRow}>
           <Text style={s.name}>{item.name}</Text>
+          {tried && (
+            <View style={s.triedBadge}>
+              <Text style={s.triedText}>✓ Tried</Text>
+            </View>
+          )}
           {item.allergen && (
             <View style={s.allergenBadge}>
               <Text style={s.allergenText}>Allergen</Text>
@@ -425,12 +463,24 @@ function FoodRow({ item, showStage, stageLabel }: { item: FoodItem; showStage?: 
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function BabyFoodChart({ onBack }: { onBack: () => void }) {
+export default function BabyFoodChart({ onBack, babyId }: { onBack: () => void; babyId?: string | null }) {
   const c = useColors();
   const s = styles(c);
 
   const [selectedStage, setSelectedStage] = useState(STAGES[1].key); // default 6–8 mo
   const [query, setQuery]                 = useState('');
+  const [triedFlavors, setTriedFlavors]   = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!babyId) return;
+    supabase
+      .from('baby_food_logs')
+      .select('flavor')
+      .eq('baby_id', babyId)
+      .then(({ data }) => {
+        if (data) setTriedFlavors(new Set(data.map((r: { flavor: string }) => r.flavor.toLowerCase())));
+      });
+  }, [babyId]);
 
   const stage = STAGES.find(st => st.key === selectedStage)!;
 
@@ -491,7 +541,7 @@ export default function BabyFoodChart({ onBack }: { onBack: () => void }) {
               <Text style={s.cardTitle}>Results for "{query}"</Text>
               {searchResults.map((r, i) => (
                 <View key={i}>
-                  <FoodRow item={r.item} showStage stageLabel={r.stageLabel} />
+                  <FoodRow item={r.item} showStage stageLabel={r.stageLabel} tried={isItemTried(r.item.name, triedFlavors)} />
                   {i < searchResults.length - 1 && <View style={s.divider} />}
                 </View>
               ))}
@@ -532,13 +582,36 @@ export default function BabyFoodChart({ onBack }: { onBack: () => void }) {
               )}
             </View>
 
+            {/* Suggested: untried foods from this stage */}
+            {triedFlavors.size > 0 && (() => {
+              const untried = stage.groups.flatMap(g => g.items).filter(item => !isItemTried(item.name, triedFlavors));
+              if (untried.length === 0) return null;
+              const suggestions = untried.slice(0, 5);
+              return (
+                <View style={[s.card, { borderColor: c.honey, borderWidth: 1.5 }]}>
+                  <Text style={s.cardTitle}>✨ Suggested for {stage.label} — not tried yet</Text>
+                  {suggestions.map((item, i) => (
+                    <View key={item.name}>
+                      <FoodRow item={item} />
+                      {i < suggestions.length - 1 && <View style={s.divider} />}
+                    </View>
+                  ))}
+                  {untried.length > 5 && (
+                    <Text style={[s.cardTitle, { fontSize: 12, fontWeight: '500', color: c.textMuted, marginTop: 8, marginBottom: 0 }]}>
+                      + {untried.length - 5} more untried foods in this stage
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
+
             {/* Food groups */}
             {stage.groups.map(group => (
               <View key={group.category} style={s.card}>
                 <Text style={s.cardTitle}>{group.emoji} {group.category}</Text>
                 {group.items.map((item, i) => (
                   <View key={item.name}>
-                    <FoodRow item={item} />
+                    <FoodRow item={item} tried={isItemTried(item.name, triedFlavors)} />
                     {i < group.items.length - 1 && <View style={s.divider} />}
                   </View>
                 ))}
@@ -650,6 +723,11 @@ const rowStyles = (c: Colors) =>
     body:     { flex: 1, gap: 3 },
     nameRow:  { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
     name:     { fontSize: 14, fontWeight: '700', color: c.textPrimary },
+    triedBadge: {
+      backgroundColor: '#D1FAE5', borderRadius: 6, borderWidth: 1,
+      borderColor: '#6EE7B7', paddingHorizontal: 6, paddingVertical: 2,
+    },
+    triedText: { fontSize: 10, fontWeight: '800', color: '#065F46' },
     allergenBadge: {
       backgroundColor: '#FEE2E2', borderRadius: 6, borderWidth: 1,
       borderColor: '#EF4444', paddingHorizontal: 6, paddingVertical: 2,

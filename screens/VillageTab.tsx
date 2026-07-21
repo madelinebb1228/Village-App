@@ -422,7 +422,7 @@ export default function VillageTab() {
         {discoverList.length > 0 && (
           <>
             <Text style={s.sectionTitle}>{search ? 'Results' : 'Discover'}</Text>
-            <View>
+            <View style={{ overflow: 'visible' }}>
               <PatchyPeek cards={patchyCards} dir="left" offsetX={20} />
               {discoverList.map((v, idx) => (
               <View key={v.id} onLayout={idx < 5 ? patchyCard : undefined}>

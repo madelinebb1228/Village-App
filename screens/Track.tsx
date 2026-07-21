@@ -23,6 +23,11 @@ import MomMentalHealthTracker from './MomMentalHealthTracker';
 import MoodEnergyTracker from './MoodEnergyTracker';
 import MomSleepTracker from './MomSleepTracker';
 import MedTracker from './MedTracker';
+import DiaperReminderCard from '../components/DiaperReminderCard';
+import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/diaperNotifications';
+import FeedReminderCard from '../components/FeedReminderCard';
+import { getFeedReminderSettings, scheduleNextFeedReminder } from '../lib/feedNotifications';
+import BabyFoodTracker from './BabyFoodTracker';
 import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
 import PeriodReturnTracker from './PeriodReturnTracker';
 import MovementTracker from './MovementTracker';
@@ -753,11 +758,13 @@ export default function Track() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [saving,      setSaving]      = useState(false);
-  const [babyId,        setBabyId]        = useState<string | null>(null);
-  const [userId,        setUserId]        = useState<string | null>(null);
-  const [babyBirthDate, setBabyBirthDate] = useState<string | null>(null);
-  const [babyGender,    setBabyGender]    = useState<string | null>(null);
-  const [babyName,      setBabyName]      = useState<string | null>(null);
+  const [babyId,         setBabyId]         = useState<string | null>(null);
+  const [userId,         setUserId]         = useState<string | null>(null);
+  const [babyBirthDate,  setBabyBirthDate]  = useState<string | null>(null);
+  const [babyGender,     setBabyGender]     = useState<string | null>(null);
+  const [babyName,       setBabyName]       = useState<string | null>(null);
+  const [babyWeightLbs,  setBabyWeightLbs]  = useState<number | null>(null);
+  const [userName,       setUserName]       = useState<string | null>(null);
   const [showFoodChart, setShowFoodChart] = useState(false);
   const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
@@ -808,6 +815,8 @@ export default function Track() {
 
   // Feed form
   const [feedType,          setFeedType]          = useState('breast');
+  const [foodTrackerOpenKey,        setFoodTrackerOpenKey]        = useState(0);
+  const [openFoodTrackerAfterFeed,  setOpenFoodTrackerAfterFeed]  = useState(false);
   const [feedMood,          setFeedMood]           = useState('calm');
   const [feedPosition,      setFeedPosition]       = useState('cradle');
   const [feedPositionOther, setFeedPositionOther]  = useState('');
@@ -818,11 +827,17 @@ export default function Track() {
   const [feedCaregiver,     setFeedCaregiver]      = useState('parent');
   const [feedUseManual,     setFeedUseManual]      = useState(false);
   const [feedManualMin,     setFeedManualMin]      = useState('');
-  const [breastLeft,        setBreastLeft]         = useState(true);
-  const [breastRight,       setBreastRight]        = useState(false);
+  const [bottleSource,      setBottleSource]       = useState<'breastmilk' | 'formula' | 'mixed'>('breastmilk');
+  const [bottleMixBmOz,    setBottleMixBmOz]      = useState('');
+  const [bottleMixFmOz,    setBottleMixFmOz]      = useState('');
   const [feedAmount,        setFeedAmount]         = useState('');
-  const [bottleSource,      setBottleSource]       = useState<'breastmilk' | 'formula'>('breastmilk');
-  const feedTimer = useTimer();
+  // Per-side breast timers
+  const leftBreastTimer  = useTimer();
+  const rightBreastTimer = useTimer();
+  const [activeBreastSide, setActiveBreastSide]   = useState<'left' | 'right' | null>(null);
+  // Last feed (for banner + "same as last time")
+  const [lastFeedLog,      setLastFeedLog]         = useState<any>(null);
+  const feedTimer = useTimer(); // kept for manual entry fallback
 
   // Diaper form
   const [diaperType,    setDiaperType]    = useState('wet');
@@ -850,12 +865,14 @@ export default function Track() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       setUserId(user.id);
-      supabase.from('babies').select('id,name,birth_date,gender').eq('user_id', user.id).limit(1).maybeSingle()
+      setUserName(user.user_metadata?.name ?? user.email?.split('@')[0] ?? null);
+      supabase.from('babies').select('id,name,birth_date,gender,current_weight').eq('user_id', user.id).limit(1).maybeSingle()
         .then(({ data }) => {
           setBabyId(data?.id ?? null);
           setBabyName(data?.name ?? null);
           setBabyBirthDate(data?.birth_date ?? null);
           setBabyGender(data?.gender ?? null);
+          setBabyWeightLbs(data?.current_weight ?? null);
         });
     });
   }, []);
@@ -921,15 +938,33 @@ export default function Track() {
 
   // ── Modal open ────────────────────────────────────────────────────────────
 
+  function handleFeedTypeChange(value: string) {
+    setFeedType(value);
+    if (value === 'solids') {
+      Alert.alert(
+        'Track this food? 🥣',
+        'Want to also log what baby ate in the Baby Food Tracker?',
+        [
+          { text: 'No thanks', style: 'cancel' },
+          { text: "Yes, I'll add it", onPress: () => setOpenFoodTrackerAfterFeed(true) },
+        ],
+      );
+    } else {
+      setOpenFoodTrackerAfterFeed(false);
+    }
+  }
+
   function openModal(type: EntryType) {
     if (type === 'feed') {
       setFeedType('breast'); setFeedMood('calm'); setFeedPosition('cradle');
       setFeedPositionOther(''); setLatchQuality('good'); setSpitUp('none');
       setFeedBurps(0); setFeedNotes(''); setFeedCaregiver('mom');
       setFeedUseManual(false); setFeedManualMin('');
-      setBreastLeft(true); setBreastRight(false);
       setFeedAmount(''); setBottleSource('breastmilk');
+      setBottleMixBmOz(''); setBottleMixFmOz('');
+      leftBreastTimer.reset(); rightBreastTimer.reset(); setActiveBreastSide(null);
       feedTimer.reset();
+      setOpenFoodTrackerAfterFeed(false);
     } else if (type === 'diaper') {
       setDiaperType('wet'); setDiaperColor('yellow'); setDiaperConsist('seedy');
       setDiaperAmount('medium'); setDiaperRash('none'); setDiaperNotes('');
@@ -943,9 +978,11 @@ export default function Track() {
 
   function closeModal() {
     feedTimer.stop();
+    leftBreastTimer.stop(); rightBreastTimer.stop();
     pumpTimer.stop();
     setActiveModal(null);
     setEditingId(null);
+    setOpenFoodTrackerAfterFeed(false);
   }
 
   // ── Save handlers ─────────────────────────────────────────────────────────
@@ -953,31 +990,49 @@ export default function Track() {
   async function handleSaveFeed() {
     setSaving(true);
     try {
-      const durationSeconds = feedUseManual
-        ? (parseFloat(feedManualMin) || 0) * 60
-        : feedTimer.elapsed;
+      // Per-side breast timing
+      const leftSeconds  = leftBreastTimer.elapsed > 0 ? leftBreastTimer.elapsed : null;
+      const rightSeconds = rightBreastTimer.elapsed > 0 ? rightBreastTimer.elapsed : null;
+      const perSideTotal = (leftBreastTimer.elapsed + rightBreastTimer.elapsed);
+
+      const durationSeconds = feedType === 'breast' && perSideTotal > 0
+        ? perSideTotal
+        : feedUseManual
+          ? (parseFloat(feedManualMin) || 0) * 60
+          : feedTimer.elapsed;
 
       const resolvedPosition = feedPosition === 'other'
         ? (feedPositionOther.trim() || 'other')
         : feedPosition;
 
+      const breastLeft  = (leftBreastTimer.elapsed > 0 || activeBreastSide === 'left');
+      const breastRight = (rightBreastTimer.elapsed > 0 || activeBreastSide === 'right');
       const breastSide = feedType === 'breast'
         ? (breastLeft && breastRight ? 'both' : breastLeft ? 'left' : breastRight ? 'right' : null)
         : null;
 
-      const fields = {
-        feed_type:          feedType,
-        mood:               feedMood,
-        latch_quality:      feedType === 'breast' ? latchQuality : null,
-        position:           feedType === 'breast' ? resolvedPosition : null,
-        breast_side:        breastSide,
-        caregiver:          feedType !== 'breast' ? feedCaregiver : null,
-        spit_up:            spitUp,
-        burps:              feedBurps,
-        duration_seconds:   durationSeconds > 0 ? durationSeconds : null,
-        notes:              feedNotes.trim() || null,
-        bottle_source:      feedType === 'bottle' ? bottleSource : null,
-        bottle_amount_oz:   feedType === 'bottle' && feedAmount ? (parseFloat(feedAmount) || null) : null,
+      // Mixed bottle amounts
+      const bmOz = bottleSource === 'mixed' ? (parseFloat(bottleMixBmOz) || 0) : 0;
+      const fmOz = bottleSource === 'mixed' ? (parseFloat(bottleMixFmOz) || 0) : 0;
+      const singleOz = bottleSource !== 'mixed' ? (parseFloat(feedAmount) || 0) : 0;
+
+      const fields: Record<string, any> = {
+        feed_type:            feedType,
+        mood:                 feedMood,
+        latch_quality:        feedType === 'breast' ? latchQuality : null,
+        position:             feedType === 'breast' ? resolvedPosition : null,
+        breast_side:          breastSide,
+        left_breast_seconds:  feedType === 'breast' ? leftSeconds : null,
+        right_breast_seconds: feedType === 'breast' ? rightSeconds : null,
+        caregiver:            feedType !== 'breast' ? feedCaregiver : null,
+        spit_up:              spitUp,
+        burps:                feedBurps,
+        duration_seconds:     durationSeconds > 0 ? durationSeconds : null,
+        notes:                feedNotes.trim() || null,
+        bottle_source:        feedType === 'bottle' ? bottleSource : null,
+        bottle_amount_oz:     feedType === 'bottle' && bottleSource !== 'mixed' && singleOz > 0 ? singleOz : null,
+        breastmilk_oz:        feedType === 'bottle' && bottleSource === 'mixed' && bmOz > 0 ? bmOz : null,
+        formula_oz:           feedType === 'bottle' && bottleSource === 'mixed' && fmOz > 0 ? fmOz : null,
       };
 
       if (editingId) {
@@ -987,25 +1042,42 @@ export default function Track() {
         if (!baby_id) throw new Error('No baby profile found — add one in the Profile tab first.');
         await safeInsert('feeds', { ...fields, baby_id, logged_at: new Date().toISOString() });
         try {
-          if (feedType === 'bottle' && feedAmount && userId) {
-            const oz = parseFloat(feedAmount) || 0;
-            if (oz > 0) {
-              if (bottleSource === 'breastmilk') {
-                await deductFromSupply(userId, 'breastmilk', oz * 29.5735);
-              } else {
-                await deductFromSupply(userId, 'formula', oz);
+          if (feedType === 'bottle' && userId) {
+            if (bottleSource === 'mixed') {
+              if (bmOz > 0) await deductFromSupply(userId, 'breastmilk', bmOz * 29.5735);
+              if (fmOz > 0) await deductFromSupply(userId, 'formula', fmOz);
+            } else {
+              if (singleOz > 0) {
+                if (bottleSource === 'breastmilk') {
+                  await deductFromSupply(userId, 'breastmilk', singleOz * 29.5735);
+                } else {
+                  await deductFromSupply(userId, 'formula', singleOz);
+                }
               }
-              setSuppliesRefreshKey(k => k + 1);
             }
+            setSuppliesRefreshKey(k => k + 1);
           }
         } catch (supplyErr: any) {
           console.warn('[Feed] Supply update failed (feed still saved):', supplyErr?.message);
         }
+        // Schedule feed reminder
+        try {
+          const bid = baby_id;
+          if (bid && userId) {
+            const reminderCfg = await getFeedReminderSettings(userId, bid);
+            await scheduleNextFeedReminder(bid, babyName ?? 'Baby', new Date(), reminderCfg);
+          }
+        } catch {}
       }
 
       feedTimer.stop();
+      leftBreastTimer.stop(); rightBreastTimer.stop(); setActiveBreastSide(null);
       setActiveModal(null);
       setEditingId(null);
+      if (openFoodTrackerAfterFeed) {
+        setOpenFoodTrackerAfterFeed(false);
+        setFoodTrackerOpenKey(k => k + 1);
+      }
       setInsightsRefreshKey(k => k + 1);
       await fetchTimeline();
       if (!editingId && userId) {
@@ -1058,6 +1130,14 @@ export default function Track() {
         try {
           const r = await recordLog(userId);
           setCelebration({ streak: r.newStreak, milestone: r.milestone, usedFreeze: r.usedFreeze });
+        } catch {}
+        // Schedule diaper change reminder if enabled
+        try {
+          const bid = babyId ?? await getFirstBabyId();
+          if (bid) {
+            const reminderCfg = await getDiaperReminderSettings(userId, bid);
+            await scheduleNextDiaperReminder(bid, babyName ?? 'Baby', new Date(), reminderCfg);
+          }
         } catch {}
       }
     } catch (err: any) {
@@ -1227,13 +1307,14 @@ export default function Track() {
       setSpitUp(data.spit_up || 'none');
       setFeedBurps(data.burps || 0);
       setFeedNotes(data.notes || '');
-      setFeedCaregiver(data.caregiver || 'parent');
+      setFeedCaregiver(data.caregiver || 'mom');
       setFeedUseManual(true);
       setFeedManualMin(data.duration_seconds ? String(Math.round(data.duration_seconds / 60)) : '');
-      setBreastLeft(data.breast_side === 'left' || data.breast_side === 'both');
-      setBreastRight(data.breast_side === 'right' || data.breast_side === 'both');
       setFeedAmount(data.bottle_amount_oz != null ? String(data.bottle_amount_oz) : '');
+      setBottleMixBmOz(data.breastmilk_oz != null ? String(data.breastmilk_oz) : '');
+      setBottleMixFmOz(data.formula_oz != null ? String(data.formula_oz) : '');
       setBottleSource(data.bottle_source || 'breastmilk');
+      leftBreastTimer.reset(); rightBreastTimer.reset(); setActiveBreastSide(null);
       feedTimer.reset();
     } else if (entry.type === 'diaper') {
       setDiaperType(data.diaper_type || 'wet');
@@ -1434,18 +1515,20 @@ export default function Track() {
           contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
         >
           {(activeView === 'baby' ? [
-            { key: 'logging',    label: '📋 Logging' },
-            { key: 'insights',   label: '✨ Insights' },
-            { key: 'supplies',   label: '🧴 Supplies' },
-            { key: 'sleep',      label: '🌙 Sleep' },
-            { key: 'wake',       label: '⏱️ Wake Windows' },
-            { key: 'milestones', label: '⭐ Milestones' },
-            { key: 'vaccines',   label: '💉 Vaccines' },
-            { key: 'growth',     label: '📈 Growth' },
-            { key: 'allergens',  label: '🚨 Allergens' },
-            { key: 'foodchart',  label: '🍽️ Food Chart' },
-            { key: 'journal',    label: '📓 Journal' },
-            { key: 'timeline',   label: '🕐 Timeline' },
+            { key: 'logging',     label: '📋 Logging' },
+            { key: 'foodtracker', label: '🍽️ Food Tracker' },
+            { key: 'foodchart',   label: '📋 Food Guide' },
+            { key: 'insights',    label: '✨ Insights' },
+            { key: 'supplies',    label: '🧴 Supplies' },
+            { key: 'sleep',       label: '🌙 Sleep' },
+            { key: 'wake',        label: '⏱️ Wake Windows' },
+            { key: 'milestones',  label: '⭐ Milestones' },
+            { key: 'vaccines',    label: '💉 Vaccines' },
+            { key: 'growth',      label: '📈 Growth' },
+            { key: 'allergens',   label: '🚨 Allergens' },
+            { key: 'journal',     label: '📓 Journal' },
+            { key: 'meds',        label: '💊 Baby Meds' },
+            { key: 'timeline',    label: '🕐 Timeline' },
           ] : [
             { key: 'nutrition',   label: '💧 Nutrition' },
             { key: 'mental',      label: '🧠 Mental Health' },
@@ -1489,6 +1572,17 @@ export default function Track() {
           ))}
         </View>
 
+        {/* ── Feed reminder & last feed summary */}
+        <FeedReminderCard
+          userId={userId}
+          babyId={babyId}
+          babyName={babyName}
+          onLastFeedLoaded={setLastFeedLog}
+        />
+
+        {/* ── Diaper reminder & color guide */}
+        <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} />
+
         {/* ── Charts */}
         <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
           <PatchyPeek cards={patchyCards} dir="top" offsetY={-16} />
@@ -1497,6 +1591,27 @@ export default function Track() {
             <DiaperChartCard babyId={babyId} />
             <PumpingChartCard key={pumpChartKey} userId={userId} />
           </PaywallGate>
+        </View>
+
+        {/* ── Baby Food Tracker */}
+        <View ref={ref => { sectionRefs.current['foodtracker'] = ref; }} onLayout={e => { sectionY.current['foodtracker'] = e.nativeEvent.layout.y; }}>
+          <BabyFoodTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} autoOpenKey={foodTrackerOpenKey} />
+        </View>
+
+        {/* ── Baby Food Chart (reference guide) */}
+        <View
+          ref={ref => { sectionRefs.current['foodchart'] = ref; }}
+          onLayout={e => { sectionY.current['foodchart'] = e.nativeEvent.layout.y; }}
+        >
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
+            activeOpacity={0.8}
+            onPress={() => setShowFoodChart(true)}
+          >
+            <Text style={styles.buttonEmoji}>🍽️</Text>
+            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Guide</Text>
+            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Insights */}
@@ -1559,28 +1674,26 @@ export default function Track() {
           <AllergenTracker />
         </View>
 
-        {/* ── Baby Food Chart */}
-        <View
-          ref={ref => { sectionRefs.current['foodchart'] = ref; }}
-          onLayout={e => { sectionY.current['foodchart'] = e.nativeEvent.layout.y; }}
-          style={{ marginBottom: 36 }}
-        >
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
-            activeOpacity={0.8}
-            onPress={() => setShowFoodChart(true)}
-          >
-            <Text style={styles.buttonEmoji}>🍽️</Text>
-            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Chart</Text>
-            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* ── Baby Journal */}
         <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
           <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
             <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
           </PaywallGate>
+        </View>
+
+        {/* ── Baby Medications */}
+        <View
+          ref={ref => { sectionRefs.current['meds'] = ref; }}
+          onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
+        >
+          <MedTracker
+            type="baby"
+            userId={userId}
+            babyId={babyId}
+            babyName={babyName}
+            babyWeightLbs={babyWeightLbs}
+            userName={userName}
+          />
         </View>
 
         {/* ── Timeline */}
@@ -1677,7 +1790,13 @@ export default function Track() {
           onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
         >
           <PaywallGate feature="meds_tracker" isTracker title="Meds & Supplements" description="Log medications, vitamins, and supplements with dosage reminders." emoji="💊">
-            <MedTracker userId={userId} />
+            <MedTracker
+              type="parent"
+              userId={userId}
+              babyId={babyId}
+              babyName={babyName}
+              userName={userName}
+            />
           </PaywallGate>
         </View>
 
@@ -1771,41 +1890,104 @@ export default function Track() {
       <ModalSheet visible={activeModal === 'feed'} onClose={closeModal}
         title={editingId ? '🍼 Edit Feed' : '🍼 Log Feed'} accent={c.trackFeed} onSave={handleSaveFeed} saving={saving}>
 
+        {/* Same as last time */}
+        {!editingId && lastFeedLog && (
+          <TouchableOpacity
+            style={[pf.chip, { alignSelf: 'flex-start', marginBottom: 12, backgroundColor: c.cardLavender, borderColor: c.lavender }]}
+            onPress={() => {
+              setFeedType(lastFeedLog.feed_type ?? 'breast');
+              setFeedMood(lastFeedLog.mood ?? 'calm');
+              setLatchQuality(lastFeedLog.latch_quality ?? 'good');
+              setFeedPosition(lastFeedLog.position ?? 'cradle');
+              setSpitUp(lastFeedLog.spit_up ?? 'none');
+              setFeedBurps(lastFeedLog.burps ?? 0);
+              setFeedCaregiver(lastFeedLog.caregiver ?? 'mom');
+              setBottleSource(lastFeedLog.bottle_source ?? 'breastmilk');
+              if (lastFeedLog.feed_type === 'bottle' && lastFeedLog.bottle_amount_oz) {
+                setFeedAmount(String(lastFeedLog.bottle_amount_oz));
+              }
+              if (lastFeedLog.bottle_source === 'mixed') {
+                setBottleMixBmOz(lastFeedLog.breastmilk_oz ? String(lastFeedLog.breastmilk_oz) : '');
+                setBottleMixFmOz(lastFeedLog.formula_oz ? String(lastFeedLog.formula_oz) : '');
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[pf.chipText, { color: c.lavender, fontWeight: '700' }]}>↩ Same as last time</Text>
+          </TouchableOpacity>
+        )}
+
         <PickerField label="Feed type" options={FEED_TYPE}
-          value={feedType} onChange={setFeedType} accent={c.trackFeed} />
+          value={feedType} onChange={handleFeedTypeChange} accent={c.trackFeed} />
 
         {feedType === 'breast' && (
           <>
-            {/* Which breast */}
-            <Text style={pf.label}>Which breast?</Text>
+            {/* Per-side breast timers */}
+            <Text style={pf.label}>Nursing timer — tap a side to start/stop</Text>
             <View style={styles.breastToggleRow}>
+              {/* Left */}
               <TouchableOpacity
-                style={[styles.breastToggleBtn, breastLeft && styles.breastToggleActive]}
-                onPress={() => setBreastLeft(v => !v)}
+                style={[styles.breastToggleBtn, leftBreastTimer.elapsed > 0 && styles.breastToggleActive,
+                  activeBreastSide === 'left' && { borderColor: c.trackFeed, backgroundColor: c.cardLavender }]}
+                onPress={() => {
+                  if (activeBreastSide === 'left') {
+                    leftBreastTimer.pause();
+                    setActiveBreastSide(null);
+                  } else {
+                    if (activeBreastSide === 'right') rightBreastTimer.pause();
+                    leftBreastTimer.running ? leftBreastTimer.resume() : leftBreastTimer.start();
+                    setActiveBreastSide('left');
+                  }
+                }}
                 activeOpacity={0.75}
               >
                 <Text style={styles.breastToggleEmoji}>🤱</Text>
-                <Text style={[styles.breastToggleLabel, breastLeft && styles.breastToggleLabelActive]}>
+                <Text style={[styles.breastToggleLabel, (leftBreastTimer.elapsed > 0) && styles.breastToggleLabelActive]}>
                   Left
                 </Text>
-                {breastLeft && <Text style={styles.breastToggleCheck}>✓</Text>}
+                <Text style={[styles.breastToggleCheck, { color: c.trackFeed, fontSize: 13 }]}>
+                  {activeBreastSide === 'left' ? '⏸' : leftBreastTimer.elapsed > 0 ? '⏹' : '▶'}
+                  {' '}{Math.floor(leftBreastTimer.elapsed / 60)}:{String(leftBreastTimer.elapsed % 60).padStart(2, '0')}
+                </Text>
               </TouchableOpacity>
+              {/* Right */}
               <TouchableOpacity
-                style={[styles.breastToggleBtn, breastRight && styles.breastToggleActive]}
-                onPress={() => setBreastRight(v => !v)}
+                style={[styles.breastToggleBtn, rightBreastTimer.elapsed > 0 && styles.breastToggleActive,
+                  activeBreastSide === 'right' && { borderColor: c.trackFeed, backgroundColor: c.cardLavender }]}
+                onPress={() => {
+                  if (activeBreastSide === 'right') {
+                    rightBreastTimer.pause();
+                    setActiveBreastSide(null);
+                  } else {
+                    if (activeBreastSide === 'left') leftBreastTimer.pause();
+                    rightBreastTimer.running ? rightBreastTimer.resume() : rightBreastTimer.start();
+                    setActiveBreastSide('right');
+                  }
+                }}
                 activeOpacity={0.75}
               >
                 <Text style={styles.breastToggleEmoji}>🤱</Text>
-                <Text style={[styles.breastToggleLabel, breastRight && styles.breastToggleLabelActive]}>
+                <Text style={[styles.breastToggleLabel, (rightBreastTimer.elapsed > 0) && styles.breastToggleLabelActive]}>
                   Right
                 </Text>
-                {breastRight && <Text style={styles.breastToggleCheck}>✓</Text>}
+                <Text style={[styles.breastToggleCheck, { color: c.trackFeed, fontSize: 13 }]}>
+                  {activeBreastSide === 'right' ? '⏸' : rightBreastTimer.elapsed > 0 ? '⏹' : '▶'}
+                  {' '}{Math.floor(rightBreastTimer.elapsed / 60)}:{String(rightBreastTimer.elapsed % 60).padStart(2, '0')}
+                </Text>
               </TouchableOpacity>
             </View>
+            {(leftBreastTimer.elapsed > 0 || rightBreastTimer.elapsed > 0) && (
+              <Text style={{ fontSize: 12, color: c.textMuted, marginBottom: 12, marginTop: -4 }}>
+                Total: {Math.round((leftBreastTimer.elapsed + rightBreastTimer.elapsed) / 60)}m
+              </Text>
+            )}
 
-            <TimerWidget timer={feedTimer} accent={c.trackFeed}
-              useManual={feedUseManual} onToggleManual={() => setFeedUseManual(v => !v)}
-              manualValue={feedManualMin} onManualChange={setFeedManualMin} />
+            {/* Manual entry fallback */}
+            {leftBreastTimer.elapsed === 0 && rightBreastTimer.elapsed === 0 && (
+              <TimerWidget timer={feedTimer} accent={c.trackFeed}
+                useManual={feedUseManual} onToggleManual={() => setFeedUseManual(v => !v)}
+                manualValue={feedManualMin} onManualChange={setFeedManualMin} />
+            )}
             <PickerField label="Position" options={FEED_POSITION}
               value={feedPosition} onChange={setFeedPosition} accent={c.trackFeed} />
             {feedPosition === 'other' && (
@@ -1837,18 +2019,50 @@ export default function Track() {
                   onPress={() => setBottleSource('formula')} activeOpacity={0.75}>
                   <Text style={[pf.chipText, bottleSource === 'formula' && pf.chipSel]}>🍶 Formula</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[pf.chip, bottleSource === 'mixed' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
+                  onPress={() => setBottleSource('mixed')} activeOpacity={0.75}>
+                  <Text style={[pf.chipText, bottleSource === 'mixed' && pf.chipSel]}>🤱🍶 Mixed</Text>
+                </TouchableOpacity>
               </View>
             </View>
-            <View style={{ marginBottom: 20 }}>
-              <Text style={pf.label}>Amount (oz)</Text>
-              <View style={styles.breastRow}>
-                <View style={[styles.breastField, { flex: 1 }]}>
-                  <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                    value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad" />
-                  <Text style={styles.breastUnit}>oz</Text>
+
+            {bottleSource !== 'mixed' ? (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={pf.label}>Amount (oz)</Text>
+                <View style={styles.breastRow}>
+                  <View style={[styles.breastField, { flex: 1 }]}>
+                    <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
+                      value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad" />
+                    <Text style={styles.breastUnit}>oz</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            ) : (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={pf.label}>How much of each? (oz)</Text>
+                <View style={styles.breastRow}>
+                  <View style={styles.breastField}>
+                    <Text style={styles.breastSideLabel}>Breastmilk 🤱</Text>
+                    <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
+                      value={bottleMixBmOz} onChangeText={setBottleMixBmOz} keyboardType="decimal-pad" />
+                    <Text style={styles.breastUnit}>oz</Text>
+                  </View>
+                  <View style={styles.breastDivider} />
+                  <View style={styles.breastField}>
+                    <Text style={styles.breastSideLabel}>Formula 🍶</Text>
+                    <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
+                      value={bottleMixFmOz} onChangeText={setBottleMixFmOz} keyboardType="decimal-pad" />
+                    <Text style={styles.breastUnit}>oz</Text>
+                  </View>
+                </View>
+                {((parseFloat(bottleMixBmOz) || 0) + (parseFloat(bottleMixFmOz) || 0)) > 0 && (
+                  <Text style={styles.totalPreview}>
+                    Total: {((parseFloat(bottleMixBmOz) || 0) + (parseFloat(bottleMixFmOz) || 0)).toFixed(1)} oz
+                  </Text>
+                )}
+              </View>
+            )}
           </>
         )}
 
@@ -1945,7 +2159,7 @@ export default function Track() {
 
       {/* ══════════ BABY FOOD CHART MODAL ══════════ */}
       <Modal visible={showFoodChart} animationType="slide" onRequestClose={() => setShowFoodChart(false)}>
-        <BabyFoodChart onBack={() => setShowFoodChart(false)} />
+        <BabyFoodChart onBack={() => setShowFoodChart(false)} babyId={babyId} />
       </Modal>
 
       {/* ══════════ CALENDAR PICKER ══════════ */}
@@ -2177,8 +2391,7 @@ function makeStyles(c: Colors) {
     breastToggleEmoji:     { fontSize: 28, marginBottom: 6 },
     breastToggleLabel:     { fontSize: 16, fontWeight: '700', color: c.textMuted },
     breastToggleLabelActive:{ color: c.lavender },
-    breastToggleCheck:     { position: 'absolute', top: 8, right: 10, fontSize: 14,
-                             fontWeight: '800', color: c.lavender },
+    breastToggleCheck:     { fontSize: 13, fontWeight: '700', color: c.lavender, marginTop: 6 },
 
     breastRow:       { flexDirection: 'row', backgroundColor: c.card, borderWidth: 1.5,
                        borderColor: c.inputBorder, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },

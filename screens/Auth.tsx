@@ -19,6 +19,7 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [firstName, setFirstName] = useState('')
   const [dobMonth, setDobMonth] = useState('')
   const [dobDay, setDobDay] = useState('')
   const [dobYear, setDobYear] = useState('')
@@ -33,6 +34,10 @@ export default function Auth() {
     }
 
     if (isSignUp) {
+      if (!firstName.trim()) {
+        Alert.alert('Error', 'Please enter your first name.');
+        return;
+      }
       const month = parseInt(dobMonth, 10);
       const day = parseInt(dobDay, 10);
       const year = parseInt(dobYear, 10);
@@ -48,7 +53,7 @@ export default function Auth() {
         age--;
       }
       if (age < 18) {
-        Alert.alert('Age Requirement', 'Parent Patch is designed for parents 18 and older. You must be at least 18 to create an account.');
+        Alert.alert('Age Requirement', 'Sorry — you must be 18 or older to use Parent Patch.');
         return;
       }
     }
@@ -56,8 +61,15 @@ export default function Auth() {
     setLoading(true)
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
+        if (data.user) {
+          await supabase.from('profiles').upsert({
+            id: data.user.id,
+            display_name: firstName.trim(),
+            first_name: firstName.trim(),
+          } as any, { onConflict: 'id' }).catch((e: any) => console.warn('Profile name save failed:', e.message));
+        }
         Alert.alert(
           'Check your email',
           'We sent you a confirmation link. Please verify your email before signing in.'
@@ -93,6 +105,22 @@ export default function Auth() {
           <Text style={styles.subtitle}>
             {isSignUp ? 'Join Parent Patch today' : 'Sign in to continue'}
           </Text>
+
+          {isSignUp && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                placeholderTextColor={c.textMuted}
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+                autoCorrect={false}
+                autoComplete="given-name"
+              />
+            </View>
+          )}
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
@@ -176,7 +204,7 @@ export default function Auth() {
 
           <TouchableOpacity
             style={styles.switchButton}
-            onPress={() => setIsSignUp(!isSignUp)}
+            onPress={() => { setIsSignUp(v => !v); setFirstName(''); }}
             activeOpacity={0.7}
           >
             <Text style={styles.switchText}>

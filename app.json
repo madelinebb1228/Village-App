@@ -18,7 +18,13 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-video"
+      "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Village uses your camera to scan baby food barcodes."
+        }
+      ]
     ]
   }
 }

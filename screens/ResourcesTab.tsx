@@ -216,7 +216,7 @@ const styles = (c: Colors) =>
       fontWeight: '500',
       marginBottom: 24,
     },
-    cards: { gap: 12 },
+    cards: { gap: 12, overflow: 'visible' },
     card: {
       borderRadius: 16,
       borderWidth: 2,

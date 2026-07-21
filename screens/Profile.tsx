@@ -759,7 +759,7 @@ export default function Profile() {
         {/* ── Baby card ── */}
         <Text style={s.sectionTitle}>Baby Profile</Text>
         <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
-          <PatchyPeek cards={patchyCards} dir="top" offsetX={-1000} offsetY={-15} />
+          <PatchyPeek cards={patchyCards} dir="top" offsetY={-15} />
         {baby ? (
           <TouchableOpacity
             style={[

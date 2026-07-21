@@ -87,6 +87,7 @@ export default function HomeTab() {
   const [commentText, setCommentText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [reportPostId, setReportPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -201,6 +202,9 @@ export default function HomeTab() {
         fetchMutedUsers(user.id);
         fetchPrivateFilter(user.id);
         fetchWordFilter(user.id);
+        supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
+          .then(({ data }) => { if ((data as any)?.display_name) setDisplayName((data as any).display_name); })
+          .catch(() => {});
       }
     }).catch(() => {});
   }, []);
@@ -1305,7 +1309,7 @@ export default function HomeTab() {
     return result;
   })();
 
-  const greeting = greetingFor(new Date().getHours());
+  const greeting = greetingFor(new Date().getHours(), displayName ?? undefined);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -2834,6 +2838,7 @@ function makeStyles(c: Colors) {
       flexDirection: 'row',
       gap: 12,
       marginBottom: 36,
+      overflow: 'visible',
     },
     statCard: {
       flex: 1,

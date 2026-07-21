@@ -228,9 +228,25 @@ export default function App() {
     Promise.all([
       supabase.auth.getSession(),
       AsyncStorage.getItem('onboarding_complete'),
-    ]).then(([{ data: { session } }, flag]) => {
+    ]).then(async ([{ data: { session } }, flag]) => {
       setSession(session);
-      setOnboardingDone(flag === 'true');
+      if (flag === 'true') {
+        setOnboardingDone(true);
+      } else if (session?.user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('onboarding_complete')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (data?.onboarding_complete) {
+          await AsyncStorage.setItem('onboarding_complete', 'true');
+          setOnboardingDone(true);
+        } else {
+          setOnboardingDone(false);
+        }
+      } else {
+        setOnboardingDone(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
