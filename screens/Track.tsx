@@ -15,7 +15,6 @@ import VaccineTracker from './VaccineTracker';
 import GrowthTracker from './GrowthTracker';
 import AllergenTracker from './AllergenTracker';
 import SleepTracker from './SleepTracker';
-import WakeWindowTracker from './WakeWindowTracker';
 import BabyJournal from './BabyJournal';
 import BabyFoodChart from './BabyFoodChart';
 import NutritionTracker from './NutritionTracker';
@@ -26,6 +25,7 @@ import MedTracker from './MedTracker';
 import DiaperReminderCard from '../components/DiaperReminderCard';
 import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/diaperNotifications';
 import FeedReminderCard from '../components/FeedReminderCard';
+import NursingReminderCard from '../components/NursingReminderCard';
 import { getFeedReminderSettings, scheduleNextFeedReminder } from '../lib/feedNotifications';
 import BabyFoodTracker from './BabyFoodTracker';
 import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
@@ -133,6 +133,13 @@ const PUMP_STORAGE: PickerOption[] = [
   { value: 'freezer',          label: 'Freezer ❄️'  },
   { value: 'used_immediately', label: 'Used Now 🍼' },
 ];
+const POWER_PUMP_PROTOCOLS: Record<string, { label: string; desc: string; phases: { action: 'pump' | 'rest'; minutes: number }[]; loops?: boolean }> = {
+  classic:  { label: 'Classic',         desc: '20 on · 10 off · 10 on · 10 off · 10 on',  phases: [{ action: 'pump', minutes: 20 }, { action: 'rest', minutes: 10 }, { action: 'pump', minutes: 10 }, { action: 'rest', minutes: 10 }, { action: 'pump', minutes: 10 }] },
+  extended: { label: 'Extended 30-30-30', desc: '30 on · 30 off · 30 on',                  phases: [{ action: 'pump', minutes: 30 }, { action: 'rest', minutes: 30 }, { action: 'pump', minutes: 30 }] },
+  mini:     { label: 'Mini (30 min)',    desc: '10 on · 5 off · 5 on · 5 off · 5 on',      phases: [{ action: 'pump', minutes: 10 }, { action: 'rest', minutes: 5  }, { action: 'pump', minutes: 5  }, { action: 'rest', minutes: 5  }, { action: 'pump', minutes: 5  }] },
+  burst:    { label: 'Hourly Burst',     desc: '5 min pump · 55 min rest · loops',          phases: [{ action: 'pump', minutes: 5  }, { action: 'rest', minutes: 55 }], loops: true },
+};
+
 const MILK_COLORS: ColorOption[] = [
   { value: 'white',  color: '#F0EDE8', label: 'White'  },
   { value: 'yellow', color: '#F5D76E', label: 'Yellow' },
@@ -770,9 +777,15 @@ export default function Track() {
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
   const { cards: patchyCards, onSelfLayout: patchySelf } = usePatchyCards();
-  const scrollRef    = useRef<ScrollView>(null);
-  const sectionY     = useRef<Record<string, number>>({});
-  const sectionRefs  = useRef<Record<string, View | null>>({});
+  const scrollRef       = useRef<ScrollView>(null);
+  const quickNavRef      = useRef<ScrollView>(null);
+  const quickNavWrapRef  = useRef<View>(null);
+  const quickNavScrollX  = useRef(0);
+  const quickNavContentW = useRef(0);
+  const quickNavLayoutW  = useRef(0);
+  const [quickNavArrows, setQuickNavArrows] = useState({ left: false, right: true });
+  const sectionY        = useRef<Record<string, number>>({});
+  const sectionRefs     = useRef<Record<string, View | null>>({});
 
   const scrollToSection = useCallback((key: string) => {
     const view = sectionRefs.current[key];
@@ -857,7 +870,63 @@ export default function Track() {
   const [pumpUseManual,    setPumpUseManual]   = useState(false);
   const [pumpManualMin,    setPumpManualMin]   = useState('');
   const [letdownAchieved, setLetdownAchieved] = useState(true);
+  const [pumpUnit,        setPumpUnit]        = useState<'ml' | 'oz'>('ml');
+  const [pumpNotes,       setPumpNotes]       = useState('');
+  const [lastPumpSession, setLastPumpSession] = useState<{ left_breast: number; right_breast: number; total_ml: number; logged_at: string } | null>(null);
+  const [powerPumpMode,   setPowerPumpMode]   = useState(false);
+  const [powerPumpProto,  setPowerPumpProto]  = useState('classic');
+  const [ppPhaseIdx,      setPpPhaseIdx]      = useState(0);
+  const [ppSecondsLeft,   setPpSecondsLeft]   = useState(0);
+  const [ppRunning,       setPpRunning]       = useState(false);
+  const [ppDone,          setPpDone]          = useState(false);
+  const ppIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pumpTimer = useTimer();
+
+  useEffect(() => {
+    // On RN Web, a View ref resolves to the actual DOM element
+    const wrap = quickNavWrapRef.current as any;
+    if (!wrap?.addEventListener) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
+      const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
+      quickNavScrollX.current = Math.min(maxX, Math.max(0, quickNavScrollX.current + delta));
+      quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: false });
+      setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
+    };
+    wrap.addEventListener('wheel', onWheel, { passive: false });
+    return () => wrap.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Power pump countdown
+  useEffect(() => {
+    if (!ppRunning || ppDone) {
+      if (ppIntervalRef.current) { clearInterval(ppIntervalRef.current); ppIntervalRef.current = null; }
+      return;
+    }
+    const protocol = POWER_PUMP_PROTOCOLS[powerPumpProto];
+    ppIntervalRef.current = setInterval(() => {
+      setPpSecondsLeft(prev => {
+        if (prev > 1) return prev - 1;
+        setPpPhaseIdx(idx => {
+          const nextIdx = idx + 1;
+          if (nextIdx >= protocol.phases.length) {
+            if (protocol.loops) {
+              setTimeout(() => setPpSecondsLeft(protocol.phases[0].minutes * 60), 0);
+              return 0;
+            }
+            setPpRunning(false);
+            setPpDone(true);
+            return idx;
+          }
+          setTimeout(() => setPpSecondsLeft(protocol.phases[nextIdx].minutes * 60), 0);
+          return nextIdx;
+        });
+        return 0;
+      });
+    }, 1000);
+    return () => { if (ppIntervalRef.current) { clearInterval(ppIntervalRef.current); ppIntervalRef.current = null; } };
+  }, [ppRunning, ppDone, powerPumpProto]);
 
   // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -972,6 +1041,14 @@ export default function Track() {
       setLeftBreast(''); setRightBreast(''); setSuctionLevel(5);
       setHowFeel('comfortable'); setStorageLocation('fridge'); setMilkColor('white');
       setPumpUseManual(false); setPumpManualMin(''); setLetdownAchieved(true); pumpTimer.reset();
+      setPumpNotes(''); setPowerPumpMode(false); setPowerPumpProto('classic');
+      setPpPhaseIdx(0); setPpSecondsLeft(0); setPpRunning(false); setPpDone(false);
+      // Fetch last session for context strip
+      if (userId) {
+        supabase.from('pumping_sessions').select('left_breast,right_breast,total_ml,logged_at')
+          .eq('user_id', userId).order('logged_at', { ascending: false }).limit(1).maybeSingle()
+          .then(({ data }) => setLastPumpSession(data ?? null));
+      }
     }
     setActiveModal(type);
   }
@@ -1153,8 +1230,9 @@ export default function Track() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not signed in.');
 
-      const left     = parseFloat(leftBreast)  || 0;
-      const right    = parseFloat(rightBreast) || 0;
+      const toMl = (v: string) => pumpUnit === 'oz' ? (parseFloat(v) || 0) * 29.5735 : (parseFloat(v) || 0);
+      const left     = toMl(leftBreast);
+      const right    = toMl(rightBreast);
       const total_ml = left + right;
       if (total_ml === 0) throw new Error('Enter at least one breast amount.');
 
@@ -1172,6 +1250,7 @@ export default function Track() {
         milk_color:       milkColor,
         letdown_achieved: letdownAchieved,
         duration_minutes: durationMinutes > 0 ? durationMinutes : null,
+        ...(pumpNotes.trim() ? { notes: pumpNotes.trim() } : {}),
       };
 
       if (editingId) {
@@ -1508,50 +1587,109 @@ export default function Track() {
         </View>
 
         {/* ── Quick nav */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 20, marginHorizontal: -4 }}
-          contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
-        >
-          {(activeView === 'baby' ? [
-            { key: 'logging',     label: '📋 Logging' },
-            { key: 'foodtracker', label: '🍽️ Food Tracker' },
-            { key: 'foodchart',   label: '📋 Food Guide' },
-            { key: 'insights',    label: '✨ Insights' },
-            { key: 'supplies',    label: '🧴 Supplies' },
-            { key: 'sleep',       label: '🌙 Sleep' },
-            { key: 'wake',        label: '⏱️ Wake Windows' },
-            { key: 'milestones',  label: '⭐ Milestones' },
-            { key: 'vaccines',    label: '💉 Vaccines' },
-            { key: 'growth',      label: '📈 Growth' },
-            { key: 'allergens',   label: '🚨 Allergens' },
-            { key: 'journal',     label: '📓 Journal' },
-            { key: 'meds',        label: '💊 Baby Meds' },
-            { key: 'timeline',    label: '🕐 Timeline' },
-          ] : [
-            { key: 'nutrition',   label: '💧 Nutrition' },
-            { key: 'mental',      label: '🧠 Mental Health' },
-            { key: 'mood',        label: '🌈 Mood & Energy' },
-            { key: 'momSleep',    label: '🌙 Your Sleep' },
-            { key: 'meds',        label: '💊 Meds' },
-            { key: 'recovery',    label: '🌸 Recovery' },
-            { key: 'period',      label: '🩸 Period' },
-            { key: 'movement',    label: '🏃 Movement' },
-          ]).map(sec => (
-            <TouchableOpacity
-              key={sec.key}
-              onPress={() => scrollToSection(sec.key)}
-              style={{
-                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+          <TouchableOpacity
+            onPress={() => {
+              const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
+              quickNavScrollX.current = Math.max(0, quickNavScrollX.current - 200);
+              quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: true });
+              setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
+            }}
+            activeOpacity={0.7}
+            style={[styles.quickNavArrow, { opacity: quickNavArrows.left ? 1 : 0.25 }]}
+            disabled={!quickNavArrows.left}
+          >
+            <Text style={styles.quickNavArrowText}>‹</Text>
+          </TouchableOpacity>
+
+          <View ref={quickNavWrapRef} style={{ flex: 1, overflow: 'hidden' }}>
+            <ScrollView
+              ref={quickNavRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              onScroll={e => {
+                const x = e.nativeEvent.contentOffset.x;
+                quickNavScrollX.current = x;
+                const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
+                setQuickNavArrows({ left: x > 4, right: x < maxX - 4 });
               }}
-              activeOpacity={0.75}
+              onContentSizeChange={(w) => {
+                quickNavContentW.current = w;
+                const maxX = Math.max(0, w - quickNavLayoutW.current);
+                setQuickNavArrows(a => ({ ...a, right: quickNavScrollX.current < maxX - 4 }));
+              }}
+              onLayout={e => {
+                quickNavLayoutW.current = e.nativeEvent.layout.width;
+                const maxX = Math.max(0, quickNavContentW.current - e.nativeEvent.layout.width);
+                setQuickNavArrows(a => ({ ...a, right: quickNavScrollX.current < maxX - 4 }));
+              }}
+              scrollEventThrottle={16}
+              style={{ marginHorizontal: -4 }}
+              contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
             >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }}>{sec.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              {(activeView === 'baby' ? [
+                { key: 'logging',     label: '📋 Logging' },
+                { key: 'foodtracker', label: '🍽️ Food Tracker' },
+                { key: 'foodchart',   label: '📋 Food Guide' },
+                { key: 'insights',    label: '✨ Insights' },
+                { key: 'supplies',    label: '🧴 Supplies' },
+                { key: 'sleep',       label: '🌙 Sleep' },
+                { key: 'milestones',  label: '⭐ Milestones' },
+                { key: 'vaccines',    label: '💉 Vaccines' },
+                { key: 'meds',        label: '💊 Baby Meds' },
+                { key: 'growth',      label: '📈 Growth' },
+                { key: 'allergens',   label: '🚨 Allergens' },
+                { key: 'journal',     label: '📓 Journal' },
+                { key: 'timeline',    label: '🕐 Timeline' },
+              ] : [
+                { key: 'nutrition',   label: '💧 Nutrition' },
+                { key: 'mental',      label: '🧠 Mental Health' },
+                { key: 'mood',        label: '🌈 Mood & Energy' },
+                { key: 'momSleep',    label: '🌙 Your Sleep' },
+                { key: 'meds',        label: '💊 Meds' },
+                { key: 'recovery',    label: '🌸 Recovery' },
+                { key: 'period',      label: '🩸 Period' },
+                { key: 'movement',    label: '🏃 Movement' },
+              ]).map((sec, i) => {
+                const palette = [
+                  { bg: c.cardHoney,    border: c.honey,    text: c.honey    },
+                  { bg: c.cardBlush,    border: c.blush,    text: c.blush    },
+                  { bg: c.cardBlue,     border: c.blue,     text: c.blue     },
+                  { bg: c.cardSage,     border: c.sage,     text: c.sage     },
+                  { bg: c.cardLavender, border: c.lavender, text: c.lavender },
+                ];
+                const col = palette[i % palette.length];
+                return (
+                  <TouchableOpacity
+                    key={sec.key}
+                    onPress={() => scrollToSection(sec.key)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: col.bg, borderWidth: 1.5, borderColor: col.border,
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: col.text }}>{sec.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
+              quickNavScrollX.current = Math.min(maxX, quickNavScrollX.current + 200);
+              quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: true });
+              setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
+            }}
+            activeOpacity={0.7}
+            style={[styles.quickNavArrow, { opacity: quickNavArrows.right ? 1 : 0.25 }]}
+            disabled={!quickNavArrows.right}
+          >
+            <Text style={styles.quickNavArrowText}>›</Text>
+          </TouchableOpacity>
+        </View>
 
         {activeView === 'baby' ? (<>
 
@@ -1579,13 +1717,14 @@ export default function Track() {
           babyName={babyName}
           onLastFeedLoaded={setLastFeedLog}
         />
+        <NursingReminderCard userId={userId} babyId={babyId} babyName={babyName} />
 
         {/* ── Diaper reminder & color guide */}
         <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} />
 
         {/* ── Charts */}
         <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
-          <PatchyPeek cards={patchyCards} dir="top" offsetY={-16} />
+          <PatchyPeek cards={patchyCards} dir="top" offsetY={-16} offsetX={-300} />
           <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
             <FeedChartCard babyId={babyId} />
             <DiaperChartCard babyId={babyId} />
@@ -1627,7 +1766,7 @@ export default function Track() {
         {/* ── Supplies */}
         <View ref={ref => { sectionRefs.current['supplies'] = ref; }} onLayout={e => { sectionY.current['supplies'] = e.nativeEvent.layout.y; }}>
           <PaywallGate feature="supplies" title="Smart Supplies" description="Track formula, diapers, and milk stash with low-stock alerts and usage insights." emoji="🧴">
-            <SuppliesSection userId={userId} refreshKey={suppliesRefreshKey} />
+            <SuppliesSection userId={userId} babyId={babyId} refreshKey={suppliesRefreshKey} />
           </PaywallGate>
         </View>
 
@@ -1638,46 +1777,16 @@ export default function Track() {
           </PaywallGate>
         </View>
 
-        {/* ── Wake Windows */}
-        <View ref={ref => { sectionRefs.current['wake'] = ref; }} onLayout={e => { sectionY.current['wake'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="wake_windows" isTracker title="Wake Windows" description="Age-based wake window guidance to help your baby sleep better." emoji="⏱️">
-            <WakeWindowTracker babyBirthDate={babyBirthDate} />
-          </PaywallGate>
-        </View>
 
         {/* ── Development Tracker */}
         <View ref={ref => { sectionRefs.current['milestones'] = ref; }} onLayout={e => { sectionY.current['milestones'] = e.nativeEvent.layout.y; }}>
-          <MilestoneTracker userId={userId} />
+          <MilestoneTracker userId={userId} babyBirthDate={babyBirthDate} />
         </View>
 
         {/* ── Vaccines & Appointments */}
         <View ref={ref => { sectionRefs.current['vaccines'] = ref; }} onLayout={e => { sectionY.current['vaccines'] = e.nativeEvent.layout.y; }}>
           <PaywallGate feature="vaccines" isTracker title="Vaccines & Appointments" description="Track your baby's vaccine schedule and upcoming appointments." emoji="💉">
             <VaccineTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Growth Tracker */}
-        <View ref={ref => { sectionRefs.current['growth'] = ref; }} onLayout={e => { sectionY.current['growth'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
-            <GrowthTracker
-              userId={userId}
-              babyId={babyId}
-              babyBirthDate={babyBirthDate}
-              babyGender={babyGender}
-            />
-          </PaywallGate>
-        </View>
-
-        {/* ── Allergen Tracker */}
-        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
-          <AllergenTracker />
-        </View>
-
-        {/* ── Baby Journal */}
-        <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
-            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
           </PaywallGate>
         </View>
 
@@ -1694,6 +1803,30 @@ export default function Track() {
             babyWeightLbs={babyWeightLbs}
             userName={userName}
           />
+        </View>
+
+        {/* ── Growth Tracker */}
+        <View ref={ref => { sectionRefs.current['growth'] = ref; }} onLayout={e => { sectionY.current['growth'] = e.nativeEvent.layout.y; }}>
+          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
+            <GrowthTracker
+              userId={userId}
+              babyId={babyId}
+              babyBirthDate={babyBirthDate}
+              babyGender={babyGender}
+            />
+          </PaywallGate>
+        </View>
+
+        {/* ── Allergen Tracker */}
+        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
+          <AllergenTracker userId={userId} babyId={babyId} babyBirthDate={babyBirthDate} />
+        </View>
+
+        {/* ── Baby Journal */}
+        <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
+          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
+            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
+          </PaywallGate>
         </View>
 
         {/* ── Timeline */}
@@ -2106,28 +2239,159 @@ export default function Track() {
       <ModalSheet visible={activeModal === 'pumping'} onClose={closeModal}
         title={editingId ? '🤱 Edit Pumping' : '🤱 Log Pumping'} accent={c.trackPump} onSave={handleSavePumping} saving={saving}>
 
-        <TimerWidget timer={pumpTimer} accent={c.trackPump}
-          useManual={pumpUseManual} onToggleManual={() => setPumpUseManual(v => !v)}
-          manualValue={pumpManualMin} onManualChange={setPumpManualMin} />
+        {/* Last session context strip */}
+        {lastPumpSession && !editingId && (() => {
+          const ago = (() => { const ms = Date.now() - new Date(lastPumpSession.logged_at).getTime(); const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000); return h > 0 ? `${h}h ${m}m ago` : `${m}m ago`; })();
+          const totalDisplay = pumpUnit === 'oz' ? `${(lastPumpSession.total_ml / 29.5735).toFixed(1)} oz` : `${lastPumpSession.total_ml.toFixed(0)} ml`;
+          return (
+            <View style={styles.pumpLastSession}>
+              <Text style={styles.pumpLastSessionText}>Last: {totalDisplay} · {ago}</Text>
+              <TouchableOpacity onPress={() => {
+                if (pumpUnit === 'oz') {
+                  setLeftBreast((lastPumpSession.left_breast / 29.5735).toFixed(1));
+                  setRightBreast((lastPumpSession.right_breast / 29.5735).toFixed(1));
+                } else {
+                  setLeftBreast(String(lastPumpSession.left_breast || ''));
+                  setRightBreast(String(lastPumpSession.right_breast || ''));
+                }
+              }}>
+                <Text style={styles.pumpSameAsLast}>↩ Same as last</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
 
-        <Text style={pf.label}>Amount expressed (ml)</Text>
+        {/* Mode selector: Normal / Power Pump */}
+        <View style={styles.pumpModeRow}>
+          <TouchableOpacity
+            style={[styles.pumpModeChip, !powerPumpMode && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
+            onPress={() => { setPowerPumpMode(false); setPpRunning(false); setPpDone(false); pumpTimer.reset(); }}
+            activeOpacity={0.8}>
+            <Text style={[styles.pumpModeChipText, !powerPumpMode && { color: '#fff' }]}>⏱ Normal</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pumpModeChip, powerPumpMode && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
+            onPress={() => { setPowerPumpMode(true); pumpTimer.reset(); }}
+            activeOpacity={0.8}>
+            <Text style={[styles.pumpModeChipText, powerPumpMode && { color: '#fff' }]}>⚡ Power Pump</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!powerPumpMode ? (
+          <TimerWidget timer={pumpTimer} accent={c.trackPump}
+            useManual={pumpUseManual} onToggleManual={() => setPumpUseManual(v => !v)}
+            manualValue={pumpManualMin} onManualChange={setPumpManualMin} />
+        ) : (
+          <View style={styles.powerPumpWrap}>
+            {/* Protocol chips */}
+            <Text style={pf.label}>Protocol</Text>
+            <View style={[pf.row, { marginBottom: 12 }]}>
+              {Object.entries(POWER_PUMP_PROTOCOLS).map(([key, proto]) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[pf.chip, powerPumpProto === key && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
+                  onPress={() => {
+                    setPowerPumpProto(key);
+                    setPpPhaseIdx(0);
+                    setPpSecondsLeft(POWER_PUMP_PROTOCOLS[key].phases[0].minutes * 60);
+                    setPpRunning(false);
+                    setPpDone(false);
+                  }}
+                  activeOpacity={0.8}>
+                  <Text style={[pf.chipText, powerPumpProto === key && pf.chipSel]}>{proto.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.ppDesc}>{POWER_PUMP_PROTOCOLS[powerPumpProto].desc}</Text>
+
+            {/* Phase progress dots */}
+            <View style={styles.ppDots}>
+              {POWER_PUMP_PROTOCOLS[powerPumpProto].phases.map((ph, i) => (
+                <View key={i} style={[
+                  styles.ppDot,
+                  ph.action === 'pump' ? styles.ppDotPump : styles.ppDotRest,
+                  i < ppPhaseIdx && styles.ppDotDone,
+                  i === ppPhaseIdx && ppRunning && styles.ppDotActive,
+                ]} />
+              ))}
+            </View>
+
+            {/* Current phase display */}
+            {ppDone ? (
+              <Text style={styles.ppComplete}>🎉 Complete! Great session!</Text>
+            ) : (
+              <View style={styles.ppPhaseDisplay}>
+                <Text style={styles.ppPhaseLabel}>
+                  {POWER_PUMP_PROTOCOLS[powerPumpProto].phases[ppPhaseIdx]?.action === 'pump' ? '🟢 Pump' : '⏸️ Rest'}
+                </Text>
+                <Text style={styles.ppCountdown}>
+                  {ppSecondsLeft > 0
+                    ? `${String(Math.floor(ppSecondsLeft / 60)).padStart(2, '0')}:${String(ppSecondsLeft % 60).padStart(2, '0')}`
+                    : `${String(POWER_PUMP_PROTOCOLS[powerPumpProto].phases[0].minutes).padStart(2, '0')}:00`}
+                </Text>
+              </View>
+            )}
+
+            {/* Controls */}
+            <View style={styles.ppControls}>
+              {!ppDone && (
+                <TouchableOpacity
+                  style={[styles.ppBtn, { backgroundColor: c.trackPump }]}
+                  onPress={() => {
+                    if (!ppRunning && ppSecondsLeft === 0) {
+                      setPpSecondsLeft(POWER_PUMP_PROTOCOLS[powerPumpProto].phases[0].minutes * 60);
+                      setPpPhaseIdx(0);
+                    }
+                    setPpRunning(v => !v);
+                    if (!ppRunning) pumpTimer.start?.();
+                  }}
+                  activeOpacity={0.8}>
+                  <Text style={styles.ppBtnText}>{ppRunning ? '⏸ Pause' : ppSecondsLeft > 0 ? '▶ Resume' : '▶ Start'}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.ppBtn, styles.ppBtnOutline]}
+                onPress={() => { setPpRunning(false); setPpDone(false); setPpPhaseIdx(0); setPpSecondsLeft(0); pumpTimer.reset(); }}
+                activeOpacity={0.8}>
+                <Text style={[styles.ppBtnText, { color: c.textSecondary }]}>↺ Reset</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Amount with unit toggle */}
+        <View style={styles.pumpAmountHeader}>
+          <Text style={pf.label}>Amount expressed</Text>
+          <View style={styles.pumpUnitToggle}>
+            <TouchableOpacity
+              style={[styles.pumpUnitChip, pumpUnit === 'ml' && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
+              onPress={() => { setPumpUnit('ml'); setLeftBreast(''); setRightBreast(''); }}>
+              <Text style={[styles.pumpUnitText, pumpUnit === 'ml' && { color: '#fff' }]}>ml</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.pumpUnitChip, pumpUnit === 'oz' && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
+              onPress={() => { setPumpUnit('oz'); setLeftBreast(''); setRightBreast(''); }}>
+              <Text style={[styles.pumpUnitText, pumpUnit === 'oz' && { color: '#fff' }]}>oz</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
         <View style={styles.breastRow}>
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Left</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
               value={leftBreast} onChangeText={setLeftBreast} keyboardType="decimal-pad" />
-            <Text style={styles.breastUnit}>ml</Text>
+            <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>
           <View style={styles.breastDivider} />
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Right</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
               value={rightBreast} onChangeText={setRightBreast} keyboardType="decimal-pad" />
-            <Text style={styles.breastUnit}>ml</Text>
+            <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>
         </View>
         {pumpTotal > 0 && (
-          <Text style={styles.totalPreview}>Total: {pumpTotal.toFixed(1)} ml</Text>
+          <Text style={styles.totalPreview}>Total: {pumpTotal.toFixed(1)} {pumpUnit}</Text>
         )}
 
         <Stepper label="Suction level (1–10)" value={suctionLevel} onChange={setSuctionLevel}
@@ -2155,6 +2419,8 @@ export default function Track() {
 
         <PickerField label="Storage" options={PUMP_STORAGE}
           value={storageLocation} onChange={setStorageLocation} accent={c.trackPump} />
+
+        <NotesInput value={pumpNotes} onChange={setPumpNotes} />
       </ModalSheet>
 
       {/* ══════════ BABY FOOD CHART MODAL ══════════ */}
@@ -2403,6 +2669,43 @@ function makeStyles(c: Colors) {
     breastDivider:   { width: 1, backgroundColor: c.inputBorder, marginVertical: 16 },
     totalPreview:    { fontSize: 13, color: c.trackPump, fontWeight: '700', textAlign: 'center',
                        marginBottom: 20, marginTop: 4 },
+
+    // Quick nav arrows
+    quickNavArrow:     { paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center', alignItems: 'center' },
+    quickNavArrowText: { fontSize: 22, fontWeight: '600', color: c.textSecondary, lineHeight: 26 },
+
+    // Pump enhancements
+    pumpLastSession:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                           backgroundColor: c.inputBg, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16 },
+    pumpLastSessionText: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
+    pumpSameAsLast:      { fontSize: 12, fontWeight: '700', color: c.trackPump },
+    pumpModeRow:         { flexDirection: 'row', gap: 8, marginBottom: 16 },
+    pumpModeChip:        { flex: 1, borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 20,
+                           paddingVertical: 9, alignItems: 'center' },
+    pumpModeChipText:    { fontSize: 13, fontWeight: '700', color: c.textSecondary },
+    pumpAmountHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    pumpUnitToggle:      { flexDirection: 'row', gap: 4 },
+    pumpUnitChip:        { borderWidth: 1.5, borderColor: c.inputBorder, borderRadius: 12,
+                           paddingHorizontal: 12, paddingVertical: 5 },
+    pumpUnitText:        { fontSize: 12, fontWeight: '700', color: c.textSecondary },
+
+    // Power pump
+    powerPumpWrap:   { marginBottom: 20 },
+    ppDesc:          { fontSize: 12, color: c.textMuted, marginBottom: 12, fontStyle: 'italic' },
+    ppDots:          { flexDirection: 'row', gap: 6, marginBottom: 16 },
+    ppDot:           { flex: 1, height: 6, borderRadius: 3 },
+    ppDotPump:       { backgroundColor: c.inputBorder },
+    ppDotRest:       { backgroundColor: c.inputBorder, opacity: 0.5 },
+    ppDotDone:       { backgroundColor: c.sage },
+    ppDotActive:     { backgroundColor: c.trackPump },
+    ppPhaseDisplay:  { alignItems: 'center', marginBottom: 14 },
+    ppPhaseLabel:    { fontSize: 14, fontWeight: '700', color: c.textPrimary, marginBottom: 4 },
+    ppCountdown:     { fontSize: 48, fontWeight: '800', color: c.trackPump, letterSpacing: 2 },
+    ppComplete:      { fontSize: 16, fontWeight: '800', color: c.sage, textAlign: 'center', marginBottom: 14 },
+    ppControls:      { flexDirection: 'row', gap: 10 },
+    ppBtn:           { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
+    ppBtnOutline:    { borderWidth: 1.5, borderColor: c.inputBorder, backgroundColor: 'transparent' },
+    ppBtnText:       { fontSize: 14, fontWeight: '700', color: '#fff' },
 
     viewToggleRow:         { flexDirection: 'row', backgroundColor: c.inputBg, borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 },
     viewToggleBtn:         { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },

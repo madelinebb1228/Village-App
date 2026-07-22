@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeDelete, generateId } from '../lib/syncService';
 import { useColors } from '../lib/theme';
+import { autoFormatDate, parseDisplayDate, toDisplayDate, todayDisplay } from '../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ export default function BabyJournal({
   const [showModal, setShowModal]       = useState(false);
   const [title, setTitle]               = useState('');
   const [caption, setCaption]           = useState('');
-  const [happenedOn, setHappenedOn]     = useState(todayISO());
+  const [happenedOn, setHappenedOn]     = useState(todayDisplay());
   const [category, setCategory]         = useState('everyday');
   const [imageUri, setImageUri]         = useState<string | null>(null);
   const [saving, setSaving]             = useState(false);
@@ -137,7 +138,7 @@ export default function BabyJournal({
   // ─── Actions ──────────────────────────────────────────────────────────────
 
   function openModal() {
-    setTitle(''); setCaption(''); setHappenedOn(todayISO());
+    setTitle(''); setCaption(''); setHappenedOn(todayDisplay());
     setCategory('everyday'); setImageUri(null); setShowTemplates(true);
     setShowModal(true);
   }
@@ -179,7 +180,7 @@ export default function BabyJournal({
         title: title.trim() || null,
         caption: caption.trim() || null,
         image_url: imageUrl,
-        happened_on: happenedOn || todayISO(),
+        happened_on: parseDisplayDate(happenedOn) || new Date().toISOString().slice(0, 10),
         category,
         created_at: new Date().toISOString(),
       };
@@ -474,10 +475,12 @@ export default function BabyJournal({
                 borderColor: c.separator, padding: 13, fontSize: 15,
                 color: c.textPrimary, marginBottom: 24,
               }}
-              placeholder="YYYY-MM-DD"
+              placeholder="MM/DD/YYYY"
               placeholderTextColor={c.textMuted}
+              keyboardType="numeric"
+              maxLength={10}
               value={happenedOn}
-              onChangeText={setHappenedOn}
+              onChangeText={v => setHappenedOn(autoFormatDate(v, happenedOn))}
             />
 
             {/* Category */}

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { ensureNotificationPermission, rescheduleEventReminders } from '../lib/notifications';
+import { autoFormatDate, parseDisplayDate, toDisplayDate } from '../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -273,7 +274,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   function openCreate() {
     setEditingId(null);
     setTitle('');
-    setDateStr(selectedDate);
+    setDateStr(toDisplayDate(selectedDate));
     setAllDay(false);
     setStartTime('09:00');
     setEndTime('');
@@ -287,7 +288,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     setEditingId(e.id);
     setTitle(e.title);
     const start = new Date(e.starts_at);
-    setDateStr(localDateKey(start));
+    setDateStr(toDisplayDate(localDateKey(start)));
     setAllDay(e.all_day);
     setStartTime(`${pad2(start.getHours())}:${pad2(start.getMinutes())}`);
     if (e.ends_at) {
@@ -307,9 +308,10 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     const t = title.trim();
     if (!t) { Alert.alert('Add a title', 'Give your event a name.'); return; }
 
-    const dm = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!dm) { Alert.alert('Invalid date', 'Use the format YYYY-MM-DD.'); return; }
-    const yy = +dm[1], mo = +dm[2], dd = +dm[3];
+    const parsedDate = parseDisplayDate(dateStr.trim());
+    if (!parsedDate) { Alert.alert('Invalid date', 'Use the format MM/DD/YYYY.'); return; }
+    const [_y, _mo, _dd] = parsedDate.split('-').map(Number);
+    const yy = _y, mo = _mo, dd = _dd;
 
     let starts: Date;
     let ends: Date | null = null;
@@ -674,7 +676,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
             <TextInput style={inp(c)} placeholder="e.g. Pediatrician appointment" placeholderTextColor={c.textMuted} value={title} onChangeText={setTitle} />
 
             <Text style={lbl(c)}>Date</Text>
-            <TextInput style={inp(c)} placeholder="YYYY-MM-DD" placeholderTextColor={c.textMuted} value={dateStr} onChangeText={setDateStr} autoCapitalize="none" />
+            <TextInput style={inp(c)} placeholder="MM/DD/YYYY" placeholderTextColor={c.textMuted} value={dateStr} onChangeText={v => setDateStr(autoFormatDate(v, dateStr))} keyboardType="numeric" maxLength={10} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>All day</Text>

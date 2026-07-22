@@ -495,9 +495,10 @@ export default function BabyProfileSheet({
                         <TextInput
                           style={s.inlineInput}
                           value={editBirthDate}
-                          onChangeText={setEditBirthDate}
+                          onChangeText={t => setEditBirthDate(autoFormatDate(t))}
                           placeholder="MM/DD/YYYY"
-                          keyboardType="numbers-and-punctuation"
+                          keyboardType="numeric"
+                          maxLength={10}
                           placeholderTextColor={c.textMuted}
                         />
                       </View>

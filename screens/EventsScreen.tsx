@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { autoFormatDate } from '../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -510,11 +511,12 @@ export default function EventsScreen({ onBack }: Props) {
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TextInput
                   style={[s.input, { flex: 1 }]}
-                  placeholder="Date (MM/DD/YYYY) *"
+                  placeholder="MM/DD/YYYY *"
                   placeholderTextColor={c.textMuted}
                   value={eventDate}
-                  onChangeText={setEventDate}
+                  onChangeText={v => setEventDate(autoFormatDate(v, eventDate))}
                   keyboardType="numeric"
+                  maxLength={10}
                 />
                 <TextInput
                   style={[s.input, { flex: 1 }]}

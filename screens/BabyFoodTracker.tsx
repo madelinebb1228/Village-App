@@ -71,19 +71,38 @@ function getStageInfo(birthDateIso: string | null): { stage: string; desc: strin
   return { stage: 'Toddler', desc: 'Most table foods — explore textures & flavors!', months };
 }
 
-// Allergen watchlist integration (reads/writes the same AsyncStorage key as AllergenTracker)
+// Allergen watchlist integration
 const ALLERGEN_STORAGE_KEY = '@village_allergen_tracker_v2';
 
-async function addToAllergenWatchlist(name: string, reactionNotes: string) {
+async function addToAllergenWatchlist(name: string, reactionNotes: string, userId?: string | null, babyId?: string | null) {
+  const id = `custom_${Date.now()}`;
+  const entry = { status: 'watchlist' as const, reactionNotes: reactionNotes || undefined };
+
+  // Write to Supabase when we have user + baby context
+  if (userId && babyId) {
+    try {
+      await (supabase.from('allergen_records') as any).upsert({
+        user_id: userId,
+        baby_id: babyId,
+        allergen_id: id,
+        allergen_name: name,
+        allergen_emoji: '🍽️',
+        allergen_tab: 'food',
+        is_custom: true,
+        status: 'watchlist',
+        reaction_notes: reactionNotes || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'baby_id,allergen_id' });
+      return;
+    } catch {}
+  }
+
+  // Fall back to AsyncStorage
   try {
     const raw = await AsyncStorage.getItem(ALLERGEN_STORAGE_KEY);
     const data = raw ? JSON.parse(raw) : { entries: {}, custom: [] };
-    const id = `custom_${Date.now()}`;
     data.custom = [...(data.custom ?? []), { id, name, emoji: '🍽️', tab: 'food' }];
-    data.entries = {
-      ...(data.entries ?? {}),
-      [id]: { status: 'watchlist', reactionNotes: reactionNotes || undefined },
-    };
+    data.entries = { ...(data.entries ?? {}), [id]: entry };
     await AsyncStorage.setItem(ALLERGEN_STORAGE_KEY, JSON.stringify(data));
   } catch {}
 }
@@ -384,7 +403,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
       }
 
       if (badReaction) {
-        await addToAllergenWatchlist(effectiveFlavor, reactionNotes.trim());
+        await addToAllergenWatchlist(effectiveFlavor, reactionNotes.trim(), userId, babyId);
       }
       if (!editId && rating === 'dislike' && tryAgainDays && babyName) {
         await scheduleTryAgainReminder(babyId, babyName, effectiveBrand, effectiveFlavor, tryAgainDays);
