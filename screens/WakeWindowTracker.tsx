@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
 
 type WakeRange = { maxWeeks: number; label: string; minMin: number; maxMin: number };
@@ -68,6 +68,8 @@ function makeWWStyles(c: Colors) {
     suggestionValueText: { fontSize: 16, fontWeight: '700', color: c.text },
     awakeBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 2 },
     awakeBtnLabel: { fontSize: 15, fontWeight: '700' },
+    sunIcon: { width: 16, height: 16 },
+    moonIcon: { width: 16, height: 16 },
     timerSection: { marginBottom: 14 },
     timerCaption: { fontSize: 12, color: c.textMuted, textAlign: 'center', marginBottom: 4 },
     timerDisplay: { fontSize: 36, fontWeight: '800', textAlign: 'center', letterSpacing: 1, marginBottom: 10 },
@@ -180,7 +182,9 @@ export default function WakeWindowTracker({ babyBirthDate }: { babyBirthDate: st
           onPress={startAwake}
           activeOpacity={0.8}
         >
-          <Text style={[s.awakeBtnLabel, { color: c.sage }]}>☀️  Baby is Awake</Text>
+          <Text style={[s.awakeBtnLabel, { color: c.sage }]}>
+            <Image source={require('../assets/sun-icon.png')} style={s.sunIcon} />{'  Baby is Awake'}
+          </Text>
         </TouchableOpacity>
       ) : (
         <>
@@ -208,7 +212,9 @@ export default function WakeWindowTracker({ babyBirthDate }: { babyBirthDate: st
             onPress={stopAwake}
             activeOpacity={0.8}
           >
-            <Text style={[s.napBtnText, { color: c.lavender }]}>🌙  Baby is Napping</Text>
+            <Text style={[s.napBtnText, { color: c.lavender }]}>
+              <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={s.moonIcon} />{'  Baby is Napping'}
+            </Text>
           </TouchableOpacity>
         </>
       )}

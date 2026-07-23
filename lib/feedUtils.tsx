@@ -13,10 +13,13 @@ export function todayRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-export function greetingFor(hour: number, name?: string): string {
+export type GreetingIcon = 'flower' | 'sun' | 'moon';
+
+export function greetingFor(hour: number, name?: string): { text: string; icon: GreetingIcon } {
   const base = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const emoji = hour < 12 ? '🌸' : hour < 17 ? '☀️' : '🌙';
-  return name ? `${base}, ${name} ${emoji}` : `${base} ${emoji}`;
+  const icon: GreetingIcon = hour < 12 ? 'flower' : hour < 17 ? 'sun' : 'moon';
+  const text = name ? `${base}, ${name}` : base;
+  return { text, icon };
 }
 
 export function mlToOz(ml: number): string {

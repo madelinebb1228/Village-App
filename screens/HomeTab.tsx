@@ -1319,14 +1319,23 @@ export default function HomeTab() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headingRow}>
-          <Text style={styles.heading}>{greeting}</Text>
+          <Text style={styles.heading}>
+            {greeting.text}{' '}
+            {greeting.icon === 'sun'
+              ? <Image source={require('../assets/sun-icon.png')} style={styles.headingIcon} />
+              : greeting.icon === 'moon'
+              ? <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={styles.headingIcon} />
+              : '🌸'}
+          </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity
               onPress={() => setShowNotifications(true)}
               activeOpacity={0.75}
-              style={styles.searchBtn}
+              style={styles.notifBtn}
             >
-              <Text style={styles.searchBtnIcon}>🔔</Text>
+              <View style={styles.notifBtnClip}>
+                <Image source={require('../assets/notification-bell.png')} style={styles.notifBtnImage} resizeMode="cover" />
+              </View>
               {unreadNotifCount > 0 && (
                 <View style={{
                   position: 'absolute', top: 2, right: 2,
@@ -1343,9 +1352,11 @@ export default function HomeTab() {
             <TouchableOpacity
               onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
               activeOpacity={0.75}
-              style={styles.searchBtn}
+              style={styles.notifBtn}
             >
-              <Text style={styles.searchBtnIcon}>💬</Text>
+              <View style={styles.notifBtnClip}>
+                <Image source={require('../assets/messages-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
+              </View>
               {unreadCount > 0 && (
                 <View style={{
                   position: 'absolute', top: 2, right: 2,
@@ -1360,18 +1371,22 @@ export default function HomeTab() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.searchBtn}
+              style={styles.notifBtn}
               onPress={() => setShowEvents(true)}
               activeOpacity={0.75}
             >
-              <Text style={styles.searchBtnIcon}>📅</Text>
+              <View style={styles.notifBtnClip}>
+                <Image source={require('../assets/events-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.searchBtn}
+              style={styles.notifBtn}
               onPress={() => setShowSearch(true)}
               activeOpacity={0.75}
             >
-              <Text style={styles.searchBtnIcon}>🔍</Text>
+              <View style={styles.notifBtnClip}>
+                <Image source={require('../assets/search-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
@@ -2815,6 +2830,7 @@ function makeStyles(c: Colors) {
       justifyContent: 'space-between',
       marginBottom: 24,
     },
+    headingIcon: { width: 24, height: 24 },
     heading: {
       fontSize: 26,
       fontWeight: '800',
@@ -2834,6 +2850,24 @@ function makeStyles(c: Colors) {
       elevation: 2,
     },
     searchBtnIcon: { fontSize: 18 },
+    notifBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    notifBtnClip: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      overflow: 'hidden',
+      backgroundColor: c.card,
+    },
+    notifBtnImage: { width: 40, height: 40 },
     statRow: {
       flexDirection: 'row',
       gap: 12,

@@ -89,7 +89,13 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
               backgroundColor: focused ? c.cardBlush : 'transparent',
             }}
           >
-            <Text style={{ fontSize: 22 }}>{tab.emoji}</Text>
+            {tab.name === 'Home' ? (
+              <View style={{ width: 48, height: 48, borderRadius: 12, overflow: 'hidden' }}>
+                <Image source={require('./assets/home-icon.png')} style={{ width: 48, height: 48 }} resizeMode="cover" />
+              </View>
+            ) : (
+              <Text style={{ fontSize: 22 }}>{tab.emoji}</Text>
+            )}
             <Text style={{
               marginLeft: 14,
               fontSize: 16,
@@ -169,7 +175,16 @@ function MainTabs() {
           tabBarLabel: 'Home',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏡</Text>
+            <View style={{
+              width: focused ? 30 : 26, height: focused ? 30 : 26,
+              borderRadius: 8, overflow: 'hidden', opacity: focused ? 1 : 0.45,
+            }}>
+              <Image
+                source={require('./assets/home-icon.png')}
+                style={{ width: focused ? 30 : 26, height: focused ? 30 : 26 }}
+                resizeMode="cover"
+              />
+            </View>
           ),
         }}
       />
