@@ -27,8 +27,6 @@ import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
-import PatchyPeek from '../components/PatchyPeek';
-import { usePatchyCards } from '../lib/usePatchyCards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,8 +132,6 @@ export default function Profile() {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
-
-  const { cards: patchyCards, onSelfLayout: patchySelf } = usePatchyCards();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -758,8 +754,7 @@ export default function Profile() {
 
         {/* ── Baby card ── */}
         <Text style={s.sectionTitle}>Baby Profile</Text>
-        <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
-          <PatchyPeek cards={patchyCards} dir="top" offsetY={-15} />
+        <View style={{ overflow: 'visible' }}>
         {baby ? (
           <TouchableOpacity
             style={[

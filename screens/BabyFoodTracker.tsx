@@ -8,7 +8,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-import { safeInsert, safeUpdate } from '../lib/syncService';
+import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import {
   BRAND_NAMES, getCategories, getFlavors, getAllFlavorsForBrand,
 } from '../lib/babyFoodData';
@@ -81,7 +81,7 @@ async function addToAllergenWatchlist(name: string, reactionNotes: string, userI
   // Write to Supabase when we have user + baby context
   if (userId && babyId) {
     try {
-      await (supabase.from('allergen_records') as any).upsert({
+      await safeUpsert('allergen_records', {
         user_id: userId,
         baby_id: babyId,
         allergen_id: id,
@@ -92,7 +92,7 @@ async function addToAllergenWatchlist(name: string, reactionNotes: string, userI
         status: 'watchlist',
         reaction_notes: reactionNotes || null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'baby_id,allergen_id' });
+      }, 'baby_id,allergen_id');
       return;
     } catch {}
   }
@@ -425,7 +425,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
       {
         text: 'Remove', style: 'destructive',
         onPress: async () => {
-          await (supabase.from('baby_food_logs') as any).delete().eq('id', log.id);
+          await safeDelete('baby_food_logs', log.id);
           await load();
         },
       },

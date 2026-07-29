@@ -6,6 +6,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate } from '../lib/syncService';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { getDoseInfo, isTylenol, isMotrin, isWeightBased } from '../lib/medDosing';
 
@@ -194,6 +195,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
   const [parentCat,    setParentCat]    = useState<'postpartum' | 'pregnant'>('postpartum');
   const [pickedPreset, setPickedPreset] = useState<PresetItem | null>(null);
   const [customName,   setCustomName]   = useState('');
+  const [editingMed,   setEditingMed]   = useState<Medication | null>(null);
   const [cfgDose,      setCfgDose]      = useState('');
   const [cfgFreq,      setCfgFreq]      = useState<number>(24);
   const [cfgFreqCustom, setCfgFreqCustom] = useState('');
@@ -276,7 +278,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
       ? new Date(Date.now() + givingMed.frequency_hours * 3600000)
       : null;
 
-    await (supabase.from('medication_logs') as any).insert({
+    await safeInsert('medication_logs', {
       medication_id:  givingMed.id,
       user_id:        userId,
       baby_id:        type === 'baby' ? (babyId ?? null) : null,
@@ -325,7 +327,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
     Alert.alert('Remove medication?', 'This hides it from your list but keeps the log history.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
-        await (supabase.from('medications') as any).update({ active: false }).eq('id', med.id);
+        await safeUpdate('medications', med.id, { active: false });
         await cancelReminder(med.id);
         load();
       }},
@@ -355,24 +357,52 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
     setAddStep('configure');
   }
 
+  function openEditMed(med: Medication) {
+    setEditingMed(med);
+    setPickedPreset(null);
+    setCustomName(med.name);
+    setCfgDose(med.dose ?? '');
+    const knownFreq = [4, 6, 8, 12, 24, 0].includes(med.frequency_hours ?? -2);
+    setCfgFreq(med.frequency_hours == null ? 0 : knownFreq ? med.frequency_hours : -1);
+    setCfgFreqCustom(med.frequency_hours != null && !knownFreq ? String(med.frequency_hours) : '');
+    setCfgReminder(med.reminder_enabled);
+    setCfgColor(med.color);
+    setCfgIsPrx(med.is_prescription);
+    setAddStep('configure');
+    setAddOpen(true);
+  }
+
   async function saveMed() {
     if (!userId) return;
-    const name = pickedPreset ? pickedPreset.name : customName.trim();
+    const name = editingMed ? editingMed.name : pickedPreset ? pickedPreset.name : customName.trim();
     if (!name) return;
     setSaving(true);
 
-    const cat: Medication['category'] = type === 'baby' ? 'baby' : (parentCat as any);
-    await (supabase.from('medications') as any).insert({
-      user_id:          userId,
-      baby_id:          type === 'baby' ? (babyId ?? null) : null,
-      name,
-      category:         cat,
-      dose:             cfgDose.trim() || null,
-      frequency_hours:  cfgFreq === -1 ? (parseFloat(cfgFreqCustom) || null) : (cfgFreq || null),
-      reminder_enabled: cfgReminder,
-      color:            cfgColor,
-      is_prescription:  cfgIsPrx,
-    });
+    const frequencyHours = cfgFreq === -1 ? (parseFloat(cfgFreqCustom) || null) : (cfgFreq || null);
+
+    if (editingMed) {
+      await safeUpdate('medications', editingMed.id, {
+        dose:             cfgDose.trim() || null,
+        frequency_hours:  frequencyHours,
+        reminder_enabled: cfgReminder,
+        color:            cfgColor,
+        is_prescription:  cfgIsPrx,
+      });
+      if (!cfgReminder) await cancelReminder(editingMed.id);
+    } else {
+      const cat: Medication['category'] = type === 'baby' ? 'baby' : (parentCat as any);
+      await safeInsert('medications', {
+        user_id:          userId,
+        baby_id:          type === 'baby' ? (babyId ?? null) : null,
+        name,
+        category:         cat,
+        dose:             cfgDose.trim() || null,
+        frequency_hours:  frequencyHours,
+        reminder_enabled: cfgReminder,
+        color:            cfgColor,
+        is_prescription:  cfgIsPrx,
+      });
+    }
 
     setSaving(false);
     closeAdd();
@@ -387,6 +417,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
     setShowRx(false);
     setCfgFreq(24);
     setCfgFreqCustom('');
+    setEditingMed(null);
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────
@@ -544,7 +575,10 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                       <Text style={s.medName} numberOfLines={1}>
                         {med.is_prescription ? '℞ ' : ''}{med.name}
                       </Text>
-                      <TouchableOpacity onPress={() => archiveMed(med)} style={s.medRemove}>
+                      <TouchableOpacity onPress={() => openEditMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={s.medEditText}>✎</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => archiveMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Text style={s.medRemoveText}>×</Text>
                       </TouchableOpacity>
                     </View>
@@ -775,11 +809,13 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={s.modalHeader}>
-                  <TouchableOpacity onPress={() => setAddStep('pick')} style={s.backBtn}>
-                    <Text style={s.backBtnText}>← Back</Text>
-                  </TouchableOpacity>
+                  {!editingMed && (
+                    <TouchableOpacity onPress={() => setAddStep('pick')} style={s.backBtn}>
+                      <Text style={s.backBtnText}>← Back</Text>
+                    </TouchableOpacity>
+                  )}
                   <Text style={s.modalTitle}>
-                    {pickedPreset ? pickedPreset.name : customName}
+                    {editingMed ? `Edit ${editingMed.name}` : pickedPreset ? pickedPreset.name : customName}
                   </Text>
                 </View>
 
@@ -860,7 +896,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                     onPress={saveMed} disabled={saving} activeOpacity={0.8}>
                     {saving
                       ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={s.modalConfirmText}>Add Medication</Text>
+                      : <Text style={s.modalConfirmText}>{editingMed ? 'Save Changes' : 'Add Medication'}</Text>
                     }
                   </TouchableOpacity>
                 </View>
@@ -918,6 +954,7 @@ function makeStyles(c: Colors) {
     medName:     { flex: 1, fontSize: 14, fontWeight: '800', color: c.textPrimary },
     medRemove:   { paddingLeft: 8 },
     medRemoveText: { fontSize: 18, color: c.textMuted, lineHeight: 20 },
+    medEditText: { fontSize: 15, color: c.textMuted, lineHeight: 20 },
     medDose:     { fontSize: 12, color: c.textSecondary },
     medBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
     statusChip:  { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },

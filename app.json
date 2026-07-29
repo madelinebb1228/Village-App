@@ -24,7 +24,19 @@
         {
           "cameraPermission": "Village uses your camera to scan baby food barcodes."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Parent Patch needs background location to detect when you've stopped driving, even if the app isn't open, so it can remind you to check the back seat.",
+          "locationWhenInUsePermission": "Parent Patch checks your driving speed to remind you to check the back seat when you stop.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-task-manager"
     ]
   }
 }

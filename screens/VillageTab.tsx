@@ -18,8 +18,6 @@ import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 
 import { Village, VILLAGES } from '../lib/villageData';
-import PatchyPeek from '../components/PatchyPeek';
-import { usePatchyCards } from '../lib/usePatchyCards';
 import VillageFeedSheet from './VillageFeedSheet';
 import FindYourPatchSheet from './FindYourPatchSheet';
 import PatchTasksSheet from './PatchTasksSheet';
@@ -36,8 +34,6 @@ export default function VillageTab() {
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
   const FREE_VILLAGE_LIMIT = 5;
-
-  const { cards: patchyCards, onCardLayout: patchyCard } = usePatchyCards();
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
@@ -423,9 +419,8 @@ export default function VillageTab() {
           <>
             <Text style={s.sectionTitle}>{search ? 'Results' : 'Discover'}</Text>
             <View style={{ overflow: 'visible' }}>
-              <PatchyPeek cards={patchyCards} dir="left" offsetX={20} />
               {discoverList.map((v, idx) => (
-              <View key={v.id} onLayout={idx < 5 ? patchyCard : undefined}>
+              <View key={v.id}>
                 <VillageCard
                   village={v}
                   joining={joining === v.id}

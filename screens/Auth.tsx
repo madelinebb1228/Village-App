@@ -17,8 +17,10 @@ import { useColors, Colors } from '../lib/theme'
 export default function Auth() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [dobMonth, setDobMonth] = useState('')
   const [dobDay, setDobDay] = useState('')
@@ -85,6 +87,23 @@ export default function Auth() {
     }
   }
 
+  async function handleForgotPassword() {
+    if (!email.trim()) {
+      Alert.alert('Error', 'Enter your email above first, then tap "Forgot password?".')
+      return
+    }
+    setResetLoading(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
+      if (error) throw error
+      Alert.alert('Check your email', 'We sent you a link to reset your password.')
+    } catch (error: any) {
+      Alert.alert('Error', error.message)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -138,15 +157,35 @@ export default function Auth() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={c.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete={isSignUp ? 'new-password' : 'current-password'}
-            />
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={[styles.input, styles.passwordInput]}
+                placeholder="••••••••"
+                placeholderTextColor={c.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
+              />
+              <TouchableOpacity
+                style={styles.showPasswordBtn}
+                onPress={() => setShowPassword(v => !v)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.showPasswordText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
+            {!isSignUp && (
+              <TouchableOpacity
+                style={styles.forgotPasswordBtn}
+                onPress={handleForgotPassword}
+                disabled={resetLoading}
+              >
+                <Text style={styles.forgotPasswordText}>
+                  {resetLoading ? 'Sending...' : 'Forgot password?'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {isSignUp && (
@@ -286,6 +325,31 @@ function makeStyles(c: Colors) {
       paddingVertical: 14,
       fontSize: 15,
       color: c.textPrimary,
+    },
+    passwordRow: {
+      position: 'relative',
+      justifyContent: 'center',
+    },
+    passwordInput: {
+      paddingRight: 60,
+    },
+    showPasswordBtn: {
+      position: 'absolute',
+      right: 16,
+    },
+    showPasswordText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    forgotPasswordBtn: {
+      alignSelf: 'flex-end',
+      marginTop: 10,
+    },
+    forgotPasswordText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: c.primary,
     },
     button: {
       backgroundColor: c.primary,

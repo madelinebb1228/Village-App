@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Dimensions, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LineChart } from 'react-native-chart-kit';
+import * as Notifications from 'expo-notifications';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeDelete } from '../lib/syncService';
+import { ensureNotificationPermission } from '../lib/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +24,9 @@ type CheckRecord = {
   risk_level: RiskLevel;
   created_at: string;
 };
+
+const REMINDER_ID = 'postpartum-mh-checkin';
+const SW = Dimensions.get('window').width;
 
 // ─── EPDS Questions (Edinburgh Postnatal Depression Scale) ────────────────────
 
@@ -184,6 +191,10 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function fmtDateShort(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 function makeStyles(c: Colors) {
@@ -191,11 +202,11 @@ function makeStyles(c: Colors) {
     // Card
     card: {
       backgroundColor: c.card, borderRadius: 16, padding: 20,
-      marginHorizontal: 16, marginBottom: 20, borderWidth: 1.5, borderColor: c.separator,
+      marginBottom: 16, borderWidth: 1.5, borderColor: c.separator,
     },
     headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
     headerEmoji: { fontSize: 22, marginRight: 8 },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: c.text, flex: 1 },
+    headerTitle: { fontSize: 18, fontWeight: '700', color: c.textPrimary, flex: 1 },
     subtitle: { fontSize: 13, color: c.textMuted, lineHeight: 19, marginBottom: 16 },
     // Last check summary
     summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
@@ -203,7 +214,14 @@ function makeStyles(c: Colors) {
       flex: 1, backgroundColor: c.inputBg, borderRadius: 12, padding: 10, alignItems: 'center',
     },
     summaryLabel: { fontSize: 10, color: c.textMuted, marginBottom: 3, textAlign: 'center' },
-    summaryValue: { fontSize: 14, fontWeight: '700', color: c.text },
+    summaryValue: { fontSize: 14, fontWeight: '700', color: c.textPrimary },
+    // Chart
+    chartLabel: { fontSize: 11, color: c.textMuted, fontWeight: '600', marginBottom: 6 },
+    chartPlaceholder: {
+      alignItems: 'center', backgroundColor: c.inputBg, borderRadius: 14,
+      padding: 16, marginBottom: 16,
+    },
+    chartPlaceholderText: { fontSize: 12, color: c.textMuted, textAlign: 'center' },
     // Main button
     checkInBtn: {
       borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 2, marginBottom: 14,
@@ -216,11 +234,15 @@ function makeStyles(c: Colors) {
       borderBottomWidth: 1, borderBottomColor: c.separator,
     },
     historyItemLast: { borderBottomWidth: 0 },
-    historyDate: { flex: 1, fontSize: 13, color: c.text },
+    historyItemMain: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    historyDate: { flex: 1, fontSize: 13, color: c.textPrimary },
     historyScore: { fontSize: 13, fontWeight: '700', color: c.textSecondary, marginRight: 10 },
     historyPill: {
       fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99,
     },
+    historyChevron: { fontSize: 13, color: c.textMuted, marginLeft: 8 },
+    historyDeleteBtn: { marginLeft: 10, padding: 4 },
+    historyDeleteBtnText: { fontSize: 14, color: c.textMuted },
     // Crisis bar
     crisisBar: {
       marginTop: 14, backgroundColor: c.cardBlush, borderRadius: 12,
@@ -249,7 +271,7 @@ function makeStyles(c: Colors) {
     // Scroll content
     scrollContent: { paddingHorizontal: 20, paddingBottom: 16 },
     // Intro
-    introTitle: { fontSize: 22, fontWeight: '800', color: c.text, marginBottom: 10, lineHeight: 28 },
+    introTitle: { fontSize: 22, fontWeight: '800', color: c.textPrimary, marginBottom: 10, lineHeight: 28 },
     introBody: { fontSize: 14, color: c.textSecondary, lineHeight: 22, marginBottom: 8 },
     introBulletRow: { flexDirection: 'row', marginBottom: 4, gap: 6 },
     introBulletDot: { fontSize: 14, color: c.lavender, lineHeight: 22 },
@@ -263,7 +285,7 @@ function makeStyles(c: Colors) {
       fontSize: 11, fontWeight: '700', color: c.lavender, letterSpacing: 0.8,
       textTransform: 'uppercase', marginBottom: 8,
     },
-    questionText: { fontSize: 19, fontWeight: '700', color: c.text, lineHeight: 28, marginBottom: 16 },
+    questionText: { fontSize: 19, fontWeight: '700', color: c.textPrimary, lineHeight: 28, marginBottom: 16 },
     sensitiveBox: {
       backgroundColor: c.cardHoney, borderRadius: 10, padding: 12, marginBottom: 14,
       borderWidth: 1, borderColor: c.honey,
@@ -274,17 +296,17 @@ function makeStyles(c: Colors) {
       borderWidth: 2, borderColor: c.separator, backgroundColor: c.inputBg,
     },
     optionBtnSelected: { borderColor: c.lavender, backgroundColor: c.cardLavender },
-    optionText: { fontSize: 14, color: c.text, lineHeight: 20 },
+    optionText: { fontSize: 14, color: c.textPrimary, lineHeight: 20 },
     optionTextSelected: { color: c.lavender, fontWeight: '600' },
     // PPP check
-    pppTitle: { fontSize: 20, fontWeight: '800', color: c.text, marginBottom: 6 },
+    pppTitle: { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
     pppSubtitle: { fontSize: 13, color: c.textMuted, lineHeight: 19, marginBottom: 16 },
     pppRow: {
       flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
       borderBottomWidth: 1, borderBottomColor: c.separator, gap: 12,
     },
     pppRowLast: { borderBottomWidth: 0 },
-    pppRowText: { flex: 1, fontSize: 14, color: c.text, lineHeight: 20 },
+    pppRowText: { flex: 1, fontSize: 14, color: c.textPrimary, lineHeight: 20 },
     yesNoRow: { flexDirection: 'row', gap: 6 },
     yesNoBtn: {
       paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
@@ -293,14 +315,14 @@ function makeStyles(c: Colors) {
     yesNoBtnYesActive: { borderColor: c.blush, backgroundColor: c.cardBlush },
     yesNoBtnNoActive:  { borderColor: c.sage,  backgroundColor: c.cardSage  },
     yesNoBtnText: { fontSize: 13, fontWeight: '600', color: c.textSecondary },
-    yesNoBtnTextActive: { color: c.text, fontWeight: '700' },
+    yesNoBtnTextActive: { color: c.textPrimary, fontWeight: '700' },
     // Results
     resultsUrgentBox: {
       backgroundColor: c.cardBlush, borderRadius: 14, padding: 16, marginBottom: 16,
       borderWidth: 2, borderColor: c.blush,
     },
     resultsUrgentTitle: { fontSize: 16, fontWeight: '800', color: c.blush, marginBottom: 6 },
-    resultsUrgentBody: { fontSize: 13, color: c.text, lineHeight: 20 },
+    resultsUrgentBody: { fontSize: 13, color: c.textPrimary, lineHeight: 20 },
     scoreBadge: {
       alignSelf: 'center', borderRadius: 99, paddingHorizontal: 24, paddingVertical: 10, marginBottom: 4,
     },
@@ -310,12 +332,12 @@ function makeStyles(c: Colors) {
     findingBox: {
       backgroundColor: c.inputBg, borderRadius: 14, padding: 14, marginBottom: 10,
     },
-    findingTitle: { fontSize: 14, fontWeight: '700', color: c.text, marginBottom: 4 },
+    findingTitle: { fontSize: 14, fontWeight: '700', color: c.textPrimary, marginBottom: 4 },
     findingBody: { fontSize: 13, color: c.textSecondary, lineHeight: 20 },
-    resourcesHeader: { fontSize: 14, fontWeight: '700', color: c.text, marginBottom: 10, marginTop: 4 },
+    resourcesHeader: { fontSize: 14, fontWeight: '700', color: c.textPrimary, marginBottom: 10, marginTop: 4 },
     resourceRow: { flexDirection: 'row', gap: 10, marginBottom: 10, alignItems: 'flex-start' },
     resourceEmoji: { fontSize: 16, marginTop: 1 },
-    resourceName: { fontSize: 13, fontWeight: '700', color: c.text },
+    resourceName: { fontSize: 13, fontWeight: '700', color: c.textPrimary },
     resourceDetail: { fontSize: 12, color: c.textMuted, lineHeight: 18, marginTop: 1 },
     // Nav footer
     navRow: { flexDirection: 'row', gap: 10, padding: 20, paddingTop: 8 },
@@ -356,17 +378,108 @@ const RESOURCES = [
   },
 ];
 
+// ─── Shared results/findings renderer (live results step + history detail) ───
+
+function ResultsBody({
+  epdsScore, anxietySubscale, hasPppFlag, riskLevel, q10Score, c, s,
+}: {
+  epdsScore: number; anxietySubscale: number; hasPppFlag: boolean; riskLevel: RiskLevel;
+  q10Score?: number; c: Colors; s: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <>
+      {hasPppFlag && (
+        <View style={s.resultsUrgentBox}>
+          <Text style={s.resultsUrgentTitle}>🚨 Please Seek Help Immediately</Text>
+          <Text style={s.resultsUrgentBody}>
+            {q10Score !== undefined
+              ? 'Your responses indicate possible symptoms of postpartum psychosis (PPP). PPP is a psychiatric emergency — it is not your fault, it is treatable, and help is available right now.'
+              : 'This check-in flagged possible symptoms of postpartum psychosis (PPP). PPP is a psychiatric emergency — it is not your fault, it is treatable, and help is available right now.'}
+            {'\n\n'}
+            <Text style={{ fontWeight: '800' }}>Call 911 or go to your nearest ER now.</Text>
+            {'\n'}If you cannot go yourself, call someone you trust to take you.
+          </Text>
+        </View>
+      )}
+
+      <View style={[s.scoreBadge, { backgroundColor: riskColor(riskLevel, c) }]}>
+        <Text style={s.scoreBadgeText}>{riskLabel(riskLevel)}</Text>
+      </View>
+      <Text style={[s.scoreNumber, { color: riskColor(riskLevel, c) }]}>{epdsScore}</Text>
+      <Text style={s.scoreOutOf}>out of 30 — EPDS score</Text>
+
+      {epdsScore >= 10 && (
+        <View style={s.findingBox}>
+          <Text style={s.findingTitle}>
+            {epdsScore >= 13 ? '💙 Probable Postpartum Depression (PPD)' : '💙 Possible Postpartum Depression (PPD)'}
+          </Text>
+          <Text style={s.findingBody}>
+            {epdsScore >= 13
+              ? 'Your score strongly suggests PPD. Please reach out to your OB, midwife, or a therapist as soon as possible. PPD is very common and very treatable — you deserve support.'
+              : 'Your score suggests you may be experiencing some symptoms of PPD. Check in again in a week, and consider speaking with your healthcare provider.'}
+          </Text>
+        </View>
+      )}
+
+      {anxietySubscale >= 6 && (
+        <View style={s.findingBox}>
+          <Text style={s.findingTitle}>💜 Possible Postpartum Anxiety (PPA)</Text>
+          <Text style={s.findingBody}>
+            Your anxiety subscale score ({anxietySubscale}/9) suggests elevated anxiety. PPA is very common and often overlooked. Talk to your provider about what you're experiencing.
+          </Text>
+        </View>
+      )}
+
+      {q10Score !== undefined && q10Score > 0 && (
+        <View style={[s.findingBox, { borderWidth: 2, borderColor: c.blush }]}>
+          <Text style={[s.findingTitle, { color: c.blush }]}>💜 You're Not Alone</Text>
+          <Text style={s.findingBody}>
+            You indicated thoughts of self-harm. Please reach out to a crisis line or your healthcare provider today. These thoughts are a signal that you need and deserve immediate support. You matter.
+          </Text>
+        </View>
+      )}
+
+      {riskLevel === 'low' && !hasPppFlag && (
+        <View style={[s.findingBox, { backgroundColor: c.cardSage }]}>
+          <Text style={[s.findingTitle, { color: c.sage }]}>You're doing well</Text>
+          <Text style={s.findingBody}>
+            Your score suggests you're coping well right now. Keep checking in — postpartum feelings can change quickly, and early support makes a big difference.
+          </Text>
+        </View>
+      )}
+
+      <Text style={s.resourcesHeader}>Support Resources</Text>
+      {RESOURCES.map(r => (
+        <View key={r.name} style={s.resourceRow}>
+          <Text style={s.resourceEmoji}>{r.emoji}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.resourceName}>{r.name}</Text>
+            <Text style={s.resourceDetail}>{r.detail}</Text>
+          </View>
+        </View>
+      ))}
+    </>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function MomMentalHealthTracker({ userId }: { userId: string | null }) {
+export default function PostpartumMentalHealthTracker({
+  userId, onStatusChange,
+}: {
+  userId: string | null;
+  onStatusChange?: (needsAttention: boolean) => void;
+}) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const insets = useSafeAreaInsets();
+  const chartWidth = Platform.OS === 'web' ? Math.min(SW - 32, 500) : SW - 32;
 
   const [records, setRecords] = useState<CheckRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<CheckRecord | null>(null);
 
   // Check-in state
   const [step, setStep] = useState<CheckStep>('intro');
@@ -396,6 +509,16 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
       setLoading(false);
     }
   }, [userId]);
+
+  // Report overdue/high-risk status up to the parent (e.g. for a nav badge)
+  useEffect(() => {
+    if (!onStatusChange) return;
+    const last = records[0];
+    if (!last) { onStatusChange(false); return; }
+    const overdueNow = daysSince(last.created_at) >= 14;
+    const urgentNow = last.risk_level === 'high' || last.risk_level === 'urgent';
+    onStatusChange(overdueNow || urgentNow);
+  }, [records, onStatusChange]);
 
   // ── Modal open/close ─────────────────────────────────────────────────────
 
@@ -443,6 +566,30 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
     if (step === 'results') { setShowModal(false); return; }
   }
 
+  // ── Reminder notification ─────────────────────────────────────────────────
+
+  async function scheduleCheckInReminder() {
+    const ok = await ensureNotificationPermission();
+    if (!ok) return;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(REMINDER_ID).catch(() => {});
+      await Notifications.scheduleNotificationAsync({
+        identifier: REMINDER_ID,
+        content: {
+          title: 'Mental health check-in',
+          body: "It's been a week — take a few minutes to check in with yourself 💜",
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        },
+      });
+    } catch (err) {
+      console.warn('Failed to schedule check-in reminder:', err);
+    }
+  }
+
   // ── Save to Supabase ──────────────────────────────────────────────────────
 
   async function handleSave() {
@@ -455,7 +602,7 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
       const hasPppFlag     = pppFlags.some(Boolean);
       const riskLevel      = getRiskLevel(epdsScore, anxietySubscale, q10Score, hasPppFlag);
 
-      await supabase.from('mom_mental_health_checks').insert({
+      const { id, queued } = await safeInsert('mom_mental_health_checks', {
         user_id:          userId,
         epds_score:       epdsScore,
         responses:        responses,
@@ -465,13 +612,28 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
         risk_level:       riskLevel,
       });
 
-      await loadRecords();
+      // Update the card immediately — don't rely solely on re-fetching, since a
+      // queued (offline) write won't show up on the server yet.
+      const newRecord: CheckRecord = {
+        id, epds_score: epdsScore, anxiety_subscale: anxietySubscale,
+        has_ppp_flag: hasPppFlag, risk_level: riskLevel, created_at: new Date().toISOString(),
+      };
+      setRecords(prev => [newRecord, ...prev].slice(0, 5));
+      if (!queued) await loadRecords();
+
+      scheduleCheckInReminder();
       setStep('results');
     } catch (err: any) {
       console.error('MH save error:', err);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function deleteRecord(id: string) {
+    await safeDelete('mom_mental_health_checks', id);
+    setRecords(prev => prev.filter(r => r.id !== id));
+    setViewingRecord(prev => (prev?.id === id ? null : prev));
   }
 
   // ── Derived results values ─────────────────────────────────────────────────
@@ -507,6 +669,7 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
   const daysSinceLast = lastRecord ? daysSince(lastRecord.created_at) : null;
   const overdue = daysSinceLast !== null && daysSinceLast >= 14;
   const due     = daysSinceLast !== null && daysSinceLast >= 7 && !overdue;
+  const chartRecords = [...records].reverse();
 
   return (
     <>
@@ -514,7 +677,7 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
       <View style={s.card}>
         <View style={s.headerRow}>
           <Text style={s.headerEmoji}>🧠</Text>
-          <Text style={s.headerTitle}>Mom Mental Health</Text>
+          <Text style={s.headerTitle}>Postpartum Mental Health</Text>
           {loading && <ActivityIndicator size="small" color={c.lavender} />}
         </View>
         <Text style={s.subtitle}>
@@ -543,6 +706,38 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
               </View>
             </View>
 
+            {/* Trend chart */}
+            {chartRecords.length >= 2 ? (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={s.chartLabel}>EPDS SCORE OVER TIME</Text>
+                <LineChart
+                  data={{
+                    labels: chartRecords.map(r => fmtDateShort(r.created_at)),
+                    datasets: [{ data: chartRecords.map(r => r.epds_score), color: () => c.lavender, strokeWidth: 2.5 }],
+                  }}
+                  width={chartWidth}
+                  height={160}
+                  chartConfig={{
+                    backgroundColor: c.card,
+                    backgroundGradientFrom: c.card,
+                    backgroundGradientTo: c.card,
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(150,120,200,${opacity})`,
+                    labelColor: () => c.textMuted,
+                    propsForDots: { r: '4', strokeWidth: '2', stroke: c.lavender },
+                  }}
+                  bezier
+                  style={{ borderRadius: 14 }}
+                  withInnerLines={false}
+                  withOuterLines={false}
+                />
+              </View>
+            ) : (
+              <View style={s.chartPlaceholder}>
+                <Text style={s.chartPlaceholderText}>Take one more check-in to see your trend over time.</Text>
+              </View>
+            )}
+
             <TouchableOpacity
               style={[
                 s.checkInBtn,
@@ -563,18 +758,35 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
               </Text>
             </TouchableOpacity>
 
-            {records.length > 1 && (
+            {records.length > 0 && (
               <>
                 <Text style={s.historyTitle}>Recent check-ins</Text>
                 {records.map((rec, i) => (
-                  <View key={rec.id} style={[s.historyItem, i === records.length - 1 && s.historyItemLast]}>
-                    <Text style={s.historyDate}>{fmtDate(rec.created_at)}</Text>
-                    <Text style={s.historyScore}>{rec.epds_score}/30</Text>
-                    <View style={[s.historyPill, { backgroundColor: riskBg(rec.risk_level, c) }]}>
-                      <Text style={[s.historyPill, { color: riskColor(rec.risk_level, c), margin: 0, padding: 0 }]}>
-                        {riskLabel(rec.risk_level)}
-                      </Text>
-                    </View>
+                  <View
+                    key={rec.id}
+                    style={[s.historyItem, i === records.length - 1 && s.historyItemLast]}
+                  >
+                    <TouchableOpacity
+                      style={s.historyItemMain}
+                      onPress={() => setViewingRecord(rec)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={s.historyDate}>{fmtDate(rec.created_at)}</Text>
+                      <Text style={s.historyScore}>{rec.epds_score}/30</Text>
+                      <View style={[s.historyPill, { backgroundColor: riskBg(rec.risk_level, c) }]}>
+                        <Text style={[s.historyPill, { color: riskColor(rec.risk_level, c), margin: 0, padding: 0 }]}>
+                          {riskLabel(rec.risk_level)}
+                        </Text>
+                      </View>
+                      <Text style={s.historyChevron}>›</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => deleteRecord(rec.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={s.historyDeleteBtn}
+                    >
+                      <Text style={s.historyDeleteBtnText}>✕</Text>
+                    </TouchableOpacity>
                   </View>
                 ))}
               </>
@@ -644,8 +856,8 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
                   </Text>
                   <Text style={s.introBody}>It screens for:</Text>
                   {[
-                    'Postpartum Depression (PPD) — affecting 1 in 7 moms',
-                    'Postpartum Anxiety (PPA) — affecting up to 1 in 5 moms',
+                    'Postpartum Depression (PPD) — affecting 1 in 7 parents',
+                    'Postpartum Anxiety (PPA) — affecting up to 1 in 5 parents',
                     'Postpartum Psychosis (PPP) — rare but a medical emergency',
                   ].map(item => (
                     <View key={item} style={s.introBulletRow}>
@@ -735,82 +947,15 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
 
               {/* ── Results ────────────────────────────────────────────── */}
               {step === 'results' && (
-                <>
-                  {/* PPP urgent banner — shown first if flagged */}
-                  {hasPppFlag && (
-                    <View style={s.resultsUrgentBox}>
-                      <Text style={s.resultsUrgentTitle}>🚨 Please Seek Help Immediately</Text>
-                      <Text style={s.resultsUrgentBody}>
-                        Your responses indicate possible symptoms of postpartum psychosis (PPP). PPP is a psychiatric emergency — it is not your fault, it is treatable, and help is available right now.{'\n\n'}
-                        <Text style={{ fontWeight: '800' }}>Call 911 or go to your nearest ER now.</Text>
-                        {'\n'}If you cannot go yourself, call someone you trust to take you.
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* EPDS Score */}
-                  <View style={[s.scoreBadge, { backgroundColor: riskColor(riskLevel, c) }]}>
-                    <Text style={s.scoreBadgeText}>{riskLabel(riskLevel)}</Text>
-                  </View>
-                  <Text style={[s.scoreNumber, { color: riskColor(riskLevel, c) }]}>{epdsScore}</Text>
-                  <Text style={s.scoreOutOf}>out of 30 — EPDS score</Text>
-
-                  {/* Depression finding */}
-                  {epdsScore >= 10 && (
-                    <View style={s.findingBox}>
-                      <Text style={s.findingTitle}>
-                        {epdsScore >= 13 ? '💙 Probable Postpartum Depression (PPD)' : '💙 Possible Postpartum Depression (PPD)'}
-                      </Text>
-                      <Text style={s.findingBody}>
-                        {epdsScore >= 13
-                          ? 'Your score strongly suggests PPD. Please reach out to your OB, midwife, or a therapist as soon as possible. PPD is very common and very treatable — you deserve support.'
-                          : 'Your score suggests you may be experiencing some symptoms of PPD. Check in again in a week, and consider speaking with your healthcare provider.'}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Anxiety finding */}
-                  {anxietySubscale >= 6 && (
-                    <View style={s.findingBox}>
-                      <Text style={s.findingTitle}>💜 Possible Postpartum Anxiety (PPA)</Text>
-                      <Text style={s.findingBody}>
-                        Your anxiety subscale score ({anxietySubscale}/9) suggests elevated anxiety. PPA is very common and often overlooked. Talk to your provider about what you're experiencing.
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Self-harm note */}
-                  {q10Score > 0 && (
-                    <View style={[s.findingBox, { borderWidth: 2, borderColor: c.blush }]}>
-                      <Text style={[s.findingTitle, { color: c.blush }]}>💜 You're Not Alone</Text>
-                      <Text style={s.findingBody}>
-                        You indicated thoughts of self-harm. Please reach out to a crisis line or your healthcare provider today. These thoughts are a signal that you need and deserve immediate support. You matter.
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* All clear */}
-                  {riskLevel === 'low' && !hasPppFlag && (
-                    <View style={[s.findingBox, { backgroundColor: c.cardSage }]}>
-                      <Text style={[s.findingTitle, { color: c.sage }]}>You're doing well</Text>
-                      <Text style={s.findingBody}>
-                        Your score suggests you're coping well right now. Keep checking in — postpartum feelings can change quickly, and early support makes a big difference.
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Resources — always shown */}
-                  <Text style={s.resourcesHeader}>Support Resources</Text>
-                  {RESOURCES.map(r => (
-                    <View key={r.name} style={s.resourceRow}>
-                      <Text style={s.resourceEmoji}>{r.emoji}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.resourceName}>{r.name}</Text>
-                        <Text style={s.resourceDetail}>{r.detail}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </>
+                <ResultsBody
+                  epdsScore={epdsScore}
+                  anxietySubscale={anxietySubscale}
+                  hasPppFlag={hasPppFlag}
+                  riskLevel={riskLevel}
+                  q10Score={q10Score}
+                  c={c}
+                  s={s}
+                />
               )}
 
             </ScrollView>
@@ -843,6 +988,38 @@ export default function MomMentalHealthTracker({ userId }: { userId: string | nu
               )}
             </View>
 
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Past check-in detail ─────────────────────────────────────────── */}
+      <Modal visible={!!viewingRecord} animationType="slide" transparent onRequestClose={() => setViewingRecord(null)}>
+        <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setViewingRecord(null)} />
+          <View style={[s.sheet, { paddingBottom: insets.bottom }]}>
+            <View style={s.handle} />
+            <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+              {viewingRecord && (
+                <>
+                  <Text style={[s.introTitle, { fontSize: 18, marginBottom: 16 }]}>
+                    Check-in — {fmtDate(viewingRecord.created_at)}
+                  </Text>
+                  <ResultsBody
+                    epdsScore={viewingRecord.epds_score}
+                    anxietySubscale={viewingRecord.anxiety_subscale}
+                    hasPppFlag={viewingRecord.has_ppp_flag}
+                    riskLevel={viewingRecord.risk_level}
+                    c={c}
+                    s={s}
+                  />
+                </>
+              )}
+            </ScrollView>
+            <View style={s.navRow}>
+              <TouchableOpacity style={s.navBack} onPress={() => setViewingRecord(null)} activeOpacity={0.75}>
+                <Text style={s.navBackText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

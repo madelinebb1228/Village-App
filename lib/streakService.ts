@@ -25,6 +25,22 @@ function daysDiff(newer: string, older: string): number {
   return Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// current_streak in the DB is only recomputed when recordLog() runs (i.e. when
+// something is actually logged) — it's a write-time cache, not a live value. If
+// days have passed with no log since, the stored number is stale and would just
+// sit there unchanged forever if displayed as-is. This derives the true streak
+// as of today without writing anything, mirroring recordLog's own reset rules.
+function effectiveStreak(data: StreakData): number {
+  if (!data.last_log_date) return data.current_streak;
+  const today = getTodayDateStr();
+  if (data.last_log_date === today) return data.current_streak;
+
+  const diff = daysDiff(today, data.last_log_date);
+  if (diff <= 1) return data.current_streak;                     // still within grace, hasn't missed a day yet
+  if (diff === 2 && data.freeze_count > 0) return data.current_streak; // one skipped day, freeze can still save it
+  return 0; // streak has lapsed
+}
+
 export async function getStreak(userId: string): Promise<StreakData> {
   const { data } = await supabase
     .from('logging_streaks')
@@ -32,12 +48,14 @@ export async function getStreak(userId: string): Promise<StreakData> {
     .eq('user_id', userId)
     .maybeSingle();
 
-  return (data as StreakData | null) ?? {
+  const raw = (data as StreakData | null) ?? {
     current_streak: 0,
     longest_streak: 0,
     last_log_date: null,
     freeze_count: 1,
   };
+
+  return { ...raw, current_streak: effectiveStreak(raw) };
 }
 
 export async function recordLog(userId: string): Promise<RecordLogResult> {

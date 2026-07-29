@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -14,12 +17,29 @@ const EMOTION_CHIPS = [
   'Exhausted','Proud','Numb','Weepy',
 ];
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+// Emotions that, when they show up repeatedly, nudge toward a mental health check-in.
+const CONCERNING_EMOTIONS = ['Anxious', 'Overwhelmed', 'Lonely', 'Numb', 'Weepy'];
+
+const EXPANDED_KEY = 'mood_energy_expanded';
+const SW = Dimensions.get('window').width;
+
+function todayStr(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-function fmtShort(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+function fmtShort(iso: string): string {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function fmtChartLabel(iso: string): string {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,84 +51,147 @@ interface MoodLog {
   energy_score: number;
   emotions: string[];
   notes: string | null;
+  created_at: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function MoodEnergyTracker({ userId }: { userId: string | null }) {
+export default function MoodEnergyTracker({
+  userId, onSuggestCheckIn,
+}: {
+  userId: string | null;
+  onSuggestCheckIn?: () => void;
+}) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const chartWidth = Platform.OS === 'web' ? Math.min(SW - 96, 480) : SW - 96;
 
-  const [todayLog, setTodayLog]   = useState<MoodLog | null>(null);
-  const [history,  setHistory]    = useState<MoodLog[]>([]);
-  const [loading,  setLoading]    = useState(true);
-  const [saving,   setSaving]     = useState(false);
-  const [expanded, setExpanded]   = useState(false);
-  const [editing,  setEditing]    = useState(false);
+  const [entries, setEntries]   = useState<MoodLog[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving,  setSaving]    = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
   const [mood,     setMood]     = useState(3);
   const [energy,   setEnergy]   = useState(3);
   const [emotions, setEmotions] = useState<string[]>([]);
   const [notes,    setNotes]    = useState('');
+  const [customEmotion, setCustomEmotion] = useState('');
+
+  useEffect(() => {
+    AsyncStorage.getItem(EXPANDED_KEY).then(v => { if (v != null) setExpanded(v === '1'); });
+  }, []);
+
+  function toggleExpanded() {
+    setExpanded(v => {
+      const next = !v;
+      AsyncStorage.setItem(EXPANDED_KEY, next ? '1' : '0').catch(() => {});
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
-    const [todayRes, histRes] = await Promise.all([
-      (supabase.from('mom_mood_logs') as any)
-        .select('*').eq('user_id', userId).eq('logged_date', todayStr()).maybeSingle(),
-      (supabase.from('mom_mood_logs') as any)
-        .select('*').eq('user_id', userId)
-        .order('logged_date', { ascending: false }).limit(7),
-    ]);
-    setTodayLog(todayRes.data ?? null);
-    setHistory(histRes.data ?? []);
+    const { data } = await (supabase.from('mom_mood_logs') as any)
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    setEntries(data ?? []);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
-  function startLog(existing?: MoodLog) {
-    setMood(existing?.mood_score ?? 3);
-    setEnergy(existing?.energy_score ?? 3);
-    setEmotions(existing?.emotions ?? []);
-    setNotes(existing?.notes ?? '');
-    setEditing(true);
+  const todayEntries = useMemo(() => entries.filter(e => e.logged_date === todayStr()), [entries]);
+
+  // ── Cross-tracker nudge ───────────────────────────────────────────────────
+  const recentForNudge = entries.slice(0, 5);
+  const concerningCount = recentForNudge.filter(e => e.emotions.some(em => CONCERNING_EMOTIONS.includes(em))).length;
+  const avgRecentMood = recentForNudge.length
+    ? recentForNudge.reduce((sum, e) => sum + e.mood_score, 0) / recentForNudge.length
+    : null;
+  const showNudge = onSuggestCheckIn && recentForNudge.length >= 3
+    && (concerningCount >= 3 || (avgRecentMood !== null && avgRecentMood <= 2));
+
+  function openNewEntry() {
+    setEditingLogId(null);
+    setMood(3); setEnergy(3); setEmotions([]); setNotes(''); setCustomEmotion('');
+    setShowForm(true);
+  }
+
+  function openEditEntry(entry: MoodLog) {
+    setEditingLogId(entry.id);
+    setMood(entry.mood_score); setEnergy(entry.energy_score);
+    setEmotions(entry.emotions); setNotes(entry.notes ?? ''); setCustomEmotion('');
+    setShowForm(true);
   }
 
   function toggleEmotion(e: string) {
     setEmotions(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
   }
 
+  function addCustomEmotion() {
+    const val = customEmotion.trim();
+    if (!val) return;
+    if (!emotions.includes(val)) setEmotions(prev => [...prev, val]);
+    setCustomEmotion('');
+  }
+
+  const customChips = emotions.filter(e => !EMOTION_CHIPS.includes(e));
+
   async function save() {
     if (!userId) return;
     setSaving(true);
-    const payload = { user_id: userId, logged_date: todayStr(), mood_score: mood, energy_score: energy, emotions, notes: notes.trim() || null };
-    if (todayLog) {
-      await (supabase.from('mom_mood_logs') as any).update(payload).eq('id', todayLog.id);
-    } else {
-      await (supabase.from('mom_mood_logs') as any).insert(payload);
+    try {
+      const editing = editingLogId ? entries.find(e => e.id === editingLogId) : null;
+      const payload = {
+        user_id: userId,
+        logged_date: editing?.logged_date ?? todayStr(),
+        mood_score: mood, energy_score: energy, emotions, notes: notes.trim() || null,
+      };
+      if (editingLogId) {
+        await safeUpdate('mom_mood_logs', editingLogId, payload);
+      } else {
+        await safeInsert('mom_mood_logs', payload);
+      }
+      setShowForm(false);
+      setEditingLogId(null);
+      await load();
+    } catch (err: any) {
+      Alert.alert('Couldn\'t save check-in', err?.message ?? 'Please try again.');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setEditing(false);
-    load();
   }
+
+  async function deleteEntry(id: string) {
+    await safeDelete('mom_mood_logs', id);
+    setEntries(prev => prev.filter(e => e.id !== id));
+  }
+
+  const chartEntries = [...entries].slice(0, 10).reverse();
 
   if (loading) return <ActivityIndicator color={c.primary} style={{ margin: 24 }} />;
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={toggleExpanded} activeOpacity={0.8}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🌈</Text>
           <View>
             <Text style={s.headerTitle}>Mood & Energy</Text>
-            {todayLog && !editing && (
+            {todayEntries.length > 0 ? (
               <Text style={s.headerSub}>
-                Today: {MOOD_OPTS[todayLog.mood_score - 1]}  Energy: {todayLog.energy_score}/5
+                {todayEntries.length > 1
+                  ? `${todayEntries.length} check-ins today`
+                  : `Today: ${MOOD_OPTS[todayEntries[0].mood_score - 1]}  Energy: ${todayEntries[0].energy_score}/5`}
               </Text>
+            ) : (
+              <Text style={s.headerSub}>How are you feeling today?</Text>
             )}
-            {!todayLog && <Text style={s.headerSub}>How are you feeling today?</Text>}
           </View>
         </View>
         <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
@@ -116,42 +199,84 @@ export default function MoodEnergyTracker({ userId }: { userId: string | null })
 
       {expanded && (
         <View style={s.body}>
-          {!editing ? (
+          {!showForm ? (
             <>
-              {/* Today's entry summary */}
-              {todayLog ? (
-                <View style={s.todayCard}>
-                  <Text style={s.todayLabel}>Today's check-in</Text>
-                  <View style={s.scaleRow}>
-                    <Text style={s.scaleEmoji}>{MOOD_OPTS[todayLog.mood_score - 1]}</Text>
-                    <Text style={s.scaleMeta}>Mood {todayLog.mood_score}/5  ·  Energy {todayLog.energy_score}/5</Text>
-                  </View>
-                  {todayLog.emotions.length > 0 && (
-                    <Text style={s.todayEmotions}>{todayLog.emotions.join(' · ')}</Text>
-                  )}
-                  {todayLog.notes ? <Text style={s.todayNotes}>"{todayLog.notes}"</Text> : null}
-                  <TouchableOpacity style={s.editBtn} onPress={() => startLog(todayLog)}>
-                    <Text style={s.editBtnText}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={s.logBtn} onPress={() => startLog()}>
-                  <Text style={s.logBtnText}>✏️  Log How You're Feeling</Text>
+              {showNudge && (
+                <TouchableOpacity style={s.nudgeBanner} onPress={onSuggestCheckIn} activeOpacity={0.85}>
+                  <Text style={s.nudgeText}>
+                    💜 We've noticed some tough days lately. Consider taking a Postpartum Mental Health check-in.
+                  </Text>
+                  <Text style={s.nudgeArrow}>›</Text>
                 </TouchableOpacity>
               )}
 
-              {/* History sparkline */}
-              {history.length > 1 && (
+              <TouchableOpacity style={s.logBtn} onPress={openNewEntry}>
+                <Text style={s.logBtnText}>✏️  Log a Check-in</Text>
+              </TouchableOpacity>
+
+              {/* Trend chart */}
+              {chartEntries.length >= 2 ? (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={s.chartLabel}>MOOD & ENERGY OVER TIME</Text>
+                  <LineChart
+                    data={{
+                      labels: chartEntries.map(e => fmtChartLabel(e.logged_date)),
+                      datasets: [
+                        { data: chartEntries.map(e => e.mood_score), color: () => '#DB2777', strokeWidth: 2.5 },
+                        { data: chartEntries.map(e => e.energy_score), color: () => c.sage, strokeWidth: 2.5 },
+                      ],
+                      legend: ['Mood', 'Energy'],
+                    }}
+                    width={chartWidth}
+                    height={160}
+                    fromZero
+                    segments={4}
+                    chartConfig={{
+                      backgroundColor: c.card,
+                      backgroundGradientFrom: c.card,
+                      backgroundGradientTo: c.card,
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(219,39,119,${opacity})`,
+                      labelColor: () => c.textMuted,
+                      propsForDots: { r: '3.5', strokeWidth: '2' },
+                    }}
+                    bezier
+                    style={{ borderRadius: 14 }}
+                    withInnerLines={false}
+                    withOuterLines={false}
+                  />
+                </View>
+              ) : (
+                <View style={s.chartPlaceholder}>
+                  <Text style={s.chartPlaceholderText}>Log one more check-in to see your trend over time.</Text>
+                </View>
+              )}
+
+              {/* Recent check-ins */}
+              {entries.length > 0 && (
                 <View style={s.histWrap}>
-                  <Text style={s.histTitle}>Last {history.length} days</Text>
-                  <View style={s.sparkRow}>
-                    {[...history].reverse().map(h => (
-                      <View key={h.id} style={s.sparkCol}>
-                        <Text style={s.sparkEmoji}>{MOOD_OPTS[h.mood_score - 1]}</Text>
-                        <Text style={s.sparkDate}>{new Date(h.logged_date).toLocaleDateString('en-US',{weekday:'short'}).slice(0,1)}</Text>
+                  <Text style={s.histTitle}>Recent check-ins</Text>
+                  {entries.map(entry => (
+                    <View key={entry.id} style={s.entryRow}>
+                      <Text style={s.entryEmoji}>{MOOD_OPTS[entry.mood_score - 1]}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.entryDate}>
+                          {entry.logged_date === todayStr() ? `Today · ${fmtTime(entry.created_at)}` : fmtShort(entry.logged_date)}
+                        </Text>
+                        <Text style={s.entryMeta}>
+                          Mood {entry.mood_score}/5 · Energy {entry.energy_score}/5
+                          {entry.emotions.length > 0 ? `  ·  ${entry.emotions.join(', ')}` : ''}
+                        </Text>
+                        {entry.notes ? <Text style={s.entryNotes}>"{entry.notes}"</Text> : null}
                       </View>
-                    ))}
-                  </View>
+                      <TouchableOpacity onPress={() => openEditEntry(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={s.entryAction}>✎</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteEntry(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
               )}
             </>
@@ -188,7 +313,7 @@ export default function MoodEnergyTracker({ userId }: { userId: string | null })
 
               <Text style={s.formLabel}>How are you feeling? <Text style={s.optional}>(pick any)</Text></Text>
               <View style={s.chipsWrap}>
-                {EMOTION_CHIPS.map(e => (
+                {[...EMOTION_CHIPS, ...customChips].map(e => (
                   <TouchableOpacity
                     key={e}
                     style={[s.chip, emotions.includes(e) && { backgroundColor: c.cardBlush, borderColor: c.blush }]}
@@ -197,6 +322,20 @@ export default function MoodEnergyTracker({ userId }: { userId: string | null })
                     <Text style={[s.chipText, emotions.includes(e) && { color: c.blush, fontWeight: '700' }]}>{e}</Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+              <View style={s.customRow}>
+                <TextInput
+                  style={s.customInput}
+                  placeholder="Add your own..."
+                  placeholderTextColor={c.textMuted}
+                  value={customEmotion}
+                  onChangeText={setCustomEmotion}
+                  onSubmitEditing={addCustomEmotion}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity style={s.customAddBtn} onPress={addCustomEmotion} disabled={!customEmotion.trim()}>
+                  <Text style={s.customAddBtnText}>Add</Text>
+                </TouchableOpacity>
               </View>
 
               <Text style={s.formLabel}>Any notes? <Text style={s.optional}>(optional)</Text></Text>
@@ -211,11 +350,11 @@ export default function MoodEnergyTracker({ userId }: { userId: string | null })
               />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => setEditing(false)}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setShowForm(false); setEditingLogId(null); }}>
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save Check-In</Text>}
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingLogId ? 'Save Changes' : 'Save Check-In'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -239,25 +378,35 @@ function makeStyles(c: Colors) {
     chevron:     { fontSize: 12, color: c.textMuted },
     body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
 
-    todayCard:   { backgroundColor: c.cardBlush, borderRadius: 12, padding: 14, marginBottom: 14 },
-    todayLabel:  { fontSize: 11, fontWeight: '700', color: '#831843', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-    scaleRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-    scaleEmoji:  { fontSize: 28 },
-    scaleMeta:   { fontSize: 14, fontWeight: '600', color: c.textPrimary },
-    todayEmotions: { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
-    todayNotes:  { fontSize: 12, color: c.textMuted, fontStyle: 'italic', marginBottom: 8 },
-    editBtn:     { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5, borderColor: '#DB2777' },
-    editBtnText: { fontSize: 12, fontWeight: '700', color: '#DB2777' },
+    nudgeBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: c.cardLavender, borderRadius: 12, padding: 12, marginBottom: 14,
+      borderWidth: 1.5, borderColor: c.lavender,
+    },
+    nudgeText: { flex: 1, fontSize: 12, color: c.textPrimary, lineHeight: 17, fontWeight: '600' },
+    nudgeArrow: { fontSize: 18, color: c.lavender, fontWeight: '700' },
 
     logBtn:     { backgroundColor: c.cardBlush, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1.5, borderColor: '#FBCFE8' },
     logBtnText: { fontSize: 15, fontWeight: '700', color: '#831843' },
 
-    histWrap: { marginTop: 8 },
+    chartLabel: { fontSize: 11, color: c.textMuted, fontWeight: '600', marginBottom: 6 },
+    chartPlaceholder: {
+      alignItems: 'center', backgroundColor: c.bg, borderRadius: 14,
+      padding: 16, marginBottom: 16,
+    },
+    chartPlaceholderText: { fontSize: 12, color: c.textMuted, textAlign: 'center' },
+
+    histWrap:  { marginTop: 4 },
     histTitle: { fontSize: 12, fontWeight: '700', color: c.textMuted, marginBottom: 8 },
-    sparkRow:  { flexDirection: 'row', gap: 4 },
-    sparkCol:  { alignItems: 'center', flex: 1 },
-    sparkEmoji:{ fontSize: 18 },
-    sparkDate: { fontSize: 10, color: c.textMuted, marginTop: 2 },
+    entryRow: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+      paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.separator,
+    },
+    entryEmoji: { fontSize: 22 },
+    entryDate:  { fontSize: 12, fontWeight: '700', color: c.textPrimary, marginBottom: 2 },
+    entryMeta:  { fontSize: 12, color: c.textSecondary },
+    entryNotes: { fontSize: 12, color: c.textMuted, fontStyle: 'italic', marginTop: 2 },
+    entryAction: { fontSize: 15, color: '#DB2777', paddingHorizontal: 2 },
 
     formLabel:  { fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 10, marginTop: 12 },
     optional:   { fontWeight: '400', color: c.textMuted },
@@ -266,9 +415,17 @@ function makeStyles(c: Colors) {
     emojiBtnText: { fontSize: 22 },
     emojiBtnNum:  { fontSize: 10, color: c.textMuted, marginTop: 2 },
 
-    chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+    chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
     chip:      { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.bg },
     chipText:  { fontSize: 13, color: c.textSecondary },
+
+    customRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+    customInput: {
+      flex: 1, backgroundColor: c.bg, borderRadius: 10, borderWidth: 1.5, borderColor: c.separator,
+      paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: c.textPrimary,
+    },
+    customAddBtn: { paddingHorizontal: 16, justifyContent: 'center', borderRadius: 10, backgroundColor: c.cardBlush, borderWidth: 1.5, borderColor: '#FBCFE8' },
+    customAddBtnText: { fontSize: 13, fontWeight: '700', color: '#831843' },
 
     notesInput: { backgroundColor: c.bg, borderRadius: 10, borderWidth: 1.5, borderColor: c.separator, padding: 12, fontSize: 14, color: c.textPrimary, minHeight: 70, textAlignVertical: 'top', marginBottom: 16 },
     btnRow:     { flexDirection: 'row', gap: 10 },

@@ -70,6 +70,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal from '../components/ContentBlockedModal';
 import ReportModal from '../components/ReportModal';
 import { AMAZON_AFFILIATE_TAG } from '../lib/affiliate';
 
@@ -421,6 +423,7 @@ function ItemForm({
   onCancel,
   onSubmit,
   submitLabel,
+  currentUserId,
   c,
 }: {
   fName: string; setFName: (v: string) => void;
@@ -433,9 +436,12 @@ function ItemForm({
   onCancel: () => void;
   onSubmit: () => void;
   submitLabel: string;
+  currentUserId: string | null;
   c: Colors;
 }) {
   const s = itemFormStyles(c);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string } | null>(null);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -450,7 +456,15 @@ function ItemForm({
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setFImageUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setModerating(true);
+      const modResult = await moderateImage(uri);
+      setModerating(false);
+      if (modResult.blocked) {
+        setBlockedContent({ severity: modResult.severity, reason: modResult.reason });
+        return;
+      }
+      setFImageUri(uri);
     }
   };
 
@@ -485,6 +499,27 @@ function ItemForm({
           <Text style={s.submitText}>{submitLabel}</Text>
         </TouchableOpacity>
       </View>
+
+      {blockedContent && currentUserId && (
+        <ContentBlockedModal
+          visible={!!blockedContent}
+          severity={blockedContent.severity}
+          reason={blockedContent.reason}
+          contentType="item_photo"
+          userId={currentUserId}
+          onClose={() => setBlockedContent(null)}
+        />
+      )}
+
+      {moderating && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', gap: 12,
+        }}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Checking photo…</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -847,6 +882,7 @@ function CreateListModal({
                   onCancel={() => { clearItem(); setAddingItem(false); }}
                   onSubmit={addItem}
                   submitLabel="Add item"
+                  currentUserId={currentUserId}
                   c={c}
                 />
               </>
@@ -904,12 +940,13 @@ const createStyles = (c: Colors) => StyleSheet.create({
 // ─── AdminEditModal ───────────────────────────────────────────────────────────
 
 function AdminEditModal({
-  visible, list, onClose, onSave, c,
+  visible, list, onClose, onSave, currentUserId, c,
 }: {
   visible: boolean;
   list: ShoppingList | null;
   onClose: () => void;
   onSave: (title: string, desc: string, items: ListItem[]) => Promise<void>;
+  currentUserId: string | null;
   c: Colors;
 }) {
   const s = adminEditStyles(c);
@@ -1041,6 +1078,7 @@ function AdminEditModal({
                     onCancel={() => { setEditingIdx(null); clearForm(); }}
                     onSubmit={saveEdit}
                     submitLabel="Done"
+                    currentUserId={currentUserId}
                     c={c}
                   />
                 ) : (
@@ -1081,6 +1119,7 @@ function AdminEditModal({
                   onCancel={() => { clearForm(); setAddingItem(false); }}
                   onSubmit={addItem}
                   submitLabel="Add"
+                  currentUserId={currentUserId}
                   c={c}
                 />
               </>
@@ -1437,6 +1476,7 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
           list={adminEditList}
           onClose={() => setAdminEditList(null)}
           onSave={saveAdminEdits}
+          currentUserId={currentUserId}
           c={c}
         />
       </>

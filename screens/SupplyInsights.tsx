@@ -253,33 +253,40 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
     setShowModal(false);
   }
 
-  if (!trend || dismissed) return null;
-
   const currentStep = STEPS[step];
 
   return (
     <>
-      {/* ── Detection card ────────────────────────────────────────────────── */}
-      <View style={s.card}>
-        <View style={s.cardHeader}>
-          <Text style={s.cardIcon}>📉</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.cardTitle}>Supply may be decreasing</Text>
-            <Text style={s.cardSub}>
-              ~{Math.round(trend.declinePct)}% lower this week vs last week
-            </Text>
+      {/* ── Detection card (only when trend detected) ─────────────────────── */}
+      {trend && !dismissed && (
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Text style={s.cardIcon}>📉</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.cardTitle}>Supply may be decreasing</Text>
+              <Text style={s.cardSub}>
+                ~{Math.round(trend.declinePct)}% lower this week vs last week
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setDismissed(true)} style={s.dismissBtn}>
+              <Text style={s.dismissText}>✕</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setDismissed(true)} style={s.dismissBtn}>
-            <Text style={s.dismissText}>✕</Text>
+          <Text style={s.cardBody}>
+            Recent sessions averaged {trend.recentAvg.toFixed(0)} ml, down from {trend.prevAvg.toFixed(0)} ml the week before.
+          </Text>
+          <TouchableOpacity style={s.insightBtn} onPress={() => setShowModal(true)}>
+            <Text style={s.insightBtnText}>Understand why →</Text>
           </TouchableOpacity>
         </View>
-        <Text style={s.cardBody}>
-          Recent sessions averaged {trend.recentAvg.toFixed(0)} ml, down from {trend.prevAvg.toFixed(0)} ml the week before.
-        </Text>
-        <TouchableOpacity style={s.insightBtn} onPress={() => setShowModal(true)}>
-          <Text style={s.insightBtnText}>Understand why →</Text>
+      )}
+
+      {/* ── Always-visible tips entry point ───────────────────────────────── */}
+      {!(trend && !dismissed) && (
+        <TouchableOpacity style={s.tipsBtn} onPress={() => setShowModal(true)}>
+          <Text style={s.tipsBtnText}>✨ Get personalized supply tips →</Text>
         </TouchableOpacity>
-      </View>
+      )}
 
       {/* ── Modal (questionnaire + results) ──────────────────────────────── */}
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={reset}>
@@ -397,6 +404,11 @@ function makeStyles(c: Colors) {
     insightBtn:   { backgroundColor: c.honey, borderRadius: 20, paddingVertical: 10,
                     paddingHorizontal: 18, alignSelf: 'flex-start' },
     insightBtnText:{ fontSize: 13, fontWeight: '700', color: c.textPrimary },
+
+    tipsBtn:        { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
+                      backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder,
+                      alignSelf: 'stretch', marginBottom: 14 },
+    tipsBtnText:    { fontSize: 13, fontWeight: '700', color: c.textSecondary },
 
     // Modal shell
     overlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(60,50,45,0.45)' },

@@ -7,9 +7,16 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
+import {
+  MilestoneReminderSettings,
+  getMilestoneReminderSettings,
+  saveMilestoneReminderSettings,
+  rescheduleMilestoneReminders,
+} from '../lib/milestoneNotifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -198,6 +205,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
 
   const [entries,     setEntries]     = useState<Record<string, MilestoneEntry>>({});
   const [loading,     setLoading]     = useState(true);
+  const [reminderSettings, setReminderSettings] = useState<MilestoneReminderSettings>({ enabled: false, quietStart: null, quietEnd: null });
 
   // Editor
   const [editing,       setEditing]       = useState<MilestoneDef | null>(null);
@@ -232,8 +240,20 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
       const map: Record<string, MilestoneEntry> = {};
       (data as MilestoneEntry[]).forEach(e => { map[e.milestone_key] = e; });
       setEntries(map);
+
+      const rs = await getMilestoneReminderSettings(userId);
+      setReminderSettings(rs);
+      await rescheduleMilestoneReminders(userId, babyBirthDate ?? null, map, ALL_MILESTONES, rs);
     }
     setLoading(false);
+  }
+
+  async function toggleMilestoneReminders() {
+    if (!userId) return;
+    const next = { ...reminderSettings, enabled: !reminderSettings.enabled };
+    setReminderSettings(next);
+    await saveMilestoneReminderSettings(userId, next);
+    await rescheduleMilestoneReminders(userId, babyBirthDate ?? null, entries, ALL_MILESTONES, next);
   }
 
   async function fetchAuthor() {
@@ -382,12 +402,12 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
 
     const existing = isNew ? null : entries[milestoneKey];
     if (existing) {
-      await supabase.from('milestone_photos').update({
+      await safeUpdate('milestone_photos', existing.id, {
         photo_url: finalUrl, caption: encodedCaption || null,
         updated_at: new Date().toISOString(),
-      }).eq('id', existing.id);
+      });
     } else {
-      await supabase.from('milestone_photos').insert({
+      await safeInsert('milestone_photos', {
         user_id: userId, milestone_key: milestoneKey,
         photo_url: finalUrl, caption: encodedCaption || null,
       });
@@ -406,7 +426,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
     const content = caption.trim()
       ? `${emoji} ${label}!\n\n${caption.trim()}`
       : `${emoji} ${label}!`;
-    await supabase.from('posts').insert({
+    await safeInsert('posts', {
       user_id: userId, author: authorName, content,
       post_type: 'milestone', likes: 0,
       image_url: isVideo ? null : (mediaUrl ?? null),
@@ -507,6 +527,17 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
         <View style={s.progressBadge}>
           <Text style={s.progressBadgeText}>{capturedCount}/{ALL_MILESTONES.length}</Text>
         </View>
+      </View>
+
+      <View style={s.reminderRow}>
+        <Text style={s.reminderLabel}>🔔 Remind me when milestones are coming up</Text>
+        <TouchableOpacity
+          style={[s.toggle, reminderSettings.enabled && { backgroundColor: c.primary }]}
+          onPress={toggleMilestoneReminders}
+          activeOpacity={0.8}
+        >
+          <View style={[s.toggleThumb, reminderSettings.enabled && { transform: [{ translateX: 20 }] }]} />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -745,11 +776,16 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    container:  { marginTop: 24 },
+    container:  { marginBottom: 16 },
     headerRow:  { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
     sectionTitle:    { fontSize: 18, fontWeight: '700', color: c.textPrimary },
     sectionSubtitle: { fontSize: 12, color: c.textMuted, fontWeight: '500', marginTop: 2 },
     progressBadge:     { backgroundColor: c.cardSage, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginTop: 2 },
+
+    reminderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+    reminderLabel: { fontSize: 13, fontWeight: '600', color: c.textPrimary, flex: 1, marginRight: 10 },
+    toggle:        { width: 46, height: 26, borderRadius: 13, backgroundColor: c.separator, justifyContent: 'center', paddingHorizontal: 2 },
+    toggleThumb:   { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
     progressBadgeText: { fontSize: 12, fontWeight: '800', color: c.sage },
 
     comingBox:   { backgroundColor: c.cardBlue, borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5, borderColor: c.blue },

@@ -9,6 +9,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { autoFormatDate } from '../lib/dateUtils';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal from '../components/ContentBlockedModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,8 @@ export default function EventsScreen({ onBack }: Props) {
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState('');
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string } | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -177,17 +181,27 @@ export default function EventsScreen({ onBack }: Props) {
   async function pickImage() {
     const source = await showSourcePicker();
     if (!source) return;
+    let uri: string | null = null;
     if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') return;
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-      if (!result.canceled && result.assets[0]) setPendingImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     } else {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') return;
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
-      if (!result.canceled && result.assets[0]) setPendingImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     }
+    if (!uri) return;
+    setModerating(true);
+    const modResult = await moderateImage(uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason });
+      return;
+    }
+    setPendingImageUri(uri);
   }
 
   async function createEvent() {
@@ -560,6 +574,27 @@ export default function EventsScreen({ onBack }: Props) {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {blockedContent && currentUserId && (
+        <ContentBlockedModal
+          visible={!!blockedContent}
+          severity={blockedContent.severity}
+          reason={blockedContent.reason}
+          contentType="event_photo"
+          userId={currentUserId}
+          onClose={() => setBlockedContent(null)}
+        />
+      )}
+
+      {moderating && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', gap: 12,
+        }}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Checking photo…</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

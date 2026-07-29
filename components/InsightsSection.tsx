@@ -18,9 +18,11 @@ const TYPE_META: Record<InsightType, { label: string; getColors: (c: Colors) => 
 
 export default function InsightsSection({
   babyId,
+  userId,
   refreshKey,
 }: {
   babyId: string | null
+  userId?: string | null
   refreshKey: number
 }) {
   const c = useColors()
@@ -60,14 +62,14 @@ export default function InsightsSection({
     if (!babyId) return
     setLoading(true)
     try {
-      const data = await generateInsights(babyId, period)
+      const data = await generateInsights(babyId, period, userId ?? null)
       setResult(data)
     } catch (err) {
       console.error('[InsightsSection]', err)
     } finally {
       setLoading(false)
     }
-  }, [babyId, period])
+  }, [babyId, period, userId])
 
   useEffect(() => { load() }, [load])
 
@@ -116,6 +118,11 @@ export default function InsightsSection({
       {result && (
         <Text style={s.summary}>
           {result.dataPoints.sleepSessions} sleep · {result.dataPoints.feeds} feeds · {result.dataPoints.diapers} diapers · {result.dataPoints.foodLogs} foods
+          {result.dataPoints.medications > 0 ? ` · ${result.dataPoints.medications} meds` : ''}
+          {result.dataPoints.periodLogs > 0 ? ` · ${result.dataPoints.periodLogs} period logs` : ''}
+          {result.dataPoints.movementLogs > 0 ? ` · ${result.dataPoints.movementLogs} movement` : ''}
+          {result.dataPoints.growthLogs > 0 ? ` · ${result.dataPoints.growthLogs} growth` : ''}
+          {result.dataPoints.allergenRecords > 0 ? ` · ${result.dataPoints.allergenRecords} allergens` : ''}
         </Text>
       )}
 

@@ -35,8 +35,6 @@ import StreakCard from '../components/StreakCard';
 import StoryViewer from '../components/StoryViewer';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
-import PatchyPeek from '../components/PatchyPeek';
-import { usePatchyCards } from '../lib/usePatchyCards';
 
 import {
   Post, Comment, Stats, ReminderUrgency, Reminder,
@@ -61,8 +59,6 @@ export default function HomeTab() {
   const { isOneHanded } = useOneHanded();
   const insets = useSafeAreaInsets();
   const REMINDER_COLORS = useMemo(() => getReminderColors(c), [c]);
-
-  const { cards: patchyCards, onContainerLayout: patchyContainer, onCardLayout: patchyCard } = usePatchyCards();
 
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
@@ -931,17 +927,27 @@ export default function HomeTab() {
   async function pickStoryImage() {
     const source = await showSourcePicker('Add Photo Story');
     if (!source) return;
+    let uri: string | null = null;
     if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow camera access.'); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [9, 16], quality: 0.85 });
-      if (!result.canceled && result.assets[0]) setStoryImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     } else {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [9, 16], quality: 0.85 });
-      if (!result.canceled && result.assets[0]) setStoryImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets[0]) uri = result.assets[0].uri;
     }
+    if (!uri) return;
+    setModerating(true);
+    const modResult = await moderateImage(uri);
+    setModerating(false);
+    if (modResult.blocked) {
+      setBlockedContent({ severity: modResult.severity, reason: modResult.reason, contentType: 'story_photo' });
+      return;
+    }
+    setStoryImageUri(uri);
   }
 
   async function pickStoryVideo() {
@@ -1322,7 +1328,7 @@ export default function HomeTab() {
           <Text style={styles.heading}>
             {greeting.text}{' '}
             {greeting.icon === 'sun'
-              ? <Image source={require('../assets/sun-icon.png')} style={styles.headingIcon} />
+              ? <Image source={require('../assets/sun-icon.png')} resizeMode="contain" style={styles.headingIcon} />
               : greeting.icon === 'moon'
               ? <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={styles.headingIcon} />
               : '🌸'}
@@ -1352,11 +1358,9 @@ export default function HomeTab() {
             <TouchableOpacity
               onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
               activeOpacity={0.75}
-              style={styles.notifBtn}
+              style={styles.searchBtn}
             >
-              <View style={styles.notifBtnClip}>
-                <Image source={require('../assets/messages-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-              </View>
+              <Text style={styles.searchBtnIcon}>💬</Text>
               {unreadCount > 0 && (
                 <View style={{
                   position: 'absolute', top: 2, right: 2,
@@ -1444,13 +1448,11 @@ export default function HomeTab() {
         )}
 
         {/* Stat cards */}
-        <View style={styles.statRow} onLayout={patchyContainer}>
-          <PatchyPeek cards={patchyCards} dir="right" offsetX={-19} offsetY={-5} />
-          {statCards.map((card, idx) => (
+        <View style={styles.statRow}>
+          {statCards.map(card => (
             <View
               key={card.label}
               style={[styles.statCard, { borderTopColor: card.accent, backgroundColor: card.bg }]}
-              onLayout={idx < 3 ? patchyCard : undefined}
             >
               {loading ? (
                 <ActivityIndicator
@@ -2830,7 +2832,7 @@ function makeStyles(c: Colors) {
       justifyContent: 'space-between',
       marginBottom: 24,
     },
-    headingIcon: { width: 24, height: 24 },
+    headingIcon: { width: 34, height: 34 },
     heading: {
       fontSize: 26,
       fontWeight: '800',
@@ -2849,7 +2851,7 @@ function makeStyles(c: Colors) {
       shadowRadius: 4,
       elevation: 2,
     },
-    searchBtnIcon: { fontSize: 18 },
+    searchBtnIcon: { fontSize: 24 },
     notifBtn: {
       width: 40,
       height: 40,

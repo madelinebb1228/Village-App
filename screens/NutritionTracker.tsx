@@ -1,12 +1,16 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, Modal,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Image, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import { lookupBarcode, ProductInfo } from '../lib/barcodeProductLookup';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +24,7 @@ interface NutritionProfile {
   weight_goal: string;
   calorie_goal: number;
   water_goal_oz: number;
+  protein_goal_g: number | null;
 }
 
 interface NutritionLog {
@@ -28,7 +33,18 @@ interface NutritionLog {
   description: string | null;
   calories: number | null;
   water_oz: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
   created_at: string;
+}
+
+interface RecentMeal {
+  description: string;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,17 +75,35 @@ const MEAL_EMOJIS: Record<string, string> = {
   breakfast: '🌅', lunch: '☀️', dinner: '🌙', snack: '🍎',
 };
 
+const COLLAPSED_KEY = 'nutrition_collapsed';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+function dateToISO(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.toDateString() === b.toDateString();
+}
+
+function formatDateLabel(d: Date): string {
+  if (isSameDay(d, new Date())) return 'Today';
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(d, yesterday)) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function calcGoals(
-  heightFt: number, heightIn: number, weightLbs: number, age: number,
+  heightCm: number, weightLbs: number, age: number,
   activity: string, bfType: string, goal: string,
-): { calorie_goal: number; water_goal_oz: number; height_cm: number } {
-  const heightCm = (heightFt * 12 + heightIn) * 2.54;
+): { calorie_goal: number; water_goal_oz: number; protein_goal_g: number } {
   const weightKg = weightLbs * 0.453592;
   // Mifflin-St Jeor (female)
   const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
@@ -86,7 +120,21 @@ function calcGoals(
   if (bfType === 'exclusive') waterOz += 16;
   else if (bfType === 'combo') waterOz += 8;
   waterOz = Math.round(waterOz / 8) * 8;
-  return { calorie_goal: calorieGoal, water_goal_oz: waterOz, height_cm: heightCm };
+  // Protein: ~0.36g/lb baseline (RDA ~0.8g/kg), +25g exclusive / +15g combo breastfeeding (ACOG/USDA)
+  let proteinGoal = weightLbs * 0.36;
+  if (bfType === 'exclusive') proteinGoal += 25;
+  else if (bfType === 'combo') proteinGoal += 15;
+  proteinGoal = Math.round(proteinGoal);
+  return { calorie_goal: calorieGoal, water_goal_oz: waterOz, protein_goal_g: proteinGoal };
+}
+
+function ftInToCm(ft: number, inches: number): number {
+  return (ft * 12 + inches) * 2.54;
+}
+
+function cmToFtIn(cm: number): { ft: number; inches: number } {
+  const totalInches = Math.round(cm / 2.54);
+  return { ft: Math.floor(totalInches / 12), inches: totalInches % 12 };
 }
 
 // ─── Style helpers ─────────────────────────────────────────────────────────────
@@ -136,12 +184,19 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const [profile, setProfile]   = useState<NutritionProfile | null>(null);
   const [logs, setLogs]         = useState<NutritionLog[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [recentMeals, setRecentMeals] = useState<RecentMeal[]>([]);
+
+  // Date navigation
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const isToday = isSameDay(selectedDate, new Date());
 
   // Setup wizard
   const [showSetup, setShowSetup] = useState(false);
   const [setupStep, setSetupStep] = useState(0);
+  const [heightUnit, setHeightUnit] = useState<'ft' | 'cm'>('ft');
   const [heightFt, setHeightFt]   = useState('');
   const [heightIn, setHeightIn]   = useState('');
+  const [heightCm, setHeightCm]   = useState('');
   const [weight, setWeight]       = useState('');
   const [age, setAge]             = useState('');
   const [activity, setActivity]   = useState('');
@@ -149,15 +204,46 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const [goalChoice, setGoalChoice] = useState('');
   const [saving, setSaving]       = useState(false);
 
-  // Add meal modal
+  // Quick water-goal edit
+  const [editingWaterGoal, setEditingWaterGoal] = useState(false);
+  const [waterGoalInput, setWaterGoalInput]     = useState('');
+  const [savingWaterGoal, setSavingWaterGoal]   = useState(false);
+
+  // Add/edit meal modal
   const [showMealModal, setShowMealModal] = useState(false);
+  const [editingLog, setEditingLog]       = useState<NutritionLog | null>(null);
   const [mealType, setMealType]           = useState<MealType>('breakfast');
   const [mealDesc, setMealDesc]           = useState('');
   const [mealCal, setMealCal]             = useState('');
+  const [mealProtein, setMealProtein]     = useState('');
+  const [mealCarbs, setMealCarbs]         = useState('');
+  const [mealFat, setMealFat]             = useState('');
   const [addingMeal, setAddingMeal]       = useState(false);
 
   const [addingWater, setAddingWater]   = useState(false);
   const [customWater, setCustomWater]   = useState('');
+
+  // Barcode scanner
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showScanner, setShowScanner]       = useState(false);
+  const [scannerLocked, setScannerLocked]   = useState(false);
+  const [lookingUp, setLookingUp]           = useState(false);
+  const [scannedProduct, setScannedProduct] = useState<ProductInfo | null>(null);
+  const [scanQuantity, setScanQuantity]     = useState('1');
+
+  // ─── Persisted collapse state ───────────────────────────────────────────────
+
+  useEffect(() => {
+    AsyncStorage.getItem(COLLAPSED_KEY).then(v => { if (v != null) setCollapsed(v === '1'); });
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed(v => {
+      const next = !v;
+      AsyncStorage.setItem(COLLAPSED_KEY, next ? '1' : '0').catch(() => {});
+      return next;
+    });
+  }
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
@@ -167,75 +253,175 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     try {
       const [{ data: profileData }, { data: logData }] = await Promise.all([
         supabase.from('nutrition_profiles').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('nutrition_logs').select('*').eq('user_id', userId).eq('log_date', todayISO()),
+        supabase.from('nutrition_logs').select('*').eq('user_id', userId).eq('log_date', dateToISO(selectedDate)),
       ]);
-      setProfile(profileData ?? null);
+      let resolvedProfile = profileData as NutritionProfile | null;
+      // Backfill protein_goal_g for profiles saved before that column existed.
+      if (resolvedProfile && resolvedProfile.protein_goal_g == null) {
+        const { protein_goal_g } = calcGoals(
+          resolvedProfile.height_cm, resolvedProfile.weight_lbs, resolvedProfile.age_years,
+          resolvedProfile.activity_level, resolvedProfile.bf_type, resolvedProfile.weight_goal,
+        );
+        resolvedProfile = { ...resolvedProfile, protein_goal_g };
+        safeUpdate('nutrition_profiles', resolvedProfile.id, { protein_goal_g }).catch(() => {});
+      }
+      setProfile(resolvedProfile);
       setLogs(logData ?? []);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, selectedDate]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
+  const loadRecentMeals = useCallback(async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('nutrition_logs')
+      .select('description, calories, protein_g, carbs_g, fat_g')
+      .eq('user_id', userId)
+      .neq('meal_type', 'water')
+      .not('description', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    const seen = new Set<string>();
+    const deduped: RecentMeal[] = [];
+    for (const row of (data ?? []) as RecentMeal[]) {
+      const key = (row.description ?? '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(row);
+      if (deduped.length >= 6) break;
+    }
+    setRecentMeals(deduped);
+  }, [userId]);
+
+  useEffect(() => { loadRecentMeals(); }, [loadRecentMeals]);
+
   // ─── Derived values ───────────────────────────────────────────────────────
 
+  const mealLogs  = useMemo(() => logs.filter(l => l.meal_type !== 'water'), [logs]);
+  const waterLogs = useMemo(() => logs.filter(l => l.meal_type === 'water'), [logs]);
+
   const totalCalories = useMemo(
-    () => logs.reduce((sum, l) => sum + (l.calories ?? 0), 0), [logs]);
+    () => mealLogs.reduce((sum, l) => sum + (l.calories ?? 0), 0), [mealLogs]);
+  const totalProtein = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.protein_g ?? 0), 0), [mealLogs]);
+  const totalCarbs = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.carbs_g ?? 0), 0), [mealLogs]);
+  const totalFat = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.fat_g ?? 0), 0), [mealLogs]);
 
   const totalWaterOz = useMemo(
-    () => logs.reduce((sum, l) => sum + (l.water_oz ?? 0), 0), [logs]);
+    () => waterLogs.reduce((sum, l) => sum + (l.water_oz ?? 0), 0), [waterLogs]);
 
   const mealGroups = useMemo(() => {
     const g: Record<string, NutritionLog[]> = { breakfast: [], lunch: [], dinner: [], snack: [] };
-    logs.forEach(l => { if (l.meal_type in g) g[l.meal_type].push(l); });
+    mealLogs.forEach(l => { if (l.meal_type in g) g[l.meal_type].push(l); });
     return g;
-  }, [logs]);
+  }, [mealLogs]);
 
   const caloriePercent = profile ? Math.min(1, totalCalories / profile.calorie_goal) : 0;
   const waterCups      = totalWaterOz / 8;
   const waterGoalCups  = (profile?.water_goal_oz ?? 80) / 8;
   const waterPercent   = profile ? Math.min(1, totalWaterOz / profile.water_goal_oz) : 0;
 
-  // ─── Actions ──────────────────────────────────────────────────────────────
+  // Scanned product: prefer per-serving values, fall back to per-100g (quantity = grams eaten)
+  const scanMode: 'serving' | 'grams' | null = !scannedProduct ? null
+    : scannedProduct.caloriesPerServing != null ? 'serving'
+    : scannedProduct.caloriesPer100g != null ? 'grams'
+    : null;
+
+  const scanComputed = useMemo(() => {
+    if (!scannedProduct || !scanMode) return null;
+    const qty = parseFloat(scanQuantity);
+    if (!qty || qty <= 0) return null;
+    const scale = scanMode === 'serving' ? qty : qty / 100;
+    const cal   = scanMode === 'serving' ? scannedProduct.caloriesPerServing : scannedProduct.caloriesPer100g;
+    const prot  = scanMode === 'serving' ? scannedProduct.proteinPerServingG : scannedProduct.proteinPer100g;
+    const carb  = scanMode === 'serving' ? scannedProduct.carbsPerServingG   : scannedProduct.carbsPer100g;
+    const fat   = scanMode === 'serving' ? scannedProduct.fatPerServingG     : scannedProduct.fatPer100g;
+    return {
+      calories: cal  != null ? Math.round(cal * scale) : null,
+      protein:  prot != null ? Math.round(prot * scale * 10) / 10 : null,
+      carbs:    carb != null ? Math.round(carb * scale * 10) / 10 : null,
+      fat:      fat  != null ? Math.round(fat * scale * 10) / 10 : null,
+    };
+  }, [scannedProduct, scanMode, scanQuantity]);
+
+  // ─── Date nav actions ─────────────────────────────────────────────────────
+
+  function goPrevDay() {
+    setSelectedDate(d => { const nd = new Date(d); nd.setDate(nd.getDate() - 1); return nd; });
+  }
+  function goNextDay() {
+    if (isToday) return;
+    setSelectedDate(d => { const nd = new Date(d); nd.setDate(nd.getDate() + 1); return nd; });
+  }
+  function goToday() {
+    setSelectedDate(new Date());
+  }
+
+  // ─── Setup actions ────────────────────────────────────────────────────────
 
   function openSetup() {
     if (profile) {
-      const totalInches = Math.round(profile.height_cm / 2.54);
-      setHeightFt(String(Math.floor(totalInches / 12)));
-      setHeightIn(String(totalInches % 12));
+      const { ft, inches } = cmToFtIn(profile.height_cm);
+      setHeightFt(String(ft));
+      setHeightIn(String(inches));
+      setHeightCm(String(Math.round(profile.height_cm)));
       setWeight(String(profile.weight_lbs));
       setAge(String(profile.age_years));
       setActivity(profile.activity_level);
       setBfType(profile.bf_type);
       setGoalChoice(profile.weight_goal);
     } else {
-      setHeightFt(''); setHeightIn(''); setWeight(''); setAge('');
+      setHeightFt(''); setHeightIn(''); setHeightCm(''); setWeight(''); setAge('');
       setActivity(''); setBfType(''); setGoalChoice('');
     }
+    setHeightUnit('ft');
     setSetupStep(0);
     setShowSetup(true);
   }
 
+  function toggleHeightUnit() {
+    setHeightUnit(u => {
+      if (u === 'ft') {
+        const cm = ftInToCm(parseInt(heightFt) || 0, parseInt(heightIn) || 0);
+        if (cm > 0) setHeightCm(String(Math.round(cm)));
+        return 'cm';
+      } else {
+        const { ft, inches } = cmToFtIn(parseFloat(heightCm) || 0);
+        setHeightFt(String(ft));
+        setHeightIn(String(inches));
+        return 'ft';
+      }
+    });
+  }
+
+  function currentHeightCm(): number {
+    return heightUnit === 'cm'
+      ? parseFloat(heightCm) || 0
+      : ftInToCm(parseInt(heightFt) || 0, parseInt(heightIn) || 0);
+  }
+
   async function saveProfile() {
     if (!userId) return;
-    const ft = parseInt(heightFt) || 0;
-    const ins = parseInt(heightIn) || 0;
+    const hCm = currentHeightCm();
     const wt = parseFloat(weight) || 0;
     const ag = parseInt(age) || 0;
-    if (!ft || !wt || !ag || !activity || !bfType || !goalChoice) {
+    if (!hCm || !wt || !ag || !activity || !bfType || !goalChoice) {
       Alert.alert('Missing info', 'Please fill in all fields.');
       return;
     }
     setSaving(true);
     try {
-      const { calorie_goal, water_goal_oz, height_cm } = calcGoals(ft, ins, wt, ag, activity, bfType, goalChoice);
-      const { error } = await supabase.from('nutrition_profiles').upsert({
-        user_id: userId, height_cm, weight_lbs: wt, age_years: ag,
+      const { calorie_goal, water_goal_oz, protein_goal_g } = calcGoals(hCm, wt, ag, activity, bfType, goalChoice);
+      await safeUpsert('nutrition_profiles', {
+        user_id: userId, height_cm: hCm, weight_lbs: wt, age_years: ag,
         activity_level: activity, bf_type: bfType, weight_goal: goalChoice,
-        calorie_goal, water_goal_oz, updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-      if (error) throw error;
+        calorie_goal, water_goal_oz, protein_goal_g, updated_at: new Date().toISOString(),
+      }, 'user_id');
       await loadData();
       setShowSetup(false);
     } catch (e: any) {
@@ -245,19 +431,126 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     }
   }
 
-  async function addMeal() {
+  // ─── Quick water-goal edit ────────────────────────────────────────────────
+
+  function openWaterGoalEdit() {
+    if (!profile) return;
+    setWaterGoalInput(String(profile.water_goal_oz / 8));
+    setEditingWaterGoal(true);
+  }
+
+  async function saveWaterGoal() {
+    if (!profile) return;
+    const cups = parseFloat(waterGoalInput);
+    if (!cups || cups <= 0) { Alert.alert('Enter a valid number of cups'); return; }
+    setSavingWaterGoal(true);
+    try {
+      await safeUpdate('nutrition_profiles', profile.id, { water_goal_oz: cups * 8 });
+      await loadData();
+      setEditingWaterGoal(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingWaterGoal(false);
+    }
+  }
+
+  // ─── Meal modal actions ───────────────────────────────────────────────────
+
+  function openAddMeal(type: MealType) {
+    setEditingLog(null);
+    setMealType(type);
+    setMealDesc(''); setMealCal(''); setMealProtein(''); setMealCarbs(''); setMealFat('');
+    setShowMealModal(true);
+  }
+
+  // ─── Barcode scanner ──────────────────────────────────────────────────────
+
+  async function openScanner(type: MealType) {
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission();
+      if (!result.granted) {
+        Alert.alert('Camera access needed', 'Please allow camera access in your device settings to scan barcodes.');
+        return;
+      }
+    }
+    setMealType(type);
+    setEditingLog(null);
+    setScannerLocked(false);
+    setScannedProduct(null);
+    setScanQuantity('1');
+    setShowScanner(true);
+  }
+
+  async function handleBarcode(barcode: string) {
+    if (scannerLocked) return;
+    setScannerLocked(true);
+    setLookingUp(true);
+    const product = await lookupBarcode(barcode);
+    setLookingUp(false);
+    setScannedProduct(product);
+    setScanQuantity(product.caloriesPerServing != null ? '1' : '100');
+  }
+
+  function applyScannedProduct() {
+    if (!scannedProduct || !scanComputed) return;
+    const name = [scannedProduct.brand, scannedProduct.productName].filter(Boolean).join(' – ') || 'Scanned item';
+    setMealDesc(name);
+    if (scanComputed.calories != null) setMealCal(String(scanComputed.calories));
+    if (scanComputed.protein != null) setMealProtein(String(scanComputed.protein));
+    if (scanComputed.carbs != null) setMealCarbs(String(scanComputed.carbs));
+    if (scanComputed.fat != null) setMealFat(String(scanComputed.fat));
+    setShowScanner(false);
+    setScannedProduct(null);
+    setScannerLocked(false);
+    setShowMealModal(true);
+  }
+
+  function openEditMeal(log: NutritionLog) {
+    setEditingLog(log);
+    setMealType((log.meal_type as MealType) ?? 'breakfast');
+    setMealDesc(log.description ?? '');
+    setMealCal(log.calories != null ? String(log.calories) : '');
+    setMealProtein(log.protein_g != null ? String(log.protein_g) : '');
+    setMealCarbs(log.carbs_g != null ? String(log.carbs_g) : '');
+    setMealFat(log.fat_g != null ? String(log.fat_g) : '');
+    setShowMealModal(true);
+  }
+
+  function applyRecentMeal(m: RecentMeal) {
+    setMealDesc(m.description);
+    if (m.calories != null) setMealCal(String(m.calories));
+    if (m.protein_g != null) setMealProtein(String(m.protein_g));
+    if (m.carbs_g != null) setMealCarbs(String(m.carbs_g));
+    if (m.fat_g != null) setMealFat(String(m.fat_g));
+  }
+
+  async function saveMeal() {
     if (!userId || !mealCal.trim()) return;
     const cal = parseInt(mealCal);
     if (isNaN(cal) || cal <= 0) { Alert.alert('Enter a valid calorie amount'); return; }
     setAddingMeal(true);
     try {
-      const { error } = await supabase.from('nutrition_logs').insert({
-        user_id: userId, log_date: todayISO(),
-        meal_type: mealType, description: mealDesc.trim() || null, calories: cal,
-      });
-      if (error) throw error;
-      setMealDesc(''); setMealCal(''); setShowMealModal(false);
+      const fields = {
+        meal_type: mealType,
+        description: mealDesc.trim() || null,
+        calories: cal,
+        protein_g: mealProtein.trim() ? parseFloat(mealProtein) : null,
+        carbs_g:   mealCarbs.trim()   ? parseFloat(mealCarbs)   : null,
+        fat_g:     mealFat.trim()     ? parseFloat(mealFat)     : null,
+      };
+      if (editingLog) {
+        await safeUpdate('nutrition_logs', editingLog.id, fields);
+      } else {
+        await safeInsert('nutrition_logs', {
+          user_id: userId, log_date: dateToISO(selectedDate), ...fields,
+        });
+      }
+      setMealDesc(''); setMealCal(''); setMealProtein(''); setMealCarbs(''); setMealFat('');
+      setEditingLog(null);
+      setShowMealModal(false);
       await loadData();
+      loadRecentMeals();
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -269,10 +562,9 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     if (!userId) return;
     setAddingWater(true);
     try {
-      const { error } = await supabase.from('nutrition_logs').insert({
-        user_id: userId, log_date: todayISO(), meal_type: 'water', water_oz: oz,
+      await safeInsert('nutrition_logs', {
+        user_id: userId, log_date: dateToISO(selectedDate), meal_type: 'water', water_oz: oz,
       });
-      if (error) throw error;
       await loadData();
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -282,9 +574,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   }
 
   async function deleteLog(id: string) {
-    const { error } = await supabase.from('nutrition_logs').delete().eq('id', id);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setLogs(prev => prev.filter(l => l.id !== id));
+    try {
+      await safeDelete('nutrition_logs', id);
+      setLogs(prev => prev.filter(l => l.id !== id));
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
   }
 
   // ─── Setup wizard ─────────────────────────────────────────────────────────
@@ -321,22 +616,39 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             {setupStep === 0 && (
               <View>
                 <Text style={{ fontSize: 24, fontWeight: '800', color: c.textPrimary, marginBottom: 6 }}>About you 📏</Text>
-                <Text style={{ fontSize: 14, color: c.textMuted, marginBottom: 28, lineHeight: 20 }}>
+                <Text style={{ fontSize: 14, color: c.textMuted, marginBottom: 20, lineHeight: 20 }}>
                   We use this to calculate your personalized calorie and hydration goals.
                 </Text>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Height</Text>
-                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
-                  <View style={{ flex: 1 }}>
-                    <TextInput style={inputStyle(c)} placeholder="5" placeholderTextColor={c.textMuted}
-                      value={heightFt} onChangeText={setHeightFt} keyboardType="numeric" maxLength={1} />
-                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>feet</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <TextInput style={inputStyle(c)} placeholder="4" placeholderTextColor={c.textMuted}
-                      value={heightIn} onChangeText={setHeightIn} keyboardType="numeric" maxLength={2} />
-                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>inches</Text>
-                  </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary }}>Height</Text>
+                  <TouchableOpacity onPress={toggleHeightUnit}>
+                    <Text style={{ fontSize: 12, color: c.primary, fontWeight: '700' }}>
+                      Switch to {heightUnit === 'ft' ? 'cm' : 'ft/in'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
+                {heightUnit === 'ft' ? (
+                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
+                    <View style={{ flex: 1 }}>
+                      <TextInput style={inputStyle(c)} placeholder="5" placeholderTextColor={c.textMuted}
+                        value={heightFt} onChangeText={setHeightFt} keyboardType="numeric" maxLength={1} />
+                      <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>feet</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <TextInput style={inputStyle(c)} placeholder="4" placeholderTextColor={c.textMuted}
+                        value={heightIn} onChangeText={setHeightIn} keyboardType="numeric" maxLength={2} />
+                      <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>inches</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ marginBottom: 20 }}>
+                    <TextInput style={inputStyle(c)} placeholder="e.g. 163" placeholderTextColor={c.textMuted}
+                      value={heightCm} onChangeText={setHeightCm} keyboardType="numeric" maxLength={3} />
+                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>cm</Text>
+                  </View>
+                )}
+
                 <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Current Weight (lbs)</Text>
                 <TextInput style={[inputStyle(c), { marginBottom: 20 }]} placeholder="e.g. 145"
                   placeholderTextColor={c.textMuted} value={weight} onChangeText={setWeight} keyboardType="decimal-pad" />
@@ -344,8 +656,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 <TextInput style={[inputStyle(c), { marginBottom: 32 }]} placeholder="e.g. 28"
                   placeholderTextColor={c.textMuted} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={3} />
                 <TouchableOpacity
-                  style={[primaryBtn(c), { opacity: (heightFt && weight && age) ? 1 : 0.45 }]}
-                  disabled={!heightFt || !weight || !age}
+                  style={[primaryBtn(c), { opacity: (currentHeightCm() && weight && age) ? 1 : 0.45 }]}
+                  disabled={!currentHeightCm() || !weight || !age}
                   onPress={() => setSetupStep(1)}
                 >
                   <Text style={primaryBtnText}>Continue</Text>
@@ -424,10 +736,9 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 ))}
 
                 {/* Preview the calculated goals before saving */}
-                {goalChoice && heightFt && weight && age && activity && bfType && (() => {
-                  const { calorie_goal, water_goal_oz } = calcGoals(
-                    parseInt(heightFt), parseInt(heightIn) || 0,
-                    parseFloat(weight), parseInt(age), activity, bfType, goalChoice,
+                {goalChoice && currentHeightCm() > 0 && weight && age && activity && bfType && (() => {
+                  const { calorie_goal, water_goal_oz, protein_goal_g } = calcGoals(
+                    currentHeightCm(), parseFloat(weight), parseInt(age), activity, bfType, goalChoice,
                   );
                   return (
                     <View style={{
@@ -440,8 +751,11 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                       <Text style={{ fontSize: 14, color: c.textPrimary, marginBottom: 4 }}>
                         🍽️  {calorie_goal.toLocaleString()} calories / day
                       </Text>
-                      <Text style={{ fontSize: 14, color: c.textPrimary }}>
+                      <Text style={{ fontSize: 14, color: c.textPrimary, marginBottom: 4 }}>
                         💧  {water_goal_oz / 8} cups of water / day
+                      </Text>
+                      <Text style={{ fontSize: 14, color: c.textPrimary }}>
+                        🥩  {protein_goal_g}g protein / day{bfType !== 'none' ? ' (includes breastfeeding bump)' : ''}
                       </Text>
                     </View>
                   );
@@ -489,6 +803,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
 
+  const hasMacros = totalProtein > 0 || totalCarbs > 0 || totalFat > 0;
+
   return (
     <View style={{ gap: 14 }}>
       {/* Section header */}
@@ -498,7 +814,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           backgroundColor: c.cardBlue, borderRadius: 14, borderWidth: 2, borderColor: c.blue,
           paddingHorizontal: 16, paddingVertical: 13,
         }}
-        onPress={() => setCollapsed(v => !v)}
+        onPress={toggleCollapsed}
         activeOpacity={0.75}
       >
         <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>💧 Nutrition & Hydration</Text>
@@ -515,11 +831,24 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       </TouchableOpacity>
 
       {!collapsed && (<>
+      {/* ── Date nav ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <TouchableOpacity onPress={goPrevDay} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ fontSize: 20, color: c.textSecondary }}>‹</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={goToday} disabled={isToday}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>{formatDateLabel(selectedDate)}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={goNextDay} disabled={isToday} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ fontSize: 20, color: isToday ? c.separator : c.textSecondary }}>›</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Calorie card ── */}
       <View style={sectionCard(c)}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
           <View>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 2 }}>🍽️ Calories today</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 2 }}>🍽️ Calories</Text>
             <Text style={{ fontSize: 26, fontWeight: '900', color: c.textPrimary }}>
               {totalCalories.toLocaleString()}
               <Text style={{ fontSize: 14, fontWeight: '500', color: c.textMuted }}> / {profile.calorie_goal.toLocaleString()} kcal</Text>
@@ -531,9 +860,37 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         </View>
 
         {/* Progress bar */}
-        <View style={{ height: 8, backgroundColor: c.separator, borderRadius: 4, overflow: 'hidden', marginBottom: 16 }}>
+        <View style={{ height: 8, backgroundColor: c.separator, borderRadius: 4, overflow: 'hidden', marginBottom: hasMacros ? 10 : 16 }}>
           <View style={{ width: `${caloriePercent * 100}%`, height: '100%', backgroundColor: c.primary, borderRadius: 4 }} />
         </View>
+
+        {profile.protein_goal_g ? (
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>
+                🥩 Protein{profile.bf_type !== 'none' ? ' (breastfeeding goal)' : ''}
+              </Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: totalProtein >= profile.protein_goal_g ? c.sage : c.textMuted }}>
+                {totalProtein.toFixed(0)} / {profile.protein_goal_g}g
+              </Text>
+            </View>
+            <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
+              <View style={{
+                width: `${Math.min(100, (totalProtein / profile.protein_goal_g) * 100)}%`,
+                height: '100%', backgroundColor: c.sage,
+              }} />
+            </View>
+            {(totalCarbs > 0 || totalFat > 0) && (
+              <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 6 }}>
+                Carbs {totalCarbs.toFixed(0)}g · Fat {totalFat.toFixed(0)}g
+              </Text>
+            )}
+          </View>
+        ) : hasMacros && (
+          <Text style={{ fontSize: 12, color: c.textMuted, marginBottom: 16 }}>
+            Protein {totalProtein.toFixed(0)}g · Carbs {totalCarbs.toFixed(0)}g · Fat {totalFat.toFixed(0)}g
+          </Text>
+        )}
 
         {/* Meal rows */}
         {MEAL_TYPES.map(type => {
@@ -549,16 +906,24 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   {typeCal > 0 && (
                     <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '600' }}>{typeCal} kcal</Text>
                   )}
-                  <TouchableOpacity onPress={() => { setMealType(type); setShowMealModal(true); }}>
+                  <TouchableOpacity onPress={() => openScanner(type)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                    <Text style={{ fontSize: 14 }}>📷</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => openAddMeal(type)}>
                     <Text style={{ fontSize: 13, color: c.primary, fontWeight: '700' }}>+ Add</Text>
                   </TouchableOpacity>
                 </View>
               </View>
               {entries.map(entry => (
-                <View key={entry.id} style={{
-                  flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                  backgroundColor: c.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 4,
-                }}>
+                <TouchableOpacity
+                  key={entry.id}
+                  onPress={() => openEditMeal(entry)}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    backgroundColor: c.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 4,
+                  }}
+                >
                   <Text style={{ fontSize: 13, color: c.textPrimary, flex: 1 }} numberOfLines={1}>
                     {entry.description ?? type}
                   </Text>
@@ -568,7 +933,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                       <Text style={{ fontSize: 14, color: c.textMuted }}>✕</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           );
@@ -579,7 +944,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       <View style={sectionCard(c)}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
           <View>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 2 }}>💧 Water today</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>💧 Water</Text>
+              <TouchableOpacity onPress={openWaterGoalEdit} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <Text style={{ fontSize: 12 }}>✏️</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={{ fontSize: 26, fontWeight: '900', color: c.textPrimary }}>
               {waterCups % 1 === 0 ? waterCups : waterCups.toFixed(1)}
               <Text style={{ fontSize: 14, fontWeight: '500', color: c.textMuted }}> / {waterGoalCups} cups</Text>
@@ -589,6 +959,36 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             {waterPercent >= 1 ? '✓ Hydrated!' : `${Math.max(0, Math.ceil(waterGoalCups - waterCups))} cups to go`}
           </Text>
         </View>
+
+        {editingWaterGoal && (
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <TextInput
+              style={{
+                flex: 1, backgroundColor: c.bg, borderRadius: 10, borderWidth: 1.5,
+                borderColor: c.separator, paddingHorizontal: 12, paddingVertical: 8,
+                fontSize: 14, color: c.textPrimary,
+              }}
+              placeholder="Goal in cups"
+              placeholderTextColor={c.textMuted}
+              value={waterGoalInput}
+              onChangeText={setWaterGoalInput}
+              keyboardType="decimal-pad"
+            />
+            <TouchableOpacity
+              style={[waterBtn(c), { paddingHorizontal: 16, paddingVertical: 10, opacity: savingWaterGoal ? 0.6 : 1 }]}
+              disabled={savingWaterGoal}
+              onPress={saveWaterGoal}
+            >
+              {savingWaterGoal
+                ? <ActivityIndicator color={c.blue} size="small" />
+                : <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>Save</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 10 }} onPress={() => setEditingWaterGoal(false)}>
+              <Text style={{ fontSize: 14, color: c.textMuted }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Progress bar */}
         <View style={{ height: 8, backgroundColor: c.separator, borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
@@ -619,7 +1019,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         </View>
 
         {/* Custom amount */}
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: waterLogs.length ? 14 : 0 }}>
           <TextInput
             style={{
               flex: 1, backgroundColor: c.bg, borderRadius: 10, borderWidth: 1.5,
@@ -651,9 +1051,28 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>Add</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Today's water log — deletable entries */}
+        {waterLogs.length > 0 && (
+          <View style={{ gap: 4 }}>
+            {waterLogs.map(entry => (
+              <View key={entry.id} style={{
+                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                backgroundColor: c.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+              }}>
+                <Text style={{ fontSize: 12, color: c.textSecondary }}>
+                  {entry.water_oz} oz · {formatTime(entry.created_at)}
+                </Text>
+                <TouchableOpacity onPress={() => deleteLog(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: 13, color: c.textMuted }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
-      {/* ── Add meal modal ── */}
+      {/* ── Add/edit meal modal ── */}
       <Modal visible={showMealModal} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
           <View style={{
@@ -661,10 +1080,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             paddingHorizontal: 20, paddingVertical: 16,
             borderBottomWidth: 1, borderBottomColor: c.separator,
           }}>
-            <TouchableOpacity onPress={() => setShowMealModal(false)} style={{ width: 40 }}>
+            <TouchableOpacity onPress={() => { setShowMealModal(false); setEditingLog(null); }} style={{ width: 40 }}>
               <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Add Meal</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>
+              {editingLog ? 'Edit Meal' : 'Add Meal'}{!isToday ? ` · ${formatDateLabel(selectedDate)}` : ''}
+            </Text>
             <View style={{ width: 40 }} />
           </View>
 
@@ -688,28 +1109,226 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               ))}
             </View>
 
+            {!editingLog && (
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  backgroundColor: c.cardBlue, borderRadius: 12, borderWidth: 1.5, borderColor: c.blue,
+                  paddingVertical: 12, marginBottom: 24,
+                }}
+                onPress={() => { setShowMealModal(false); openScanner(mealType); }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>📷 Scan a barcode</Text>
+              </TouchableOpacity>
+            )}
+
+            {!editingLog && recentMeals.length > 0 && (
+              <View style={{ marginBottom: 24 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Recent</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {recentMeals.map((m, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => applyRecentMeal(m)}
+                      style={{
+                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                        backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }} numberOfLines={1}>
+                        {m.description}{m.calories != null ? ` · ${m.calories} kcal` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>What did you eat?</Text>
             <TextInput style={[inputStyle(c), { marginBottom: 20 }]}
               placeholder="e.g. Oatmeal with berries" placeholderTextColor={c.textMuted}
               value={mealDesc} onChangeText={setMealDesc} />
 
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Calories (kcal)</Text>
-            <TextInput style={[inputStyle(c), { marginBottom: 32 }]}
+            <TextInput style={[inputStyle(c), { marginBottom: 20 }]}
               placeholder="e.g. 350" placeholderTextColor={c.textMuted}
               value={mealCal} onChangeText={setMealCal} keyboardType="numeric" />
+
+            <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Macros (optional)</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 32 }}>
+              <View style={{ flex: 1 }}>
+                <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                  value={mealProtein} onChangeText={setMealProtein} keyboardType="decimal-pad" />
+                <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>protein g</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                  value={mealCarbs} onChangeText={setMealCarbs} keyboardType="decimal-pad" />
+                <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>carbs g</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                  value={mealFat} onChangeText={setMealFat} keyboardType="decimal-pad" />
+                <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>fat g</Text>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={[primaryBtn(c), { opacity: mealCal.trim() ? 1 : 0.45 }]}
               disabled={addingMeal || !mealCal.trim()}
-              onPress={addMeal}
+              onPress={saveMeal}
             >
               {addingMeal
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={primaryBtnText}>Save Meal</Text>
+                : <Text style={primaryBtnText}>{editingLog ? 'Save Changes' : 'Save Meal'}</Text>
               }
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      {/* ── Barcode scanner modal ── */}
+      <Modal
+        visible={showScanner}
+        animationType="slide"
+        onRequestClose={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {!scannedProduct && !lookingUp && (
+            <CameraView
+              style={StyleSheet.absoluteFillObject}
+              facing="back"
+              onBarcodeScanned={({ data }) => handleBarcode(data)}
+              barcodeScannerSettings={{ barcodeTypes: ['upc_a', 'upc_e', 'ean13', 'ean8'] }}
+            />
+          )}
+
+          <View style={{ ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', padding: 20 }}>
+            <TouchableOpacity
+              style={{
+                alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.6)',
+                borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
+              }}
+              onPress={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>✕ Close</Text>
+            </TouchableOpacity>
+
+            {lookingUp ? (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Looking up product…</Text>
+              </View>
+            ) : !scannedProduct ? (
+              <View style={{ alignItems: 'center', gap: 20, flex: 1, justifyContent: 'center' }}>
+                <View style={{
+                  width: 260, height: 160, borderRadius: 16,
+                  borderWidth: 3, borderColor: c.blue, backgroundColor: 'transparent',
+                }} />
+                <Text style={{
+                  color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center',
+                  backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20,
+                }}>
+                  Point at a barcode to scan
+                </Text>
+              </View>
+            ) : (
+              <View style={{ backgroundColor: 'rgba(17,24,39,0.92)', borderRadius: 20, padding: 16, gap: 14 }}>
+                <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+                  {scannedProduct.imageUrl ? (
+                    <Image source={{ uri: scannedProduct.imageUrl }} style={{ width: 70, height: 70, borderRadius: 12 }} resizeMode="contain" />
+                  ) : (
+                    <View style={{
+                      width: 70, height: 70, borderRadius: 12, backgroundColor: '#374151',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Text style={{ fontSize: 32 }}>🍽️</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    {scannedProduct.found ? (
+                      <>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#9CA3AF', marginBottom: 2 }}>
+                          {scannedProduct.brand ?? 'Unknown brand'}
+                        </Text>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 6 }}>
+                          {scannedProduct.productName ?? 'Unknown product'}
+                        </Text>
+                        {scanMode ? (
+                          <Text style={{ fontSize: 12, color: '#D1D5DB' }}>
+                            {scanMode === 'serving'
+                              ? `Per serving${scannedProduct.servingSize ? ` (${scannedProduct.servingSize})` : ''}: ${scannedProduct.caloriesPerServing ?? '?'} kcal`
+                              : `Per 100g: ${scannedProduct.caloriesPer100g ?? '?'} kcal`}
+                          </Text>
+                        ) : (
+                          <Text style={{ fontSize: 12, color: '#FCA5A5' }}>No nutrition data found for this product.</Text>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#9CA3AF', marginBottom: 2 }}>Product not found</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff' }}>
+                          This barcode wasn't in the database. Try adding it manually instead.
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                </View>
+
+                {scanMode && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ color: '#D1D5DB', fontSize: 13, fontWeight: '600' }}>
+                      {scanMode === 'serving' ? 'Servings eaten' : 'Grams eaten'}
+                    </Text>
+                    <TextInput
+                      style={{
+                        flex: 1, backgroundColor: '#1F2937', borderRadius: 10,
+                        paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: '#fff',
+                      }}
+                      value={scanQuantity}
+                      onChangeText={setScanQuantity}
+                      keyboardType="decimal-pad"
+                      placeholder={scanMode === 'serving' ? '1' : '100'}
+                      placeholderTextColor="#6B7280"
+                    />
+                  </View>
+                )}
+
+                {scanComputed && (
+                  <Text style={{ color: '#D1D5DB', fontSize: 13 }}>
+                    ≈ {scanComputed.calories ?? '?'} kcal
+                    {scanComputed.protein != null ? ` · P ${scanComputed.protein}g` : ''}
+                    {scanComputed.carbs != null ? ` · C ${scanComputed.carbs}g` : ''}
+                    {scanComputed.fat != null ? ` · F ${scanComputed.fat}g` : ''}
+                  </Text>
+                )}
+
+                <View style={{ gap: 8 }}>
+                  {scanMode && scanComputed && (
+                    <TouchableOpacity
+                      style={{ backgroundColor: c.blue, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+                      onPress={applyScannedProduct}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Use this product →</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={{ alignItems: 'center', paddingVertical: 8 }}
+                    onPress={() => { setScannerLocked(false); setScannedProduct(null); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>
+                      {scanMode ? 'Scan again' : 'Scan again / enter manually'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
       </Modal>
 
       </>)}

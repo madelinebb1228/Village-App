@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColors, Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeUpsert, safeDelete } from '../lib/syncService';
 import { autoFormatDate, parseDisplayDate, toDisplayDate, todayISO } from '../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ async function upsertSupabase(
   entry: AllergenEntry,
 ) {
   try {
-    await (supabase.from('allergen_records') as any).upsert({
+    await safeUpsert('allergen_records', {
       user_id: userId,
       baby_id: babyId,
       allergen_id: allergenId,
@@ -236,16 +237,13 @@ async function upsertSupabase(
       severity: entry.severity ?? null,
       last_given_at: entry.lastGivenAt ?? null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'baby_id,allergen_id' });
+    }, 'baby_id,allergen_id');
   } catch {}
 }
 
 async function deleteSupabase(babyId: string, allergenId: string) {
   try {
-    await (supabase.from('allergen_records') as any)
-      .delete()
-      .eq('baby_id', babyId)
-      .eq('allergen_id', allergenId);
+    await safeDelete('allergen_records', { baby_id: babyId, allergen_id: allergenId });
   } catch {}
 }
 
@@ -995,7 +993,7 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
 
 const styles = (c: Colors) =>
   StyleSheet.create({
-    container: { marginBottom: 24 },
+    container: { marginBottom: 16 },
 
     sectionHeader: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14,

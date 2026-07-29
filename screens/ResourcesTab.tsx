@@ -20,8 +20,8 @@ import ParentMarketplace from './ParentMarketplace';
 import SmartShoppingLists from './SmartShoppingLists';
 import ServiceProviderReviews from './ServiceProviderReviews';
 import Breastfeeding101 from './Breastfeeding101';
-import PatchyPeek from '../components/PatchyPeek';
-import { usePatchyCards } from '../lib/usePatchyCards';
+import WaterSafety from './WaterSafety';
+import ChokingSafety from './ChokingSafety';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -49,6 +49,8 @@ const RESOURCES = [
   { id: 'wic_recipes',       emoji: '🧡',  title: 'WIC Recipes',                   description: 'Community recipes using WIC-eligible foods — share and upvote favorites' },
   { id: 'weaning_recipes',   emoji: '🥣',  title: 'Weaning Recipes',               description: 'First foods, purees, and soft meals for babies 4–12+ months' },
   { id: 'emergency',         emoji: '🚨',  title: 'Emergency Contacts',            description: 'Nurse lines, poison control, and urgent care resources' },
+  { id: 'water_safety',      emoji: '🌊',  title: 'Water Safety',                  description: 'Drowning prevention, pool safety, and age-by-age guidance every parent should know' },
+  { id: 'choking_safety',    emoji: '🫁',  title: 'Choking Safety',                description: 'Prevention, recognizing it, and how to clear it for infants and older kids' },
   { id: 'videos',            emoji: '🎬',  title: 'Video Guides',                  description: 'How-to videos for feeding, sleep, soothing, and more' },
   { id: 'top100',            emoji: '🔢',  title: '100 Questions Every Parent Asks', description: 'The most common parenting questions — answered' },
 ] as const;
@@ -103,7 +105,6 @@ function ResourceDetail({
 export default function ResourcesTab() {
   const c = useColors();
   const s = styles(c);
-  const { cards: patchyCards, onContainerLayout: patchyContainer, onCardLayout: patchyCard } = usePatchyCards();
   const [selected, setSelected] = useState<ResourceId | null>(null);
 
   if (selected === 'breastfeeding_101') {
@@ -158,6 +159,14 @@ export default function ResourcesTab() {
     return <RecipesScreen category="weaning" onBack={() => setSelected(null)} />;
   }
 
+  if (selected === 'water_safety') {
+    return <WaterSafety onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'choking_safety') {
+    return <ChokingSafety onBack={() => setSelected(null)} />;
+  }
+
   if (selected) {
     return <ResourceDetail id={selected} onBack={() => setSelected(null)} />;
   }
@@ -171,8 +180,7 @@ export default function ResourcesTab() {
         <Text style={s.pageTitle}>Resources</Text>
         <Text style={s.pageSubtitle}>Everything you need to support your parenting journey</Text>
 
-        <View style={s.cards} onLayout={patchyContainer}>
-          <PatchyPeek cards={patchyCards} dir="bottom" offsetY={17} />
+        <View style={s.cards}>
           {RESOURCES.map((r, i) => {
             const palette = CARD_PALETTE[i % CARD_PALETTE.length];
             return (
@@ -181,7 +189,6 @@ export default function ResourcesTab() {
               activeOpacity={0.8}
               style={[s.card, { backgroundColor: palette.bg(c), borderColor: palette.border(c) }]}
               onPress={() => setSelected(r.id)}
-              onLayout={i === 14 ? patchyCard : undefined}
             >
               <Text style={s.cardEmoji}>{r.emoji}</Text>
               <View style={s.cardText}>

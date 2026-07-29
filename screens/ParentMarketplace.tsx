@@ -18,6 +18,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useColors, Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal from '../components/ContentBlockedModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -698,6 +700,8 @@ function PostModal({
   const [stateVal, setStateVal] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string } | null>(null);
   const s = postSt(c);
 
   const reset = () => {
@@ -719,7 +723,15 @@ function PostModal({
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setModerating(true);
+      const modResult = await moderateImage(uri);
+      setModerating(false);
+      if (modResult.blocked) {
+        setBlockedContent({ severity: modResult.severity, reason: modResult.reason });
+        return;
+      }
+      setImageUri(uri);
     }
   };
 
@@ -765,6 +777,7 @@ function PostModal({
   const canSubmit = title.trim().length > 0 && (priceType === 'free' || price.length > 0);
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={s.container}>
@@ -898,6 +911,28 @@ function PostModal({
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
+
+    {blockedContent && (
+      <ContentBlockedModal
+        visible={!!blockedContent}
+        severity={blockedContent.severity}
+        reason={blockedContent.reason}
+        contentType="listing_photo"
+        userId={currentUserId}
+        onClose={() => setBlockedContent(null)}
+      />
+    )}
+
+    {moderating && (
+      <View style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', gap: 12,
+      }}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Checking photo…</Text>
+      </View>
+    )}
+    </>
   );
 }
 

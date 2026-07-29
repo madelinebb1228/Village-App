@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import OneHandedTray from '../components/OneHandedTray';
 import { supabase } from '../lib/supabase';
-import { safeInsert, safeUpdate, safeQuery, generateId, useSyncStatus } from '../lib/syncService';
+import { safeInsert, safeUpdate, safeDelete, safeQuery, generateId, useSyncStatus } from '../lib/syncService';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
@@ -18,11 +18,12 @@ import SleepTracker from './SleepTracker';
 import BabyJournal from './BabyJournal';
 import BabyFoodChart from './BabyFoodChart';
 import NutritionTracker from './NutritionTracker';
-import MomMentalHealthTracker from './MomMentalHealthTracker';
+import PostpartumMentalHealthTracker from './PostpartumMentalHealthTracker';
 import MoodEnergyTracker from './MoodEnergyTracker';
 import MomSleepTracker from './MomSleepTracker';
 import MedTracker from './MedTracker';
 import DiaperReminderCard from '../components/DiaperReminderCard';
+import CarCheckReminderCard from '../components/CarCheckReminderCard';
 import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/diaperNotifications';
 import FeedReminderCard from '../components/FeedReminderCard';
 import NursingReminderCard from '../components/NursingReminderCard';
@@ -35,8 +36,6 @@ import InsightsSection from '../components/InsightsSection';
 import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
-import PatchyPeek from '../components/PatchyPeek';
-import { usePatchyCards } from '../lib/usePatchyCards';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 
@@ -774,9 +773,9 @@ export default function Track() {
   const [userName,       setUserName]       = useState<string | null>(null);
   const [showFoodChart, setShowFoodChart] = useState(false);
   const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
+  const [mentalHealthAlert, setMentalHealthAlert] = useState(false);
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
-  const { cards: patchyCards, onSelfLayout: patchySelf } = usePatchyCards();
   const scrollRef       = useRef<ScrollView>(null);
   const quickNavRef      = useRef<ScrollView>(null);
   const quickNavWrapRef  = useRef<View>(null);
@@ -1306,16 +1305,7 @@ export default function Track() {
         bottleOzToRestore     = feedRow?.bottle_amount_oz ?? null;
       }
 
-      const { data, error } = await supabase
-        .from(entry.table as any)
-        .delete()
-        .eq('id', entry.rawId)
-        .select('id');
-
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('Row not deleted — RLS policy may be blocking it.');
-      }
+      await safeDelete(entry.table as any, entry.rawId);
       setEntries(prev => prev.filter(e => e.id !== entry.id));
 
       // Restore supplies after successful delete
@@ -1670,6 +1660,13 @@ export default function Track() {
                     activeOpacity={0.75}
                   >
                     <Text style={{ fontSize: 13, fontWeight: '700', color: col.text }}>{sec.label}</Text>
+                    {sec.key === 'mental' && mentalHealthAlert && (
+                      <View style={{
+                        position: 'absolute', top: -3, right: -3,
+                        width: 10, height: 10, borderRadius: 5,
+                        backgroundColor: c.blush, borderWidth: 1.5, borderColor: c.bg,
+                      }} />
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -1722,9 +1719,11 @@ export default function Track() {
         {/* ── Diaper reminder & color guide */}
         <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} />
 
+        {/* ── Car check reminder */}
+        <CarCheckReminderCard userId={userId} babyId={babyId} babyName={babyName} />
+
         {/* ── Charts */}
-        <View style={{ overflow: 'visible' }} onLayout={patchySelf}>
-          <PatchyPeek cards={patchyCards} dir="top" offsetY={-16} offsetX={-300} />
+        <View style={{ overflow: 'visible' }}>
           <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
             <FeedChartCard babyId={babyId} />
             <DiaperChartCard babyId={babyId} />
@@ -1759,7 +1758,7 @@ export default function Track() {
           onLayout={e => { sectionY.current['insights'] = e.nativeEvent.layout.y; }}
         >
           <PaywallGate feature="smart_insights" title="Smart Insights" description="Pattern detection and personalized tips based on your tracking data." emoji="✨">
-            <InsightsSection babyId={babyId} refreshKey={insightsRefreshKey} />
+            <InsightsSection babyId={babyId} userId={userId} refreshKey={insightsRefreshKey} />
           </PaywallGate>
         </View>
 
@@ -1830,7 +1829,11 @@ export default function Track() {
         </View>
 
         {/* ── Timeline */}
-        <View style={styles.timelineHeader} onLayout={e => { sectionY.current['timeline'] = e.nativeEvent.layout.y; }}>
+        <View
+          ref={ref => { sectionRefs.current['timeline'] = ref; }}
+          style={styles.timelineHeader}
+          onLayout={e => { sectionY.current['timeline'] = e.nativeEvent.layout.y; }}
+        >
           <Text style={styles.sectionTitle}>Timeline</Text>
           {refreshing && <ActivityIndicator size="small" color={c.trackFeed} />}
         </View>
@@ -1894,7 +1897,7 @@ export default function Track() {
           ref={ref => { sectionRefs.current['mental'] = ref; }}
           onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}
         >
-          <MomMentalHealthTracker userId={userId} />
+          <PostpartumMentalHealthTracker userId={userId} onStatusChange={setMentalHealthAlert} />
         </View>
 
         {/* ── You: Mood & Energy */}
@@ -1903,7 +1906,7 @@ export default function Track() {
           onLayout={e => { sectionY.current['mood'] = e.nativeEvent.layout.y; }}
         >
           <PaywallGate feature="mood_energy_tracker" isTracker title="Mood & Energy" description="Log your daily mood and energy levels to spot patterns over time." emoji="🌈">
-            <MoodEnergyTracker userId={userId} />
+            <MoodEnergyTracker userId={userId} onSuggestCheckIn={() => scrollToSection('mental')} />
           </PaywallGate>
         </View>
 
@@ -1938,7 +1941,7 @@ export default function Track() {
           ref={ref => { sectionRefs.current['recovery'] = ref; }}
           onLayout={e => { sectionY.current['recovery'] = e.nativeEvent.layout.y; }}
         >
-          <PostpartumRecoveryTracker userId={userId} />
+          <PostpartumRecoveryTracker userId={userId} babyBirthDate={babyBirthDate} />
         </View>
 
         {/* ── You: Period Return */}
@@ -2619,7 +2622,7 @@ function makeStyles(c: Colors) {
   return StyleSheet.create({
     safeArea:      { flex: 1, backgroundColor: c.bg },
     scroll:        { flex: 1 },
-    scrollContent: { padding: 24, paddingBottom: 40 },
+    scrollContent: { padding: 24, paddingBottom: 560 },
     heading:       { fontSize: 28, fontWeight: '800', color: c.textPrimary, marginBottom: 28 },
 
     buttonGroup: { gap: 14, marginBottom: 36 },

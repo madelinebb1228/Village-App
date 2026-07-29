@@ -1,8 +1,10 @@
 import { supabase } from './supabase'
+import { computeCycleStats, isFlowDay, FlowLogLike } from './cycleUtils'
+import { GenderKey, WHO_WEIGHT, WHO_HEIGHT, calcPercentile, ageInMonthsAt, lbsToKg, inToCm } from './growthPercentiles'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type InsightCategory = 'sleep' | 'feeding' | 'diaper' | 'food'
+export type InsightCategory = 'sleep' | 'feeding' | 'diaper' | 'food' | 'medication' | 'period' | 'movement' | 'growth' | 'allergen'
 export type InsightType = 'positive' | 'info' | 'warning' | 'tip'
 
 export interface Insight {
@@ -20,7 +22,7 @@ export interface Insight {
 export interface InsightsResult {
   insights: Insight[]
   generatedAt: number
-  dataPoints: { sleepSessions: number; feeds: number; diapers: number; foodLogs: number }
+  dataPoints: { sleepSessions: number; feeds: number; diapers: number; foodLogs: number; medications: number; periodLogs: number; movementLogs: number; growthLogs: number; allergenRecords: number }
 }
 
 // ─── Cache (15-min TTL per babyId) ───────────────────────────────────────────
@@ -69,6 +71,51 @@ interface FoodRow {
   bad_reaction: boolean
   tried_at: string
   is_first_introduction: boolean
+}
+
+interface MedicationRow {
+  id: string
+  name: string
+  frequency_hours: number | null
+  active: boolean
+  created_at: string
+}
+
+interface MedicationLogRow {
+  id: string
+  medication_id: string
+  taken_at: string
+}
+
+interface PeriodLogRow extends FlowLogLike {
+  id: string
+}
+
+interface MomMoodLogRow {
+  id: string
+  logged_date: string
+  mood_score: number
+}
+
+interface MovementLogRow {
+  id: string
+  logged_at: string
+  duration_minutes: number | null
+}
+
+interface GrowthLogRow {
+  id: string
+  date: string
+  weight_lbs: number | null
+  height_in: number | null
+}
+
+interface AllergenRecordRow {
+  allergen_id: string
+  allergen_name: string
+  status: string
+  date_introduced: string | null
+  last_given_at: string | null
 }
 
 // ─── Math helpers ─────────────────────────────────────────────────────────────
@@ -936,6 +983,380 @@ function analyzeFood(logs: FoodRow[], sleepLogs: SleepRow[], period: number, bir
   return insights
 }
 
+// ─── Medication adherence ─────────────────────────────────────────────────────
+
+function analyzeMedicationAdherence(meds: MedicationRow[], logs: MedicationLogRow[], period: number): Insight[] {
+  const now = Date.now()
+  const periodStart = now - period * 86_400_000
+
+  const scheduled = meds.filter(m => m.active && m.frequency_hours && m.frequency_hours > 0)
+  if (scheduled.length === 0) return []
+
+  const results = scheduled.map(med => {
+    const windowStart    = Math.max(periodStart, new Date(med.created_at).getTime())
+    const hoursActive    = (now - windowStart) / 3_600_000
+    const expectedDoses  = Math.floor(hoursActive / (med.frequency_hours as number))
+    const actualDoses    = logs.filter(l => l.medication_id === med.id && new Date(l.taken_at).getTime() >= windowStart).length
+    const pct = expectedDoses > 0 ? Math.round((actualDoses / expectedDoses) * 100) : null
+    return { med, expectedDoses, actualDoses, pct }
+  }).filter((r): r is typeof r & { pct: number } => r.pct !== null && r.expectedDoses >= 3)
+
+  if (results.length === 0) return []
+
+  const insights: Insight[] = []
+
+  const worst = results.reduce((a, b) => (a.pct < b.pct ? a : b))
+  if (worst.pct < 70) {
+    insights.push({
+      id: `med-adherence-low-${worst.med.id}`,
+      category: 'medication',
+      type: 'warning',
+      icon: '💊',
+      title: `${worst.pct}% adherence for ${worst.med.name}`,
+      body: `${worst.actualDoses} of an expected ${worst.expectedDoses} doses logged over the past ${period} days.`,
+      period,
+      action: 'Try setting a reminder for this medication, or pair doses with an existing routine like meals or brushing teeth.',
+      dataPoints: worst.expectedDoses,
+    })
+  }
+
+  const best = results.reduce((a, b) => (a.pct > b.pct ? a : b))
+  if (best.pct >= 90 && best.expectedDoses >= 5 && best.med.id !== worst.med.id) {
+    insights.push({
+      id: `med-adherence-good-${best.med.id}`,
+      category: 'medication',
+      type: 'positive',
+      icon: '💊',
+      title: `${best.pct}% adherence for ${best.med.name}`,
+      body: `Strong consistency — ${best.actualDoses} of an expected ${best.expectedDoses} doses logged over the past ${period} days.`,
+      period,
+      dataPoints: best.expectedDoses,
+    })
+  }
+
+  return insights
+}
+
+// ─── Period return / cycle patterns ───────────────────────────────────────────
+
+function analyzePeriodPatterns(periodLogs: PeriodLogRow[], moodLogs: MomMoodLogRow[], period: number): Insight[] {
+  if (periodLogs.length === 0) return []
+
+  const insights: Insight[] = []
+  const cycle = computeCycleStats(periodLogs)
+  if (cycle.periodStarts.length === 0) return []
+
+  // Milestone: first period detected within the display window
+  if (cycle.periodStarts.length === 1) {
+    const daysSinceReturn = Math.round((Date.now() - new Date(cycle.periodStarts[0]).getTime()) / 86_400_000)
+    if (daysSinceReturn <= period) {
+      insights.push({
+        id: 'period-returned',
+        category: 'period',
+        type: 'info',
+        icon: '🩸',
+        title: 'Your period has returned',
+        body: `First postpartum flow logged on ${new Date(cycle.periodStarts[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. Cycle length and predictions will appear once a second period is logged.`,
+        period,
+        dataPoints: 1,
+      })
+    }
+  }
+
+  // Prediction
+  if (cycle.avgCycleLength && cycle.predictedNextStart) {
+    insights.push({
+      id: 'period-prediction',
+      category: 'period',
+      type: 'info',
+      icon: '🩸',
+      title: `Next period expected around ${new Date(cycle.predictedNextStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+      body: `Based on an average cycle of ${cycle.avgCycleLength} days across ${cycle.periodStarts.length} tracked cycles.`,
+      period,
+      dataPoints: cycle.periodStarts.length,
+    })
+  }
+
+  // Irregularity
+  if (cycle.cycleLengths.length >= 2) {
+    const sd = stddev(cycle.cycleLengths)
+    if (sd >= 5) {
+      insights.push({
+        id: 'period-irregular',
+        category: 'period',
+        type: 'tip',
+        icon: '🔄',
+        title: 'Your cycles have been irregular so far',
+        body: `Cycle length has varied by about ${Math.round(sd)} days (average ${cycle.avgCycleLength} days). This is common in the first year postpartum, especially while breastfeeding.`,
+        period,
+        dataPoints: cycle.cycleLengths.length,
+      })
+    }
+  }
+
+  // Mood correlation on flow days vs other days
+  const flowDates = new Set(periodLogs.filter(isFlowDay).map(l => l.logged_date))
+  if (flowDates.size >= 3 && moodLogs.length >= 5) {
+    const moodByDay = new Map<string, number[]>()
+    for (const m of moodLogs) {
+      const arr = moodByDay.get(m.logged_date) ?? []
+      arr.push(m.mood_score)
+      moodByDay.set(m.logged_date, arr)
+    }
+    const flowMoods: number[] = []
+    const otherMoods: number[] = []
+    for (const [date, scores] of moodByDay) {
+      const dayAvg = avg(scores)
+      if (flowDates.has(date)) flowMoods.push(dayAvg)
+      else otherMoods.push(dayAvg)
+    }
+    if (flowMoods.length >= 3 && otherMoods.length >= 3) {
+      const flowAvg  = avg(flowMoods)
+      const otherAvg = avg(otherMoods)
+      if (otherAvg - flowAvg >= 0.5) {
+        insights.push({
+          id: 'period-mood-dip',
+          category: 'period',
+          type: 'info',
+          icon: '💭',
+          title: 'Mood tends to dip during your period',
+          body: `Average mood is ${(otherAvg - flowAvg).toFixed(1)} points lower on a 5-point scale on flow days (${flowAvg.toFixed(1)}) vs other days (${otherAvg.toFixed(1)}).`,
+          period,
+          action: 'This is common hormonally. Plan lighter days when possible, and mention the pattern to your provider if it feels severe.',
+          dataPoints: flowMoods.length + otherMoods.length,
+        })
+      }
+    }
+  }
+
+  return insights
+}
+
+// ─── Movement patterns ────────────────────────────────────────────────────────
+
+const MOVEMENT_WEEKLY_GOAL_MIN = 150 // ACOG postpartum guidance
+
+function analyzeMovementPatterns(movementLogs: MovementLogRow[], moodLogs: MomMoodLogRow[], period: number): Insight[] {
+  if (movementLogs.length === 0) return []
+
+  const insights: Insight[] = []
+  const now   = Date.now()
+  const week  = 7 * 86_400_000
+
+  const thisWeek  = movementLogs.filter(l => now - new Date(l.logged_at).getTime() < week)
+  const priorWeek = movementLogs.filter(l => { const t = now - new Date(l.logged_at).getTime(); return t >= week && t < 2 * week })
+
+  const thisWeekMins  = thisWeek.reduce((s, l) => s + (l.duration_minutes ?? 0), 0)
+  const priorWeekMins = priorWeek.reduce((s, l) => s + (l.duration_minutes ?? 0), 0)
+
+  if (thisWeekMins >= MOVEMENT_WEEKLY_GOAL_MIN) {
+    insights.push({
+      id: 'movement-goal-hit',
+      category: 'movement',
+      type: 'positive',
+      icon: '🎉',
+      title: 'Weekly movement goal hit',
+      body: `${thisWeekMins} minutes logged this week — at or above the ~${MOVEMENT_WEEKLY_GOAL_MIN} min/week postpartum activity guideline.`,
+      period,
+      dataPoints: thisWeek.length,
+    })
+  } else if (thisWeekMins > 0 || priorWeekMins > 0) {
+    const diff = thisWeekMins - priorWeekMins
+    if (Math.abs(diff) >= 20) {
+      insights.push({
+        id: 'movement-trend',
+        category: 'movement',
+        type: diff > 0 ? 'positive' : 'info',
+        icon: diff > 0 ? '📈' : '📉',
+        title: diff > 0 ? 'Movement is up this week' : 'Movement is down this week',
+        body: `${thisWeekMins} min logged this week vs ${priorWeekMins} min last week.`,
+        period,
+        action: diff < 0 ? 'Even a short walk counts — small, frequent movement adds up postpartum.' : undefined,
+        dataPoints: thisWeek.length + priorWeek.length,
+      })
+    }
+  }
+
+  // Movement/mood correlation: mood on active days vs inactive days
+  const activeDates = new Set(movementLogs.map(l => l.logged_at.slice(0, 10)))
+  if (activeDates.size >= 3 && moodLogs.length >= 5) {
+    const moodByDay = new Map<string, number[]>()
+    for (const m of moodLogs) {
+      const arr = moodByDay.get(m.logged_date) ?? []
+      arr.push(m.mood_score)
+      moodByDay.set(m.logged_date, arr)
+    }
+    const activeMoods: number[] = []
+    const inactiveMoods: number[] = []
+    for (const [date, scores] of moodByDay) {
+      const dayAvg = avg(scores)
+      if (activeDates.has(date)) activeMoods.push(dayAvg)
+      else inactiveMoods.push(dayAvg)
+    }
+    if (activeMoods.length >= 3 && inactiveMoods.length >= 3) {
+      const activeAvg   = avg(activeMoods)
+      const inactiveAvg = avg(inactiveMoods)
+      if (activeAvg - inactiveAvg >= 0.4) {
+        insights.push({
+          id: 'movement-mood-link',
+          category: 'movement',
+          type: 'positive',
+          icon: '💚',
+          title: 'Movement is linked to better mood',
+          body: `Average mood is ${(activeAvg - inactiveAvg).toFixed(1)} points higher on a 5-point scale on days with logged movement (${activeAvg.toFixed(1)}) vs days without (${inactiveAvg.toFixed(1)}).`,
+          period,
+          action: 'Even short sessions seem to help — keep it up when you can.',
+          dataPoints: activeMoods.length + inactiveMoods.length,
+        })
+      }
+    }
+  }
+
+  return insights
+}
+
+// ─── Growth trend ─────────────────────────────────────────────────────────────
+
+interface PercentileMetricConfig {
+  key: 'weight_lbs' | 'height_in'
+  label: string
+  unit: string
+  toWho: (v: number) => number       // convert stored unit -> WHO table unit (kg/cm)
+  whoTable: Record<GenderKey, { m: number[]; sd: number[] }>
+}
+
+const WEIGHT_METRIC: PercentileMetricConfig = { key: 'weight_lbs', label: 'Weight', unit: 'lbs', toWho: lbsToKg, whoTable: WHO_WEIGHT }
+const HEIGHT_METRIC: PercentileMetricConfig = { key: 'height_in', label: 'Height', unit: 'in', toWho: inToCm, whoTable: WHO_HEIGHT }
+
+function detectPercentileShift(
+  logs: GrowthLogRow[],
+  birthDateIso: string,
+  gender: GenderKey,
+  metric: PercentileMetricConfig,
+  period: number,
+): Insight[] {
+  const withMetric = logs
+    .filter(l => l[metric.key] != null)
+    .filter(l => ageInMonthsAt(birthDateIso, l.date) <= 24) // WHO tables only cover 0–24mo
+    .sort((a, b) => a.date.localeCompare(b.date))
+  if (withMetric.length < 2) return []
+
+  const first = withMetric[0]
+  const last  = withMetric[withMetric.length - 1]
+  if (first.date === last.date) return []
+
+  const firstPct = calcPercentile(metric.toWho(first[metric.key]!), ageInMonthsAt(birthDateIso, first.date), metric.whoTable[gender])
+  const lastPct  = calcPercentile(metric.toWho(last[metric.key]!),  ageInMonthsAt(birthDateIso, last.date),  metric.whoTable[gender])
+  const diff = lastPct - firstPct
+  if (Math.abs(diff) < 15) return []
+
+  const nowConcerning = lastPct <= 10 || lastPct >= 90
+  return [{
+    id: `growth-percentile-${metric.key}`,
+    category: 'growth',
+    type: nowConcerning ? 'warning' : 'info',
+    icon: '📈',
+    title: `${metric.label} percentile shifted from ${firstPct}th to ${lastPct}th`,
+    body: `Based on measurements from ${first.date} and ${last.date}.`,
+    period,
+    action: nowConcerning ? 'Mention this shift to your pediatrician at the next visit.' : undefined,
+    dataPoints: withMetric.length,
+  }]
+}
+
+function detectWeightStall(logs: GrowthLogRow[], period: number): Insight[] {
+  const withWeight = logs
+    .filter(l => l.weight_lbs != null)
+    .sort((a, b) => a.date.localeCompare(b.date))
+  if (withWeight.length < 2) return []
+
+  const last = withWeight[withWeight.length - 1]
+  const prev = withWeight[withWeight.length - 2]
+  const daysBetween = Math.round((new Date(last.date).getTime() - new Date(prev.date).getTime()) / 86_400_000)
+  if (daysBetween < 14) return [] // too close together to mean anything
+
+  const gainLbs = last.weight_lbs! - prev.weight_lbs!
+  if (gainLbs > 0) return []
+
+  return [{
+    id: 'growth-weight-stall',
+    category: 'growth',
+    type: 'warning',
+    icon: '⚠️',
+    title: gainLbs < 0 ? 'Weight loss since last measurement' : 'No weight gain since last measurement',
+    body: `${prev.date} to ${last.date} (${daysBetween} days): ${gainLbs < 0 ? `down ${Math.abs(gainLbs).toFixed(1)} lbs` : 'no change'}.`,
+    period,
+    action: 'Bring this up with your pediatrician, especially if it continues at the next check.',
+    dataPoints: withWeight.length,
+  }]
+}
+
+function analyzeGrowthTrend(logs: GrowthLogRow[], birthDateIso: string | null, gender: GenderKey, period: number): Insight[] {
+  if (!birthDateIso || logs.length < 2) return []
+  return [
+    ...detectPercentileShift(logs, birthDateIso, gender, WEIGHT_METRIC, period),
+    ...detectPercentileShift(logs, birthDateIso, gender, HEIGHT_METRIC, period),
+    ...detectWeightStall(logs, period),
+  ]
+}
+
+// ─── Allergen patterns ────────────────────────────────────────────────────────
+
+function analyzeAllergenPatterns(records: AllergenRecordRow[], period: number): Insight[] {
+  if (records.length === 0) return []
+
+  const insights: Insight[] = []
+  const now = Date.now()
+  const day = 86_400_000
+
+  // Reintroduction reminder: safe foods not given in 14+ days.
+  const introduced = records.filter(r => r.status === 'introduced')
+  const staleIntros = introduced
+    .map(r => ({ r, lastAt: r.last_given_at ?? r.date_introduced }))
+    .filter((x): x is { r: AllergenRecordRow; lastAt: string } => !!x.lastAt)
+    .map(x => ({ ...x, daysSince: Math.floor((now - new Date(x.lastAt).getTime()) / day) }))
+    .filter(x => x.daysSince >= 14)
+    .sort((a, b) => b.daysSince - a.daysSince)
+
+  if (staleIntros.length > 0) {
+    const top = staleIntros[0]
+    insights.push({
+      id: `allergen-reintroduce-${top.r.allergen_id}`,
+      category: 'allergen',
+      type: 'tip',
+      icon: '🔄',
+      title: `Time to reintroduce ${top.r.allergen_name}?`,
+      body: `It's been ${top.daysSince} days since ${top.r.allergen_name} was last given. Regular exposure helps maintain tolerance once a food is safe.${staleIntros.length > 1 ? ` ${staleIntros.length - 1} other food${staleIntros.length > 2 ? 's are' : ' is'} also overdue for a repeat.` : ''}`,
+      period,
+      dataPoints: staleIntros.length,
+    })
+  }
+
+  // Stalled Big-9 introduction pace: no new allergen introduced recently, others still not tried.
+  const notTried = records.filter(r => r.status === 'not_tried')
+  const anyIntroduced = records.filter(r => r.date_introduced)
+  if (notTried.length > 0 && anyIntroduced.length > 0) {
+    const lastIntroDate = anyIntroduced
+      .map(r => new Date(r.date_introduced!).getTime())
+      .reduce((a, b) => Math.max(a, b), 0)
+    const daysSinceLastIntro = Math.floor((now - lastIntroDate) / day)
+    if (daysSinceLastIntro > 7) {
+      insights.push({
+        id: 'allergen-intro-pace',
+        category: 'allergen',
+        type: 'tip',
+        icon: '🌱',
+        title: `No new allergen introduced in ${daysSinceLastIntro} days`,
+        body: `${notTried.length} allergen${notTried.length !== 1 ? 's' : ''} still haven't been tried. Introducing one every 3–5 days is the typical pace during the intro window.`,
+        period,
+        dataPoints: notTried.length,
+      })
+    }
+  }
+
+  return insights
+}
+
 // ─── Cross-tracker correlation ────────────────────────────────────────────────
 
 function analyzeCorrelations(sleepLogs: SleepRow[], feedLogs: FeedRow[], period: number): Insight[] {
@@ -993,8 +1414,9 @@ function analyzeCorrelations(sleepLogs: SleepRow[], feedLogs: FeedRow[], period:
 export async function generateInsights(
   babyId: string,
   period: 14 | 30 = 14,
+  userId: string | null = null,
 ): Promise<InsightsResult> {
-  const cacheKey = `${babyId}-${period}`
+  const cacheKey = `${babyId}-${period}-${userId ?? ''}`
   const cached   = cache.get(cacheKey)
   if (cached && Date.now() - cached.generatedAt < CACHE_TTL_MS) return cached
 
@@ -1002,7 +1424,12 @@ export async function generateInsights(
   since.setDate(since.getDate() - period)
   const sinceIso = since.toISOString()
 
-  const [sleepRes, feedRes, diaperRes, foodRes, babyRes] = await Promise.all([
+  // Cycle detection needs more history than the 14/30-day display window to span 2+ periods.
+  const cycleSince = new Date()
+  cycleSince.setDate(cycleSince.getDate() - 180)
+  const cycleSinceStr = cycleSince.toISOString().slice(0, 10)
+
+  const [sleepRes, feedRes, diaperRes, foodRes, babyRes, medsRes, medLogsRes, periodRes, momMoodRes, movementRes, growthRes, allergenRes] = await Promise.all([
     supabase
       .from('sleep_logs')
       .select('id, sleep_type, start_time, end_time, duration_minutes, quality')
@@ -1029,9 +1456,27 @@ export async function generateInsights(
       .order('tried_at', { ascending: false }),
     supabase
       .from('babies')
-      .select('birth_date')
+      .select('birth_date, gender')
       .eq('id', babyId)
       .maybeSingle(),
+    userId
+      ? supabase.from('medications').select('id, name, frequency_hours, active, created_at').eq('user_id', userId).eq('active', true)
+      : Promise.resolve({ data: [] as MedicationRow[] }),
+    userId
+      ? supabase.from('medication_logs').select('id, medication_id, taken_at').eq('user_id', userId).gte('taken_at', sinceIso)
+      : Promise.resolve({ data: [] as MedicationLogRow[] }),
+    userId
+      ? supabase.from('mom_period_logs').select('id, logged_date, flow_level').eq('user_id', userId).gte('logged_date', cycleSinceStr)
+      : Promise.resolve({ data: [] as PeriodLogRow[] }),
+    userId
+      ? supabase.from('mom_mood_logs').select('id, logged_date, mood_score').eq('user_id', userId).gte('logged_date', cycleSinceStr)
+      : Promise.resolve({ data: [] as MomMoodLogRow[] }),
+    userId
+      ? supabase.from('mom_movement_logs').select('id, logged_at, duration_minutes').eq('user_id', userId).gte('logged_at', cycleSince.toISOString())
+      : Promise.resolve({ data: [] as MovementLogRow[] }),
+    // Growth check-ups are typically monthly — use the same longer window as cycle detection.
+    supabase.from('growth_logs').select('id, date, weight_lbs, height_in').eq('baby_id', babyId).gte('date', cycleSinceStr),
+    supabase.from('allergen_records').select('allergen_id, allergen_name, status, date_introduced, last_given_at').eq('baby_id', babyId),
   ])
 
   const sleepLogs    = (sleepRes.data  ?? []) as SleepRow[]
@@ -1039,6 +1484,14 @@ export async function generateInsights(
   const diaperLogs   = (diaperRes.data ?? []) as DiaperRow[]
   const foodLogs     = (foodRes.data   ?? []) as FoodRow[]
   const birthDateIso = (babyRes.data as any)?.birth_date ?? null
+  const babyGender: GenderKey = (babyRes.data as any)?.gender?.toLowerCase() === 'girl' ? 'girl' : 'boy'
+  const medications  = (medsRes.data    ?? []) as MedicationRow[]
+  const medLogs      = (medLogsRes.data ?? []) as MedicationLogRow[]
+  const periodLogs   = (periodRes.data  ?? []) as PeriodLogRow[]
+  const momMoodLogs  = (momMoodRes.data ?? []) as MomMoodLogRow[]
+  const movementLogs = (movementRes.data ?? []) as MovementLogRow[]
+  const growthLogs   = (growthRes.data  ?? []) as GrowthLogRow[]
+  const allergenRecords = (allergenRes.data ?? []) as AllergenRecordRow[]
 
   const all: Insight[] = [
     ...analyzeSleep(sleepLogs, period),
@@ -1054,6 +1507,11 @@ export async function generateInsights(
     ...detectPositiveStreak(sleepLogs, period),
     ...detectDehydration(diaperLogs, period),
     ...detectFoodDiaperReaction(foodLogs, diaperLogs, period),
+    ...analyzeMedicationAdherence(medications, medLogs, period),
+    ...analyzePeriodPatterns(periodLogs, momMoodLogs, period),
+    ...analyzeMovementPatterns(movementLogs, momMoodLogs, period),
+    ...analyzeGrowthTrend(growthLogs, birthDateIso, babyGender, period),
+    ...analyzeAllergenPatterns(allergenRecords, period),
   ]
 
   // Sort: warnings → positive → tip → info
@@ -1068,6 +1526,11 @@ export async function generateInsights(
       feeds:         feedLogs.length,
       diapers:       diaperLogs.length,
       foodLogs:      foodLogs.length,
+      medications:   medications.length,
+      periodLogs:    periodLogs.length,
+      movementLogs:  movementLogs.length,
+      growthLogs:    growthLogs.length,
+      allergenRecords: allergenRecords.length,
     },
   }
 

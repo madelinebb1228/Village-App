@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
+import { computeCycleStats } from '../lib/cycleUtils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,11 @@ const FLOW_OPTS = [
 const SYMPTOMS = ['Cramping','Bloating','Breast tenderness','Mood swings','Headache','Fatigue','Back pain','Spotting only'];
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+function daysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
@@ -37,6 +44,7 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
   const [adding,   setAdding]   = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [flow,     setFlow]     = useState('spotting');
   const [symptoms, setSymptoms] = useState<string[]>([]);
@@ -47,25 +55,41 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
     setLoading(true);
     const { data } = await (supabase.from('mom_period_logs') as any)
       .select('*').eq('user_id', userId)
-      .order('logged_date', { ascending: false }).limit(20);
+      .gte('logged_date', daysAgo(180))
+      .order('logged_date', { ascending: false });
     setLogs(data ?? []);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
+  function openEditor(existing?: PeriodLog) {
+    setEditingId(existing?.id ?? null);
+    setFlow(existing?.flow_level ?? 'spotting');
+    setSymptoms(existing?.symptoms ?? []);
+    setNotes(existing?.notes ?? '');
+    setAdding(true);
+  }
+
   async function save() {
     if (!userId) return;
     setSaving(true);
-    await (supabase.from('mom_period_logs') as any).insert({
-      user_id: userId, logged_date: todayStr(),
-      flow_level: flow, symptoms,
-      notes: notes.trim() || null,
-    });
+    const payload = { flow_level: flow, symptoms, notes: notes.trim() || null };
+    if (editingId) {
+      await safeUpdate('mom_period_logs', editingId, payload);
+    } else {
+      await safeInsert('mom_period_logs', { user_id: userId, logged_date: todayStr(), ...payload });
+    }
     setSaving(false);
     setAdding(false);
+    setEditingId(null);
     setFlow('spotting'); setSymptoms([]); setNotes('');
     load();
+  }
+
+  async function deleteEntry(id: string) {
+    await safeDelete('mom_period_logs', id);
+    setLogs(prev => prev.filter(l => l.id !== id));
   }
 
   function toggleSym(sym: string) {
@@ -75,6 +99,8 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
   const todayLog  = logs.find(l => l.logged_date === todayStr());
   const lastEntry = logs[0];
   const hasReturned = logs.length > 0;
+
+  const cycle = useMemo(() => computeCycleStats(logs), [logs]);
 
   if (loading) return <ActivityIndicator color={c.primary} style={{ margin: 24 }} />;
 
@@ -105,6 +131,29 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
             </View>
           )}
 
+          {/* Cycle prediction */}
+          {hasReturned && !adding && (
+            <View style={s.cycleCard}>
+              {cycle.avgCycleLength ? (
+                <>
+                  <Text style={s.cycleLine}>
+                    Avg cycle: <Text style={s.cycleBold}>{cycle.avgCycleLength} days</Text>
+                    {cycle.cycleDay ? `  ·  Cycle day ${cycle.cycleDay}` : ''}
+                  </Text>
+                  {cycle.predictedNextStart && (
+                    <Text style={s.cycleSub}>
+                      Next period expected around {fmtDate(cycle.predictedNextStart)} (postpartum cycles vary — treat this as a rough estimate)
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={s.cycleLine}>
+                  Tracking your first cycle since return{cycle.cycleDay ? ` · Cycle day ${cycle.cycleDay}` : ''} — predictions appear after your next period.
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* Today's entry */}
           {todayLog && !adding && (
             <View style={s.todayCard}>
@@ -115,18 +164,24 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
           )}
 
           {/* Recent log list */}
-          {!adding && logs.slice(0, 7).map(l => (
+          {!adding && logs.slice(0, 10).map(l => (
             <View key={l.id} style={s.logRow}>
               <Text style={s.logDate}>{fmtDate(l.logged_date)}</Text>
               <Text style={[s.logFlow, { color: FLOW_OPTS.find(f => f.value === l.flow_level)?.color ?? c.textPrimary }]}>
                 {FLOW_OPTS.find(f => f.value === l.flow_level)?.label ?? l.flow_level}
               </Text>
               {l.symptoms?.length > 0 && <Text style={s.logSyms} numberOfLines={1}>{l.symptoms.join(', ')}</Text>}
+              <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={s.logAction}>✎</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[s.logAction, { color: c.textMuted }]}>✕</Text>
+              </TouchableOpacity>
             </View>
           ))}
 
           {!adding ? (
-            <TouchableOpacity style={s.logBtn} onPress={() => setAdding(true)}>
+            <TouchableOpacity style={s.logBtn} onPress={() => openEditor(todayLog)}>
               <Text style={s.logBtnText}>{todayLog ? '✏️ Update Today' : '+ Log Today'}</Text>
             </TouchableOpacity>
           ) : (
@@ -159,11 +214,11 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
                 multiline maxLength={300} textAlignVertical="top" />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => setAdding(false)}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}>
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save</Text>}
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingId ? 'Save Changes' : 'Save'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -188,6 +243,11 @@ function makeStyles(c: Colors) {
     infoCard:   { backgroundColor: c.cardBlue, borderRadius: 12, padding: 14, marginBottom: 14 },
     infoText:   { fontSize: 13, color: '#1E3A8A', lineHeight: 19 },
 
+    cycleCard: { backgroundColor: c.cardBlush, borderRadius: 12, padding: 14, marginBottom: 12 },
+    cycleLine: { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
+    cycleBold: { fontWeight: '800', color: '#DC2626' },
+    cycleSub:  { fontSize: 12, color: c.textMuted, marginTop: 4, lineHeight: 17 },
+
     todayCard:  { backgroundColor: '#FEE2E2', borderRadius: 12, padding: 14, marginBottom: 12 },
     todayLabel: { fontSize: 11, fontWeight: '700', color: '#7F1D1D', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
     todayFlow:  { fontSize: 16, fontWeight: '800', color: '#DC2626', marginBottom: 4 },
@@ -197,6 +257,7 @@ function makeStyles(c: Colors) {
     logDate:   { fontSize: 12, color: c.textMuted, width: 70 },
     logFlow:   { fontSize: 13, fontWeight: '700', width: 90 },
     logSyms:   { flex: 1, fontSize: 11, color: c.textMuted },
+    logAction: { fontSize: 15, color: '#DC2626', paddingHorizontal: 2 },
 
     logBtn:     { backgroundColor: '#FEE2E2', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12, borderWidth: 1.5, borderColor: '#FECACA' },
     logBtnText: { fontSize: 14, fontWeight: '700', color: '#DC2626' },

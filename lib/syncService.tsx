@@ -10,9 +10,11 @@ import { supabase } from './supabase';
 type QueuedOp = {
   queueId: string;
   table: string;
-  op: 'insert' | 'update' | 'delete';
+  op: 'insert' | 'update' | 'delete' | 'upsert';
   payload: Record<string, any>;
   rowId: string;
+  onConflict?: string;
+  filters?: Record<string, any>;
   createdAt: string;
   retries: number;
 };
@@ -152,20 +154,23 @@ export async function safeInsert(
 }
 
 /**
- * Update a row by id. Queues when offline.
+ * Update a row by id, or by a compound filter set (e.g. { baby_id, vaccine_key }
+ * for tables without a single-column primary key in play). Queues when offline.
  */
 export async function safeUpdate(
   table: string,
-  id: string,
+  idOrFilters: string | Record<string, any>,
   data: Record<string, any>,
 ): Promise<{ queued: boolean }> {
+  const filters = typeof idOrFilters === 'string' ? { id: idOrFilters } : idOrFilters;
+  const rowId = typeof idOrFilters === 'string' ? idOrFilters : '';
   try {
-    const { error } = await supabase.from(table).update(data).eq('id', id);
+    const { error } = await supabase.from(table).update(data).match(filters);
     if (error) throw error;
     return { queued: false };
   } catch (err: any) {
     if (isNetworkError(err)) {
-      await enqueue({ table, op: 'update', payload: data, rowId: id });
+      await enqueue({ table, op: 'update', payload: data, rowId, filters });
       return { queued: true };
     }
     throw err;
@@ -173,19 +178,43 @@ export async function safeUpdate(
 }
 
 /**
- * Delete a row by id. Queues when offline.
+ * Delete a row by id, or by a compound filter set (e.g. { baby_id, vaccine_key }
+ * for tables without a single-column primary key). Queues when offline.
  */
 export async function safeDelete(
   table: string,
-  id: string,
+  idOrFilters: string | Record<string, any>,
 ): Promise<{ queued: boolean }> {
+  const filters = typeof idOrFilters === 'string' ? { id: idOrFilters } : idOrFilters;
+  const rowId = typeof idOrFilters === 'string' ? idOrFilters : '';
   try {
-    const { error } = await supabase.from(table).delete().eq('id', id);
+    const { error } = await supabase.from(table).delete().match(filters);
     if (error) throw error;
     return { queued: false };
   } catch (err: any) {
     if (isNetworkError(err)) {
-      await enqueue({ table, op: 'delete', payload: {}, rowId: id });
+      await enqueue({ table, op: 'delete', payload: {}, rowId, filters });
+      return { queued: true };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Upsert a row (insert-or-update on conflict). Queues when offline.
+ */
+export async function safeUpsert(
+  table: string,
+  data: Record<string, any>,
+  onConflict: string = 'id',
+): Promise<{ queued: boolean }> {
+  try {
+    const { error } = await supabase.from(table).upsert(data, { onConflict });
+    if (error) throw error;
+    return { queued: false };
+  } catch (err: any) {
+    if (isNetworkError(err)) {
+      await enqueue({ table, op: 'upsert', payload: data, rowId: data.id ?? '', onConflict });
       return { queued: true };
     }
     throw err;
@@ -229,10 +258,13 @@ async function processQueue(): Promise<number> {
         const { error } = await supabase.from(op.table).upsert(op.payload, { onConflict: 'id' });
         if (error) throw error;
       } else if (op.op === 'update') {
-        const { error } = await supabase.from(op.table).update(op.payload).eq('id', op.rowId);
+        const { error } = await supabase.from(op.table).update(op.payload).match(op.filters ?? { id: op.rowId });
         if (error) throw error;
       } else if (op.op === 'delete') {
-        const { error } = await supabase.from(op.table).delete().eq('id', op.rowId);
+        const { error } = await supabase.from(op.table).delete().match(op.filters ?? { id: op.rowId });
+        if (error) throw error;
+      } else if (op.op === 'upsert') {
+        const { error } = await supabase.from(op.table).upsert(op.payload, { onConflict: op.onConflict ?? 'id' });
         if (error) throw error;
       }
       await dequeue(op.queueId);

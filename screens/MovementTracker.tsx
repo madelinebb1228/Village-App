@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,9 @@ const INTENSITY = [
   { value: 'vigorous', label: '🔥 Vigorous' },
 ];
 
+// ACOG postpartum guidance: aim for ~150 min/week of moderate activity once cleared to exercise.
+const WEEKLY_GOAL_MIN = 150;
+
 function todayStart() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -34,8 +38,23 @@ function weekStart() {
   return d.toISOString();
 }
 
+function historyStart() {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function isToday(iso: string) {
+  return new Date(iso).toDateString() === new Date().toDateString();
 }
 
 interface MovementLog {
@@ -51,12 +70,12 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
-  const [todayLogs, setTodayLogs] = useState<MovementLog[]>([]);
-  const [weekMins,  setWeekMins]  = useState(0);
+  const [history,   setHistory]   = useState<MovementLog[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [adding,    setAdding]    = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [expanded,  setExpanded]  = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [activity,  setActivity]  = useState('walk');
   const [duration,  setDuration]  = useState('');
@@ -66,39 +85,64 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
-    const [todayRes, weekRes] = await Promise.all([
-      (supabase.from('mom_movement_logs') as any)
-        .select('*').eq('user_id', userId)
-        .gte('logged_at', todayStart())
-        .order('logged_at', { ascending: false }),
-      (supabase.from('mom_movement_logs') as any)
-        .select('duration_minutes').eq('user_id', userId)
-        .gte('logged_at', weekStart()),
-    ]);
-    setTodayLogs(todayRes.data ?? []);
-    setWeekMins((weekRes.data ?? []).reduce((sum: number, r: any) => sum + (r.duration_minutes ?? 0), 0));
+    const { data } = await (supabase.from('mom_movement_logs') as any)
+      .select('*').eq('user_id', userId)
+      .gte('logged_at', historyStart())
+      .order('logged_at', { ascending: false });
+    setHistory(data ?? []);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
+  const todayLogs = useMemo(() => history.filter(l => isToday(l.logged_at)), [history]);
+  const pastLogs  = useMemo(() => history.filter(l => !isToday(l.logged_at)), [history]);
+  const todayMins = todayLogs.reduce((sum, l) => sum + (l.duration_minutes ?? 0), 0);
+
+  const weekMins = useMemo(() => {
+    const cutoff = new Date(weekStart()).getTime();
+    return history
+      .filter(l => new Date(l.logged_at).getTime() >= cutoff)
+      .reduce((sum, l) => sum + (l.duration_minutes ?? 0), 0);
+  }, [history]);
+
+  const goalProgress = Math.min(weekMins / WEEKLY_GOAL_MIN, 1);
+  const goalHit = weekMins >= WEEKLY_GOAL_MIN;
+
+  function openEditor(existing?: MovementLog) {
+    setEditingId(existing?.id ?? null);
+    setActivity(existing?.activity_type ?? 'walk');
+    setDuration(existing?.duration_minutes != null ? String(existing.duration_minutes) : '');
+    setIntensity(existing?.intensity ?? 'gentle');
+    setNotes(existing?.notes ?? '');
+    setAdding(true);
+  }
+
   async function save() {
     if (!userId) return;
     setSaving(true);
-    await (supabase.from('mom_movement_logs') as any).insert({
-      user_id: userId,
+    const payload = {
       activity_type: activity,
       duration_minutes: parseInt(duration || '0') || null,
       intensity,
       notes: notes.trim() || null,
-    });
+    };
+    if (editingId) {
+      await safeUpdate('mom_movement_logs', editingId, payload);
+    } else {
+      await safeInsert('mom_movement_logs', { user_id: userId, logged_at: new Date().toISOString(), ...payload });
+    }
     setSaving(false);
     setAdding(false);
+    setEditingId(null);
     setActivity('walk'); setDuration(''); setIntensity('gentle'); setNotes('');
     load();
   }
 
-  const todayMins = todayLogs.reduce((sum, l) => sum + (l.duration_minutes ?? 0), 0);
+  async function deleteEntry(id: string) {
+    await safeDelete('mom_movement_logs', id);
+    setHistory(prev => prev.filter(l => l.id !== id));
+  }
 
   if (loading) return <ActivityIndicator color={c.primary} style={{ margin: 24 }} />;
 
@@ -137,6 +181,17 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
             </View>
           </View>
 
+          {/* Weekly goal */}
+          <View style={s.goalCard}>
+            <View style={s.goalHeaderRow}>
+              <Text style={s.goalLabel}>{goalHit ? '🎉 Weekly goal hit!' : 'Weekly movement goal'}</Text>
+              <Text style={s.goalCount}>{weekMins} / {WEEKLY_GOAL_MIN} min</Text>
+            </View>
+            <View style={s.goalTrack}>
+              <View style={[s.goalFill, { width: `${goalProgress * 100}%` }, goalHit && s.goalFillHit]} />
+            </View>
+          </View>
+
           {/* Today's sessions */}
           {!adding && todayLogs.map(l => {
             const act = ACTIVITIES.find(a => a.value === l.activity_type);
@@ -147,12 +202,18 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 {l.duration_minutes ? <Text style={s.entryDur}>{l.duration_minutes} min</Text> : null}
                 {l.intensity ? <Text style={s.entryIntensity}>{INTENSITY.find(i => i.value === l.intensity)?.label}</Text> : null}
                 <Text style={s.entryTime}>{fmtTime(l.logged_at)}</Text>
+                <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={s.entryAction}>✎</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
+                </TouchableOpacity>
               </View>
             );
           })}
 
           {!adding ? (
-            <TouchableOpacity style={s.addBtn} onPress={() => setAdding(true)}>
+            <TouchableOpacity style={s.addBtn} onPress={() => openEditor()}>
               <Text style={s.addBtnText}>+ Log Activity</Text>
             </TouchableOpacity>
           ) : (
@@ -200,13 +261,42 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 placeholderTextColor={c.textMuted} value={notes} onChangeText={setNotes} maxLength={200} />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => setAdding(false)}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}>
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Log It 💪</Text>}
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingId ? 'Save Changes' : 'Log It 💪'}</Text>}
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+
+          {/* History */}
+          {!adding && pastLogs.length > 0 && (
+            <View style={s.histWrap}>
+              <Text style={s.histTitle}>Recent sessions</Text>
+              {pastLogs.slice(0, 10).map(l => {
+                const act = ACTIVITIES.find(a => a.value === l.activity_type);
+                return (
+                  <View key={l.id} style={s.entryRow}>
+                    <Text style={s.entryEmoji}>{act?.emoji ?? '✨'}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.entryName}>{act?.label ?? l.activity_type}</Text>
+                      <Text style={s.histMeta}>
+                        {fmtDate(l.logged_at)}
+                        {l.duration_minutes ? ` · ${l.duration_minutes} min` : ''}
+                        {l.intensity ? ` · ${INTENSITY.find(i => i.value === l.intensity)?.label}` : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={s.entryAction}>✎</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -232,12 +322,21 @@ function makeStyles(c: Colors) {
     summaryLbl:    { fontSize: 11, color: c.textMuted, marginTop: 2 },
     summaryDivider:{ width: 1, height: 32, backgroundColor: c.separator },
 
+    goalCard:      { marginBottom: 14 },
+    goalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+    goalLabel:     { fontSize: 12, fontWeight: '700', color: c.textSecondary },
+    goalCount:     { fontSize: 12, color: c.textMuted },
+    goalTrack:     { height: 8, borderRadius: 4, backgroundColor: c.separator, overflow: 'hidden' },
+    goalFill:      { height: '100%', borderRadius: 4, backgroundColor: c.sage },
+    goalFillHit:   { backgroundColor: '#059669' },
+
     entryRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.separator },
     entryEmoji:    { fontSize: 18 },
     entryName:     { fontSize: 14, fontWeight: '700', color: c.textPrimary, flex: 1 },
     entryDur:      { fontSize: 13, color: c.sage, fontWeight: '700' },
     entryIntensity:{ fontSize: 11, color: c.textMuted },
     entryTime:     { fontSize: 11, color: c.textMuted, marginLeft: 4 },
+    entryAction:   { fontSize: 15, color: c.sage, paddingHorizontal: 2 },
 
     addBtn:     { backgroundColor: c.cardSage, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12, borderWidth: 1.5, borderColor: '#A7F3D0' },
     addBtnText: { fontSize: 14, fontWeight: '700', color: c.sage },
@@ -265,5 +364,9 @@ function makeStyles(c: Colors) {
     cancelBtnText: { fontSize: 14, fontWeight: '600', color: c.textMuted },
     saveBtn:   { flex: 2, alignItems: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: c.sage },
     saveBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+
+    histWrap:  { marginTop: 4 },
+    histTitle: { fontSize: 12, fontWeight: '700', color: c.textMuted, marginBottom: 4, marginTop: 4 },
+    histMeta:  { fontSize: 11, color: c.textMuted, marginTop: 1 },
   });
 }

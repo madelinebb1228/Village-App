@@ -13,7 +13,17 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Pixxi\\\\Desktop\\\\village-app'; npx expo start --web --port 8082\")"
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Pixxi\\\\Desktop\\\\village-app'; npx expo start --web --port 8082\")",
+      "Skill(run)",
+      "Bash(npx tsc *)",
+      "Bash(git commit *)",
+      "WebSearch",
+      "Bash(curl -s \"http://localhost:8081/index.bundle?platform=web&dev=true\" -o /tmp/bundle-check3.js -w \"HTTP %{http_code}\\\\n\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s \"http://localhost:8081/index.bundle?platform=web&dev=true\" -o /tmp/bundle-check4.js -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s \"http://localhost:8081/index.bundle?platform=web&dev=true\" -o /tmp/bundle-check5.js -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s \"http://localhost:8081/index.bundle?platform=web&dev=true\" -o /tmp/bundle-check6.js -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl *)"
     ]
   }
 }

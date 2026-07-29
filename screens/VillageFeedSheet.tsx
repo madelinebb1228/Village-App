@@ -18,6 +18,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { Village } from '../lib/villageData';
+import { moderateImage } from '../lib/contentModeration';
+import ContentBlockedModal from '../components/ContentBlockedModal';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
 
@@ -99,6 +101,8 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
   const [postContent, setPostContent] = useState('');
   const [postType, setPostType] = useState<Post['post_type']>('text');
   const [pendingPostImageUri, setPendingPostImageUri] = useState<string | null>(null);
+  const [moderating, setModerating] = useState(false);
+  const [blockedContent, setBlockedContent] = useState<{ severity: 'high' | 'extreme'; reason: string } | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -218,7 +222,17 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
       allowsEditing: false,
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) setPendingPostImageUri(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) {
+      const uri = result.assets[0].uri;
+      setModerating(true);
+      const modResult = await moderateImage(uri);
+      setModerating(false);
+      if (modResult.blocked) {
+        setBlockedContent({ severity: modResult.severity, reason: modResult.reason });
+        return;
+      }
+      setPendingPostImageUri(uri);
+    }
   }
 
   async function handleCreatePost() {
@@ -507,6 +521,27 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
         visible={profileUserId !== null}
         onClose={() => setProfileUserId(null)}
       />
+
+      {blockedContent && currentUserId && (
+        <ContentBlockedModal
+          visible={!!blockedContent}
+          severity={blockedContent.severity}
+          reason={blockedContent.reason}
+          contentType="post_image"
+          userId={currentUserId}
+          onClose={() => setBlockedContent(null)}
+        />
+      )}
+
+      {moderating && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', gap: 12,
+        }}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Checking photo…</Text>
+        </View>
+      )}
     </>
   );
 }

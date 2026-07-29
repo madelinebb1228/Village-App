@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -15,7 +17,19 @@ const INCISION_OPTS = [
 const PF_SYMPTOMS  = ['Leaking','Pressure','Pain','Tightness','Muscle weakness'];
 const OTHER_SYMPTOMS = ['Headache','Fever','Swelling','Fatigue','Hair loss','Night sweats','Constipation'];
 
+const SW = Dimensions.get('window').width;
+
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtShort(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 interface RecoveryLog {
   id: string;
@@ -29,11 +43,58 @@ interface RecoveryLog {
   notes: string | null;
 }
 
-export default function PostpartumRecoveryTracker({ userId }: { userId: string | null }) {
+// ─── Red-flag detection ───────────────────────────────────────────────────────
+// Rule-based, most-urgent-first. Not a diagnosis — just a nudge to call a provider.
+
+interface RedFlag { level: 'urgent' | 'warn'; icon: string; text: string; }
+
+function detectRedFlag(log: Pick<RecoveryLog, 'lochia' | 'incision_status' | 'other_symptoms' | 'pain_level'>): RedFlag | null {
+  const hasFever = (log.other_symptoms ?? []).includes('Fever');
+
+  if (log.lochia === 'heavy') {
+    return {
+      level: 'urgent', icon: '🩸',
+      text: 'Heavy bleeding today. Soaking a pad in under an hour, passing clots larger than a golf ball, or feeling dizzy can signal postpartum hemorrhage — contact your provider or go to the ER now.',
+    };
+  }
+  if (log.pain_level != null && log.pain_level >= 8) {
+    return {
+      level: 'urgent', icon: '⚠️',
+      text: `Pain at ${log.pain_level}/10 is significant. If it's new, worsening, or not relieved by your usual pain control, contact your provider today.`,
+    };
+  }
+  if (log.incision_status === 'concerning' && hasFever) {
+    return {
+      level: 'urgent', icon: '🌡️',
+      text: 'Fever along with incision changes (redness, swelling, drainage) can indicate infection — contact your provider today.',
+    };
+  }
+  if (log.incision_status === 'concerning') {
+    return {
+      level: 'warn', icon: '⚠️',
+      text: 'Keep an eye on your incision or perineum. Worsening redness, swelling, warmth, or drainage should be checked by your provider.',
+    };
+  }
+  if (hasFever) {
+    return {
+      level: 'warn', icon: '🌡️',
+      text: 'A fever this postpartum is worth a same-day call to your provider, even without other symptoms.',
+    };
+  }
+  return null;
+}
+
+export default function PostpartumRecoveryTracker({
+  userId, babyBirthDate,
+}: {
+  userId: string | null;
+  babyBirthDate?: string | null;
+}) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const chartWidth = Platform.OS === 'web' ? Math.min(SW - 96, 480) : SW - 96;
 
-  const [todayLog, setTodayLog] = useState<RecoveryLog | null>(null);
+  const [history,  setHistory]  = useState<RecoveryLog[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [editing,  setEditing]  = useState(false);
   const [saving,   setSaving]   = useState(false);
@@ -51,14 +112,32 @@ export default function PostpartumRecoveryTracker({ userId }: { userId: string |
     if (!userId) return;
     setLoading(true);
     const { data } = await (supabase.from('mom_recovery_logs') as any)
-      .select('*').eq('user_id', userId).eq('logged_date', todayStr()).maybeSingle();
-    setTodayLog(data ?? null);
+      .select('*').eq('user_id', userId)
+      .gte('logged_date', daysAgo(13))
+      .order('logged_date', { ascending: false });
+    setHistory(data ?? []);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
-  function startEdit(existing?: RecoveryLog) {
+  const todayLog = useMemo(() => history.find(l => l.logged_date === todayStr()) ?? null, [history]);
+  const pastLogs = useMemo(() => history.filter(l => l.logged_date !== todayStr()), [history]);
+
+  const daysPostpartum = useMemo(() => {
+    if (!babyBirthDate) return null;
+    const diff = Math.floor((Date.now() - new Date(babyBirthDate).getTime()) / 86_400_000) + 1;
+    return diff >= 1 ? diff : null;
+  }, [babyBirthDate]);
+
+  const todayFlag = todayLog ? detectRedFlag(todayLog) : null;
+
+  const chartLogs = useMemo(
+    () => [...history].filter(l => l.pain_level != null).sort((a, b) => a.logged_date.localeCompare(b.logged_date)),
+    [history],
+  );
+
+  function startEdit(existing?: RecoveryLog | null) {
     setPain(existing?.pain_level ?? 0);
     setLochia(existing?.lochia ?? 'none');
     setIncision(existing?.incision_status ?? 'na');
@@ -83,13 +162,18 @@ export default function PostpartumRecoveryTracker({ userId }: { userId: string |
       other_symptoms: otherSyms, notes: notes.trim() || null,
     };
     if (todayLog) {
-      await (supabase.from('mom_recovery_logs') as any).update(payload).eq('id', todayLog.id);
+      await safeUpdate('mom_recovery_logs', todayLog.id, payload);
     } else {
-      await (supabase.from('mom_recovery_logs') as any).insert(payload);
+      await safeInsert('mom_recovery_logs', payload);
     }
     setSaving(false);
     setEditing(false);
     load();
+  }
+
+  async function deleteEntry(id: string) {
+    await safeDelete('mom_recovery_logs', id);
+    setHistory(prev => prev.filter(l => l.id !== id));
   }
 
   const PAIN_COLORS = ['#6B7280','#6B7280','#D97706','#D97706','#EA580C','#EA580C','#DC2626','#DC2626','#B91C1C','#B91C1C','#7F1D1D'];
@@ -104,17 +188,30 @@ export default function PostpartumRecoveryTracker({ userId }: { userId: string |
           <View>
             <Text style={s.headerTitle}>Postpartum Recovery</Text>
             <Text style={s.headerSub}>
-              {todayLog ? `Today: Pain ${todayLog.pain_level ?? 0}/10 · ${todayLog.lochia ?? '—'} flow` : 'Log how you\'re healing'}
+              {daysPostpartum != null ? `Day ${daysPostpartum} · ` : ''}
+              {todayLog ? `Pain ${todayLog.pain_level ?? 0}/10 · ${todayLog.lochia ?? '—'} flow` : 'Log how you\'re healing'}
             </Text>
           </View>
         </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {todayFlag && <Text style={s.flagDot}>●</Text>}
+          <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
+        </View>
       </TouchableOpacity>
 
       {expanded && (
         <View style={s.body}>
           {!editing ? (
             <>
+              {todayFlag && (
+                <View style={[s.flagBanner, todayFlag.level === 'urgent' ? s.flagBannerUrgent : s.flagBannerWarn]}>
+                  <Text style={s.flagBannerIcon}>{todayFlag.icon}</Text>
+                  <Text style={[s.flagBannerText, todayFlag.level === 'urgent' && s.flagBannerTextUrgent]}>
+                    {todayFlag.text}
+                  </Text>
+                </View>
+              )}
+
               {todayLog ? (
                 <View style={s.summaryCard}>
                   <Text style={s.summaryTitle}>Today's check-in</Text>
@@ -153,6 +250,65 @@ export default function PostpartumRecoveryTracker({ userId }: { userId: string |
                 <TouchableOpacity style={s.logBtn} onPress={() => startEdit()}>
                   <Text style={s.logBtnText}>🌸  Log Today's Recovery</Text>
                 </TouchableOpacity>
+              )}
+
+              {/* Pain trend */}
+              {chartLogs.length >= 2 ? (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={s.chartLabel}>PAIN TREND (14 DAYS)</Text>
+                  <LineChart
+                    data={{
+                      labels: chartLogs.map(l => fmtShort(l.logged_date)),
+                      datasets: [{ data: chartLogs.map(l => l.pain_level ?? 0), color: () => '#DB2777', strokeWidth: 2.5 }],
+                    }}
+                    width={chartWidth}
+                    height={140}
+                    fromZero
+                    segments={4}
+                    chartConfig={{
+                      backgroundColor: c.card,
+                      backgroundGradientFrom: c.card,
+                      backgroundGradientTo: c.card,
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(219,39,119,${opacity})`,
+                      labelColor: () => c.textMuted,
+                      propsForDots: { r: '3.5', strokeWidth: '2' },
+                    }}
+                    bezier
+                    style={{ borderRadius: 14 }}
+                    withInnerLines={false}
+                    withOuterLines={false}
+                  />
+                </View>
+              ) : null}
+
+              {/* History */}
+              {pastLogs.length > 0 && (
+                <View style={s.histWrap}>
+                  <Text style={s.histTitle}>Recent check-ins</Text>
+                  {pastLogs.map(log => {
+                    const flag = detectRedFlag(log);
+                    return (
+                      <View key={log.id} style={s.histRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.histDate}>
+                            {fmtShort(log.logged_date)}{flag ? `  ${flag.icon}` : ''}
+                          </Text>
+                          <Text style={s.histMeta}>
+                            Pain {log.pain_level ?? 0}/10 · {log.lochia ?? '—'} flow
+                            {log.incision_status && log.incision_status !== 'na' ? ` · ${INCISION_OPTS.find(i => i.value === log.incision_status)?.label}` : ''}
+                          </Text>
+                          {(log.pf_symptoms?.length > 0 || log.other_symptoms?.length > 0) && (
+                            <Text style={s.histTags}>{[...(log.pf_symptoms ?? []), ...(log.other_symptoms ?? [])].join(' · ')}</Text>
+                          )}
+                        </View>
+                        <TouchableOpacity onPress={() => deleteEntry(log.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Text style={s.histDelete}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
               )}
             </>
           ) : (
@@ -254,7 +410,15 @@ function makeStyles(c: Colors) {
     headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
     headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
     chevron:     { fontSize: 12, color: c.textMuted },
+    flagDot:     { fontSize: 10, color: '#DC2626' },
     body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+
+    flagBanner: { flexDirection: 'row', gap: 10, borderRadius: 12, padding: 12, marginBottom: 12, alignItems: 'flex-start' },
+    flagBannerWarn:   { backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey },
+    flagBannerUrgent: { backgroundColor: '#FEE2E2', borderWidth: 1.5, borderColor: '#DC2626' },
+    flagBannerIcon:   { fontSize: 18 },
+    flagBannerText:   { flex: 1, fontSize: 12.5, color: c.textPrimary, lineHeight: 18, fontWeight: '600' },
+    flagBannerTextUrgent: { color: '#7F1D1D' },
 
     summaryCard:  { backgroundColor: c.cardBlush, borderRadius: 12, padding: 14, marginBottom: 12 },
     summaryTitle: { fontSize: 11, fontWeight: '700', color: '#831843', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -269,6 +433,16 @@ function makeStyles(c: Colors) {
 
     logBtn:     { backgroundColor: c.cardBlush, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 8, borderWidth: 1.5, borderColor: '#FBCFE8' },
     logBtnText: { fontSize: 15, fontWeight: '700', color: '#831843' },
+
+    chartLabel: { fontSize: 11, color: c.textMuted, fontWeight: '600', marginBottom: 6 },
+
+    histWrap:  { marginTop: 16 },
+    histTitle: { fontSize: 12, fontWeight: '700', color: c.textMuted, marginBottom: 8 },
+    histRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.separator },
+    histDate:  { fontSize: 13, fontWeight: '700', color: c.textPrimary, marginBottom: 2 },
+    histMeta:  { fontSize: 12, color: c.textSecondary },
+    histTags:  { fontSize: 12, color: c.textMuted, marginTop: 2 },
+    histDelete:{ fontSize: 15, color: c.textMuted, paddingHorizontal: 2 },
 
     formLabel: { fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 8, marginTop: 14 },
     optional:  { fontWeight: '400', color: c.textMuted },

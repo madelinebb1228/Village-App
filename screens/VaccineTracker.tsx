@@ -4,7 +4,14 @@ import {
   TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import {
+  VaccineReminderSettings,
+  getVaccineReminderSettings,
+  saveVaccineReminderSettings,
+  rescheduleVaccineReminders,
+} from '../lib/vaccineNotifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,6 +170,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
   const [records,      setRecords]      = useState<VaccineRecord[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading,      setLoading]      = useState(true);
+  const [reminderSettings, setReminderSettings] = useState<VaccineReminderSettings>({ enabled: false, quietStart: null, quietEnd: null });
 
   // Vaccine modal
   const [vaccineTarget,   setVaccineTarget]   = useState<VaccineEntry | null>(null);
@@ -200,18 +208,30 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       setBabyId(bid);
       setBirthDate(bbd);
       if (bid) {
-        const [{ data: vData }, { data: aData }] = await Promise.all([
+        const [{ data: vData }, { data: aData }, rs] = await Promise.all([
           supabase.from('vaccine_records').select('vaccine_key,given_date,notes').eq('baby_id', bid),
           supabase.from('pediatric_appointments')
             .select('id,title,doctor_name,scheduled_date,notes,completed')
             .eq('baby_id', bid).order('scheduled_date', { ascending: true }),
+          getVaccineReminderSettings(userId, bid),
         ]);
-        setRecords(vData ?? []);
+        const vRecords = vData ?? [];
+        setRecords(vRecords);
         setAppointments((aData as Appointment[]) ?? []);
+        setReminderSettings(rs);
+        await rescheduleVaccineReminders(bid, bbd, vRecords, VACCINE_SCHEDULE, rs);
       }
     } finally {
       setLoading(false);
     }
+  }
+
+  async function toggleVaccineReminders() {
+    if (!userId || !babyId) return;
+    const next = { ...reminderSettings, enabled: !reminderSettings.enabled };
+    setReminderSettings(next);
+    await saveVaccineReminderSettings(userId, babyId, next);
+    await rescheduleVaccineReminders(babyId, birthDate, records, VACCINE_SCHEDULE, next);
   }
 
   // ── Vaccine helpers ──────────────────────────────────────────────────────────
@@ -251,11 +271,12 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       const encodedNotes = encodeReactions(reactions, vaccineNotes.trim());
       const existing = records.find(r => r.vaccine_key === vaccineTarget.key);
       if (existing) {
-        await supabase.from('vaccine_records')
-          .update({ given_date: parsed, notes: encodedNotes || null })
-          .eq('baby_id', babyId).eq('vaccine_key', vaccineTarget.key);
+        await safeUpdate('vaccine_records',
+          { baby_id: babyId, vaccine_key: vaccineTarget.key },
+          { given_date: parsed, notes: encodedNotes || null },
+        );
       } else {
-        await supabase.from('vaccine_records').insert({
+        await safeInsert('vaccine_records', {
           user_id: userId, baby_id: babyId,
           vaccine_key: vaccineTarget.key,
           given_date: parsed,
@@ -281,9 +302,10 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       ? `${notesText}\n${reactionNotes.trim()}`.trim()
       : notesText;
     const encoded = encodeReactions(reactions, allNotes);
-    await supabase.from('vaccine_records')
-      .update({ notes: encoded || null })
-      .eq('baby_id', babyId).eq('vaccine_key', vaccineTarget.key);
+    await safeUpdate('vaccine_records',
+      { baby_id: babyId, vaccine_key: vaccineTarget.key },
+      { notes: encoded || null },
+    );
     await loadAll();
     setSavingReactions(false);
     setVaccineTarget(null);
@@ -302,7 +324,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
 
   async function clearVaccineRecord(key: string) {
     if (!babyId) return;
-    await supabase.from('vaccine_records').delete().eq('baby_id', babyId).eq('vaccine_key', key);
+    await safeDelete('vaccine_records', { baby_id: babyId, vaccine_key: key });
     await loadAll();
   }
 
@@ -341,9 +363,9 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
         notes: apptNotes.trim() || null,
       };
       if (editApptId) {
-        await supabase.from('pediatric_appointments').update(fields).eq('id', editApptId);
+        await safeUpdate('pediatric_appointments', editApptId, fields);
       } else {
-        await supabase.from('pediatric_appointments').insert({ ...fields, user_id: userId, baby_id: babyId, completed: false });
+        await safeInsert('pediatric_appointments', { ...fields, user_id: userId, baby_id: babyId, completed: false });
       }
       await loadAll();
       setApptOpen(false);
@@ -353,14 +375,14 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
   }
 
   async function toggleComplete(a: Appointment) {
-    await supabase.from('pediatric_appointments').update({ completed: !a.completed }).eq('id', a.id);
+    await safeUpdate('pediatric_appointments', a.id, { completed: !a.completed });
     setAppointments(prev => prev.map(x => x.id === a.id ? { ...x, completed: !x.completed } : x));
   }
 
   async function deleteAppt(id: string) {
     const ok = Platform.OS === 'web' ? window.confirm('Delete this appointment?') : true;
     if (!ok) return;
-    await supabase.from('pediatric_appointments').delete().eq('id', id);
+    await safeDelete('pediatric_appointments', id);
     setAppointments(prev => prev.filter(a => a.id !== id));
   }
 
@@ -432,6 +454,17 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+
+          <View style={s.reminderRow}>
+            <Text style={s.reminderLabel}>🔔 Remind me when vaccines are due</Text>
+            <TouchableOpacity
+              style={[s.toggle, reminderSettings.enabled && { backgroundColor: c.primary }]}
+              onPress={toggleVaccineReminders}
+              activeOpacity={0.8}
+            >
+              <View style={[s.toggleThumb, reminderSettings.enabled && { transform: [{ translateX: 20 }] }]} />
+            </TouchableOpacity>
           </View>
 
           {loading ? (
@@ -805,7 +838,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    container: { marginBottom: 28 },
+    container: { marginBottom: 16 },
 
     collapseHeader: {
       backgroundColor: c.cardLavender, borderRadius: 14, borderWidth: 2, borderColor: c.lavender,
@@ -827,6 +860,11 @@ function makeStyles(c: Colors) {
     tabBtnActive: { backgroundColor: c.card, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 },
     tabText:      { fontSize: 14, fontWeight: '600', color: c.textMuted },
     tabTextActive:{ color: c.textPrimary },
+
+    reminderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+    reminderLabel: { fontSize: 13, fontWeight: '600', color: c.textPrimary, flex: 1, marginRight: 10 },
+    toggle:        { width: 46, height: 26, borderRadius: 13, backgroundColor: c.separator, justifyContent: 'center', paddingHorizontal: 2 },
+    toggleThumb:   { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
 
     hint: { fontSize: 13, color: c.textMuted, fontStyle: 'italic', textAlign: 'center', marginVertical: 12 },
 

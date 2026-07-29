@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import NutritionTracker from './NutritionTracker';
-import MomMentalHealthTracker from './MomMentalHealthTracker';
+import PostpartumMentalHealthTracker from './PostpartumMentalHealthTracker';
 import { useColors } from '../lib/theme';
 
 export default function YouTab() {
@@ -96,7 +96,7 @@ export default function YouTab() {
           ref={ref => { sectionRefs.current['mental'] = ref; }}
           onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}
         >
-          <MomMentalHealthTracker userId={userId} />
+          <PostpartumMentalHealthTracker userId={userId} />
         </View>
       </ScrollView>
     </SafeAreaView>

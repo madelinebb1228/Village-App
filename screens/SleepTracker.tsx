@@ -118,7 +118,7 @@ function makeStyles(c: Colors) {
   return StyleSheet.create({
     card: {
       backgroundColor: c.card, borderRadius: 16, padding: 20,
-      marginHorizontal: 16, marginBottom: 20, borderWidth: 1.5, borderColor: c.separator,
+      marginBottom: 16, borderWidth: 1.5, borderColor: c.separator,
     },
     headerRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
     headerEmoji:{ fontSize: 22, marginRight: 8 },

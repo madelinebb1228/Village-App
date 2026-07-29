@@ -13,6 +13,16 @@ export interface ProductInfo {
   ingredients: string | null;
   imageUrl: string | null;
   rawCategories: string[];
+  // Nutrition (used by the adult Nutrition Tracker's barcode scanner)
+  servingSize: string | null;          // raw label text, e.g. "30 g (1 ONZ)"
+  caloriesPerServing: number | null;
+  proteinPerServingG: number | null;
+  carbsPerServingG: number | null;
+  fatPerServingG: number | null;
+  caloriesPer100g: number | null;
+  proteinPer100g: number | null;
+  carbsPer100g: number | null;
+  fatPer100g: number | null;
 }
 
 // Normalise a comma/ampersand-delimited brand string to the first brand name.
@@ -56,6 +66,9 @@ export async function lookupBarcode(barcode: string): Promise<ProductInfo> {
     isOrganic: false, isBabyFood: false,
     nutriscoreGrade: null, novaGroup: null,
     allergens: [], ingredients: null, imageUrl: null, rawCategories: [],
+    servingSize: null,
+    caloriesPerServing: null, proteinPerServingG: null, carbsPerServingG: null, fatPerServingG: null,
+    caloriesPer100g: null, proteinPer100g: null, carbsPer100g: null, fatPer100g: null,
   };
 
   try {
@@ -72,6 +85,12 @@ export async function lookupBarcode(barcode: string): Promise<ProductInfo> {
     const p = json.product;
     const labels     = (p.labels ?? '') as string;
     const categories = (p.categories ?? '') as string;
+    const n = p.nutriments ?? {};
+    const num = (v: any): number | null => {
+      if (typeof v === 'number' && !isNaN(v)) return v;
+      const f = parseFloat(v);
+      return isNaN(f) ? null : f;
+    };
 
     return {
       found:           true,
@@ -85,6 +104,15 @@ export async function lookupBarcode(barcode: string): Promise<ProductInfo> {
       ingredients:     (p.ingredients_text_en || p.ingredients_text || null) as string | null,
       imageUrl:        (p.image_front_small_url || p.image_small_url || p.image_url || null) as string | null,
       rawCategories:   categories.split(',').map((c: string) => c.trim()).filter(Boolean),
+      servingSize:         (p.serving_size ?? null) as string | null,
+      caloriesPerServing:  num(n['energy-kcal_serving']),
+      proteinPerServingG:  num(n['proteins_serving']),
+      carbsPerServingG:    num(n['carbohydrates_serving']),
+      fatPerServingG:      num(n['fat_serving']),
+      caloriesPer100g:     num(n['energy-kcal_100g']),
+      proteinPer100g:      num(n['proteins_100g']),
+      carbsPer100g:        num(n['carbohydrates_100g']),
+      fatPer100g:          num(n['fat_100g']),
     };
   } catch {
     return EMPTY;
