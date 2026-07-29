@@ -59,6 +59,30 @@ const SECTIONS: Section[] = [
       'Drowning is usually silent, not splashy. A child in real trouble often can\'t call out or wave for help — watch for it, don\'t wait to hear it.',
     ],
   },
+  {
+    emoji: '👶',
+    title: 'CPR — infant under 1 year',
+    bg: c => c.cardLavender, border: c => c.lavender,
+    items: [
+      'Check for response and breathing. If they\'re unresponsive and not breathing normally, have someone call 911 while you start CPR — if you\'re alone, give about 2 minutes of CPR first, then call.',
+      'For a drowning victim specifically, start with 5 rescue breaths before compressions — tilt the head back slightly to a neutral position, seal your mouth over the baby\'s mouth and nose, and give gentle puffs just enough to see the chest rise.',
+      'Lay baby face-up on a firm, flat surface. Give 30 chest compressions with two fingers (or two thumbs with hands encircling the chest) on the breastbone just below the nipple line — about 1.5 inches deep, fast and hard, roughly 100–120 per minute.',
+      'Give 2 more breaths, then continue cycles of 30 compressions to 2 breaths.',
+      'Don\'t stop until EMS arrives, an AED is ready to use, or the baby starts breathing normally on their own.',
+    ],
+  },
+  {
+    emoji: '🧒',
+    title: 'CPR — child 1 year and up',
+    bg: c => c.cardLavender, border: c => c.lavender,
+    items: [
+      'Check for response and breathing. If they\'re unresponsive and not breathing normally, have someone call 911 while you start CPR — if you\'re alone, give about 2 minutes of CPR first, then call.',
+      'For a drowning victim specifically, start with 5 rescue breaths before compressions — tilt the head back, lift the chin, pinch the nose shut, and give breaths just enough to see the chest rise.',
+      'Lay the child face-up on a firm, flat surface. Give 30 chest compressions with the heel of one or two hands on the center of the chest — about 2 inches deep, fast and hard, roughly 100–120 per minute.',
+      'Give 2 more breaths, then continue cycles of 30 compressions to 2 breaths.',
+      'Don\'t stop until EMS arrives, an AED is ready to use, or the child starts breathing normally on their own.',
+    ],
+  },
 ];
 
 export default function WaterSafety({ onBack }: Props) {
