@@ -139,7 +139,7 @@ export default function SuppliesSection({
       supabase.from('supply_items').select('supply_type,quantity_remaining,unit,low_threshold').eq('user_id', userId),
       supabase.from('pump_parts').select('id,part_name,last_replaced,sessions_since_replaced').eq('user_id', userId),
       supabase.from('milk_stash').select('id,amount_ml,stored_date,location,notes').eq('user_id', userId).order('stored_date', { ascending: true }),
-      (supabase.from('medications') as any).select('id,name,color,frequency_hours,category').eq('user_id', userId).eq('active', true).order('created_at'),
+      (supabase.from('medications') as any).select('id,name,color,frequency_hours,category').eq('user_id', userId).eq('active', true).eq('category', 'baby').order('created_at'),
     ]);
     if (supplyRes.data) setSupplies(supplyRes.data);
     if (partsRes.data) setPumpParts(partsRes.data);

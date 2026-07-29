@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
@@ -22,6 +23,7 @@ import ServiceProviderReviews from './ServiceProviderReviews';
 import Breastfeeding101 from './Breastfeeding101';
 import WaterSafety from './WaterSafety';
 import ChokingSafety from './ChokingSafety';
+import EmergencyContacts from './EmergencyContacts';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -33,27 +35,30 @@ const CARD_PALETTE: Array<{ bg: (c: Colors) => string; border: (c: Colors) => st
   { bg: c => c.cardLavender, border: c => c.lavender },
 ];
 
+const CATEGORIES = ['Safety', 'Feeding', 'Guides & Learning', 'Shopping & Gear', 'Community', 'Local & Reviews'] as const;
+type Category = typeof CATEGORIES[number];
+
 const RESOURCES = [
-  { id: 'breastfeeding_101', emoji: '🤱',  title: 'Breastfeeding 101',            description: 'Tips & tricks, common challenges, pumping guide, milk storage, recipes, and supplement reviews' },
-  { id: 'shopping_lists',    emoji: '🛍️',  title: 'Smart Shopping Lists',          description: 'Curated packing lists for hospital bags, travel, newborns, and more — or post your own' },
-  { id: 'babynames',         emoji: '🌸',  title: 'Baby Name Finder',              description: 'Browse hundreds of names with meanings, origins, and style tags' },
-  { id: 'marketplace',       emoji: '🛍️',  title: 'Parent Marketplace',            description: 'Buy and sell gently used baby gear with parents in your city' },
-  { id: 'mom_groups',        emoji: '👨‍👩‍👧', title: 'Parent Groups',                  description: 'Find local meetups, online communities, and support groups near you' },
-  { id: 'parenting_az',      emoji: '📖',  title: 'Parenting A–Z',                 description: 'Plain-English explanations of methods, terms, and techniques every parent should know' },
-  { id: 'qa',                emoji: '💬',  title: 'Parenting Q+A',                 description: 'Ask questions and get answers from other parents' },
-  { id: 'articles',          emoji: '📰',  title: 'Articles',                      description: 'Expert tips, guides, and parenting reads' },
-  { id: 'local',             emoji: '📍',  title: 'Local Services',                description: 'Find pediatricians, lactation consultants, and more near you' },
-  { id: 'product_reviews',   emoji: '⭐',  title: 'Product Reviews',               description: 'Community-rated strollers, car seats, pumps, monitors, and more' },
-  { id: 'provider_reviews',  emoji: '🏙️', title: 'Provider Reviews by City',      description: 'Reviews of local pediatricians, daycares, doulas, and more from parents in your city' },
-  { id: 'food_chart',        emoji: '🍼',  title: 'What Can My Baby Eat?',         description: 'Age-by-age food guide with prep tips, allergen info, and safety notes' },
-  { id: 'wic_recipes',       emoji: '🧡',  title: 'WIC Recipes',                   description: 'Community recipes using WIC-eligible foods — share and upvote favorites' },
-  { id: 'weaning_recipes',   emoji: '🥣',  title: 'Weaning Recipes',               description: 'First foods, purees, and soft meals for babies 4–12+ months' },
-  { id: 'emergency',         emoji: '🚨',  title: 'Emergency Contacts',            description: 'Nurse lines, poison control, and urgent care resources' },
-  { id: 'water_safety',      emoji: '🌊',  title: 'Water Safety',                  description: 'Drowning prevention, pool safety, and age-by-age guidance every parent should know' },
-  { id: 'choking_safety',    emoji: '🫁',  title: 'Choking Safety',                description: 'Prevention, recognizing it, and how to clear it for infants and older kids' },
-  { id: 'videos',            emoji: '🎬',  title: 'Video Guides',                  description: 'How-to videos for feeding, sleep, soothing, and more' },
-  { id: 'top100',            emoji: '🔢',  title: '100 Questions Every Parent Asks', description: 'The most common parenting questions — answered' },
-] as const;
+  { id: 'breastfeeding_101', emoji: '🤱',  title: 'Breastfeeding 101',            description: 'Tips & tricks, common challenges, pumping guide, milk storage, recipes, and supplement reviews', category: 'Feeding' },
+  { id: 'shopping_lists',    emoji: '🛍️',  title: 'Smart Shopping Lists',          description: 'Curated packing lists for hospital bags, travel, newborns, and more — or post your own', category: 'Shopping & Gear' },
+  { id: 'babynames',         emoji: '🌸',  title: 'Baby Name Finder',              description: 'Browse hundreds of names with meanings, origins, and style tags', category: 'Guides & Learning' },
+  { id: 'marketplace',       emoji: '🛍️',  title: 'Parent Marketplace',            description: 'Buy and sell gently used baby gear with parents in your city', category: 'Shopping & Gear' },
+  { id: 'mom_groups',        emoji: '👨‍👩‍👧', title: 'Parent Groups',                  description: 'Find local meetups, online communities, and support groups near you', category: 'Community' },
+  { id: 'parenting_az',      emoji: '📖',  title: 'Parenting A–Z',                 description: 'Plain-English explanations of methods, terms, and techniques every parent should know', category: 'Guides & Learning' },
+  { id: 'qa',                emoji: '💬',  title: 'Parenting Q+A',                 description: 'Ask questions and get answers from other parents', category: 'Community' },
+  { id: 'articles',          emoji: '📰',  title: 'Articles',                      description: 'Expert tips, guides, and parenting reads', category: 'Guides & Learning' },
+  { id: 'local',             emoji: '📍',  title: 'Local Services',                description: 'Find pediatricians, lactation consultants, and more near you', category: 'Local & Reviews' },
+  { id: 'product_reviews',   emoji: '⭐',  title: 'Product Reviews',               description: 'Community-rated strollers, car seats, pumps, monitors, and more', category: 'Shopping & Gear' },
+  { id: 'provider_reviews',  emoji: '🏙️', title: 'Provider Reviews by City',      description: 'Reviews of local pediatricians, daycares, doulas, and more from parents in your city', category: 'Local & Reviews' },
+  { id: 'food_chart',        emoji: '🍼',  title: 'What Can My Baby Eat?',         description: 'Age-by-age food guide with prep tips, allergen info, and safety notes', category: 'Feeding' },
+  { id: 'wic_recipes',       emoji: '🧡',  title: 'WIC Recipes',                   description: 'Community recipes using WIC-eligible foods — share and upvote favorites', category: 'Feeding' },
+  { id: 'weaning_recipes',   emoji: '🥣',  title: 'Weaning Recipes',               description: 'First foods, purees, and soft meals for babies 4–12+ months', category: 'Feeding' },
+  { id: 'emergency',         emoji: '🚨',  title: 'Emergency Contacts',            description: 'Nurse lines, poison control, and urgent care resources', category: 'Safety' },
+  { id: 'water_safety',      emoji: '🌊',  title: 'Water Safety',                  description: 'Drowning prevention, pool safety, and age-by-age guidance every parent should know', category: 'Safety' },
+  { id: 'choking_safety',    emoji: '🫁',  title: 'Choking Safety',                description: 'Prevention, recognizing it, and how to clear it for infants and older kids', category: 'Safety' },
+  { id: 'videos',            emoji: '🎬',  title: 'Video Guides',                  description: 'How-to videos for feeding, sleep, soothing, and more', category: 'Guides & Learning' },
+  { id: 'top100',            emoji: '🔢',  title: '100 Questions Every Parent Asks', description: 'The most common parenting questions — answered', category: 'Guides & Learning' },
+] as const satisfies ReadonlyArray<{ id: string; emoji: string; title: string; description: string; category: Category }>;
 
 type ResourceId = typeof RESOURCES[number]['id'];
 
@@ -102,10 +107,32 @@ function ResourceDetail({
 
 // ─── Main Resources landing screen ───────────────────────────────────────────
 
-export default function ResourcesTab() {
+export default function ResourcesTab({ route }: any) {
   const c = useColors();
   const s = styles(c);
-  const [selected, setSelected] = useState<ResourceId | null>(null);
+  const initialResourceId = route?.params?.initialResourceId as ResourceId | undefined;
+  const [selected, setSelected] = useState<ResourceId | null>(initialResourceId ?? null);
+  const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
+
+  const catScrollRef = useRef<ScrollView>(null);
+  const catScrollX   = useRef(0);
+  const catContentW  = useRef(0);
+  const catLayoutW   = useRef(0);
+  const [catArrows, setCatArrows] = useState({ left: false, right: true });
+
+  React.useEffect(() => {
+    if (initialResourceId) setSelected(initialResourceId);
+  }, [initialResourceId]);
+
+  const filteredResources = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return RESOURCES.filter(r => {
+      const matchesCategory = activeCategory === 'All' || r.category === activeCategory;
+      const matchesQuery = !q || r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q);
+      return matchesCategory && matchesQuery;
+    });
+  }, [query, activeCategory]);
 
   if (selected === 'breastfeeding_101') {
     return <Breastfeeding101 onBack={() => setSelected(null)} />;
@@ -167,6 +194,10 @@ export default function ResourcesTab() {
     return <ChokingSafety onBack={() => setSelected(null)} />;
   }
 
+  if (selected === 'emergency') {
+    return <EmergencyContacts onBack={() => setSelected(null)} />;
+  }
+
   if (selected) {
     return <ResourceDetail id={selected} onBack={() => setSelected(null)} />;
   }
@@ -176,30 +207,117 @@ export default function ResourcesTab() {
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Text style={s.pageTitle}>Resources</Text>
         <Text style={s.pageSubtitle}>Everything you need to support your parenting journey</Text>
 
-        <View style={s.cards}>
-          {RESOURCES.map((r, i) => {
-            const palette = CARD_PALETTE[i % CARD_PALETTE.length];
-            return (
-            <TouchableOpacity
-              key={r.id}
-              activeOpacity={0.8}
-              style={[s.card, { backgroundColor: palette.bg(c), borderColor: palette.border(c) }]}
-              onPress={() => setSelected(r.id)}
+        <TextInput
+          style={s.searchInput}
+          placeholder="Search resources…"
+          placeholderTextColor={c.textMuted}
+          value={query}
+          onChangeText={setQuery}
+          returnKeyType="search"
+        />
+
+        <View style={s.categoryRowWrap}>
+          <TouchableOpacity
+            onPress={() => {
+              const maxX = Math.max(0, catContentW.current - catLayoutW.current);
+              catScrollX.current = Math.max(0, catScrollX.current - 200);
+              catScrollRef.current?.scrollTo({ x: catScrollX.current, animated: true });
+              setCatArrows({ left: catScrollX.current > 0, right: catScrollX.current < maxX });
+            }}
+            activeOpacity={0.7}
+            style={[s.categoryArrow, { opacity: catArrows.left ? 1 : 0.25 }]}
+            disabled={!catArrows.left}
+          >
+            <Text style={s.categoryArrowText}>‹</Text>
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, overflow: 'hidden' }}>
+            <ScrollView
+              ref={catScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              onScroll={e => {
+                const x = e.nativeEvent.contentOffset.x;
+                catScrollX.current = x;
+                const maxX = Math.max(0, catContentW.current - catLayoutW.current);
+                setCatArrows({ left: x > 4, right: x < maxX - 4 });
+              }}
+              onContentSizeChange={w => {
+                catContentW.current = w;
+                const maxX = Math.max(0, w - catLayoutW.current);
+                setCatArrows(a => ({ ...a, right: catScrollX.current < maxX - 4 }));
+              }}
+              onLayout={e => {
+                catLayoutW.current = e.nativeEvent.layout.width;
+                const maxX = Math.max(0, catContentW.current - e.nativeEvent.layout.width);
+                setCatArrows(a => ({ ...a, right: catScrollX.current < maxX - 4 }));
+              }}
+              scrollEventThrottle={16}
+              contentContainerStyle={s.categoryRow}
             >
-              <Text style={s.cardEmoji}>{r.emoji}</Text>
-              <View style={s.cardText}>
-                <Text style={s.cardTitle}>{r.title}</Text>
-                <Text style={s.cardDesc}>{r.description}</Text>
-              </View>
-              <Text style={s.cardChevron}>›</Text>
-            </TouchableOpacity>
-            );
-          })}
+              {(['All', ...CATEGORIES] as const).map(cat => {
+                const active = activeCategory === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    activeOpacity={0.8}
+                    style={[s.categoryChip, active && { backgroundColor: c.primary, borderColor: c.primary }]}
+                    onPress={() => setActiveCategory(cat)}
+                  >
+                    <Text style={[s.categoryChipText, active && s.categoryChipTextActive]}>{cat}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              const maxX = Math.max(0, catContentW.current - catLayoutW.current);
+              catScrollX.current = Math.min(maxX, catScrollX.current + 200);
+              catScrollRef.current?.scrollTo({ x: catScrollX.current, animated: true });
+              setCatArrows({ left: catScrollX.current > 0, right: catScrollX.current < maxX });
+            }}
+            activeOpacity={0.7}
+            style={[s.categoryArrow, { opacity: catArrows.right ? 1 : 0.25 }]}
+            disabled={!catArrows.right}
+          >
+            <Text style={s.categoryArrowText}>›</Text>
+          </TouchableOpacity>
         </View>
+
+        {filteredResources.length === 0 ? (
+          <View style={s.emptyState}>
+            <Text style={s.emptyStateEmoji}>🔍</Text>
+            <Text style={s.emptyStateText}>No resources match "{query}"</Text>
+          </View>
+        ) : (
+          <View style={s.cards}>
+            {filteredResources.map(r => {
+              const palette = CARD_PALETTE[RESOURCES.indexOf(r) % CARD_PALETTE.length];
+              return (
+              <TouchableOpacity
+                key={r.id}
+                activeOpacity={0.8}
+                style={[s.card, { backgroundColor: palette.bg(c), borderColor: palette.border(c) }]}
+                onPress={() => setSelected(r.id)}
+              >
+                <Text style={s.cardEmoji}>{r.emoji}</Text>
+                <View style={s.cardText}>
+                  <Text style={s.cardTitle}>{r.title}</Text>
+                  <Text style={s.cardDesc}>{r.description}</Text>
+                </View>
+                <Text style={s.cardChevron}>›</Text>
+              </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -221,8 +339,42 @@ const styles = (c: Colors) =>
       fontSize: 14,
       color: c.textMuted,
       fontWeight: '500',
-      marginBottom: 24,
+      marginBottom: 20,
     },
+    searchInput: {
+      backgroundColor: c.inputBg,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: c.textPrimary,
+      marginBottom: 14,
+    },
+    categoryRowWrap: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+    categoryArrow:     { paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center', alignItems: 'center' },
+    categoryArrowText: { fontSize: 22, fontWeight: '600', color: c.textSecondary, lineHeight: 26 },
+    categoryRow: { gap: 8, paddingHorizontal: 4 },
+    categoryChip: {
+      borderWidth: 1.5,
+      borderColor: c.separator,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      backgroundColor: c.card,
+    },
+    categoryChipText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    categoryChipTextActive: {
+      color: c.primaryText,
+    },
+    emptyState: { alignItems: 'center', paddingVertical: 48, gap: 8 },
+    emptyStateEmoji: { fontSize: 32 },
+    emptyStateText: { fontSize: 14, color: c.textMuted, fontWeight: '600' },
     cards: { gap: 12, overflow: 'visible' },
     card: {
       borderRadius: 16,

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import UserAvatar from '../components/UserAvatar';
@@ -50,11 +50,13 @@ import { VideoPostPlayer } from '../components/feed/VideoPostPlayer';
 import PaywallGate from '../components/PaywallGate';
 import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
+import TipOfTheDayCard from '../components/TipOfTheDayCard';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeTab() {
   const c = useColors();
+  const navigation = useNavigation<any>();
   const styles = useMemo(() => makeStyles(c), [c]);
   const { isOneHanded } = useOneHanded();
   const insets = useSafeAreaInsets();
@@ -1520,6 +1522,11 @@ export default function HomeTab() {
         )}
         </PaywallGate>
 
+        {/* Tip of the day */}
+        <TipOfTheDayCard
+          onPress={(resourceId) => navigation.navigate('Resources', { initialResourceId: resourceId })}
+        />
+
         {/* Followed Q+A questions */}
         {followedQuestions.length > 0 && (
           <View style={styles.followedQSection}>
@@ -2001,12 +2008,12 @@ export default function HomeTab() {
                   onPress={() => handleRepost(post)}
                 >
                   <Text style={[styles.postActionText, myRepostIds.has(post.id) && { color: c.primary, fontWeight: '700' }]}>
-                    🔁{repostCounts.get(post.id) ? ` ${repostCounts.get(post.id)}` : ''}
+                    ↻ Repost{repostCounts.get(post.id) ? ` ${repostCounts.get(post.id)}` : ''}
                   </Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}>
-                <Text style={styles.postActionText}>↗️ Share</Text>
+                <Text style={styles.postActionText}>↗ Share</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.postAction, { marginLeft: 'auto' as any }]}
@@ -2171,12 +2178,12 @@ export default function HomeTab() {
                   {currentUserId && selectedPost.user_id !== currentUserId && (
                     <TouchableOpacity style={styles.postAction} onPress={() => handleRepost(selectedPost)}>
                       <Text style={[styles.postActionText, myRepostIds.has(selectedPost.id) && { color: c.primary, fontWeight: '700' }]}>
-                        🔁{repostCounts.get(selectedPost.id) ? ` ${repostCounts.get(selectedPost.id)}` : ''}
+                        ↻ Repost{repostCounts.get(selectedPost.id) ? ` ${repostCounts.get(selectedPost.id)}` : ''}
                       </Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.postAction} onPress={() => handleShare(selectedPost)}>
-                    <Text style={styles.postActionText}>↗️ Share</Text>
+                    <Text style={styles.postActionText}>↗ Share</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.postAction, { marginLeft: 'auto' as any }]}

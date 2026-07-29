@@ -146,6 +146,26 @@ const MILK_COLORS: ColorOption[] = [
   { value: 'pink',   color: '#F1AEB5', label: 'Pink'   },
 ];
 
+// ─── Category filter groups ─────────────────────────────────────────────────
+// Each group gets one accent color in the filter bar; selecting a category
+// shows only the matching page sections below (or everything, for "All").
+
+interface TrackNavGroup { emoji: string; category: string }
+
+const BABY_NAV_GROUPS: TrackNavGroup[] = [
+  { emoji: '📋', category: 'Daily Logging' },
+  { emoji: '✨', category: 'Insights & Supplies' },
+  { emoji: '🍽️', category: 'Feeding' },
+  { emoji: '🌙', category: 'Sleep & Development' },
+  { emoji: '🏥', category: 'Health' },
+];
+
+const YOU_NAV_GROUPS: TrackNavGroup[] = [
+  { emoji: '💧', category: 'Daily Care' },
+  { emoji: '🌈', category: 'Wellness Check-ins' },
+  { emoji: '🌸', category: 'Body & Recovery' },
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function todayRange() {
@@ -777,38 +797,8 @@ export default function Track() {
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
   const scrollRef       = useRef<ScrollView>(null);
-  const quickNavRef      = useRef<ScrollView>(null);
-  const quickNavWrapRef  = useRef<View>(null);
-  const quickNavScrollX  = useRef(0);
-  const quickNavContentW = useRef(0);
-  const quickNavLayoutW  = useRef(0);
-  const [quickNavArrows, setQuickNavArrows] = useState({ left: false, right: true });
-  const sectionY        = useRef<Record<string, number>>({});
-  const sectionRefs     = useRef<Record<string, View | null>>({});
-
-  const scrollToSection = useCallback((key: string) => {
-    const view = sectionRefs.current[key];
-    if (!view) {
-      const y = sectionY.current[key];
-      if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
-      return;
-    }
-    try {
-      (view as any).measureLayout(
-        scrollRef.current as any,
-        (_x: number, y: number) => {
-          scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
-        },
-        () => {
-          const y = sectionY.current[key];
-          if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
-        },
-      );
-    } catch {
-      const y = sectionY.current[key];
-      if (y !== undefined) scrollRef.current?.scrollTo({ y, animated: true });
-    }
-  }, []);
+  const [babyCategory, setBabyCategory] = useState<string>('All');
+  const [youCategory,  setYouCategory]  = useState<string>('All');
   const [suppliesRefreshKey,  setSuppliesRefreshKey]  = useState(0);
   const [pumpChartKey,       setPumpChartKey]        = useState(0);
   const [insightsRefreshKey, setInsightsRefreshKey]  = useState(0);
@@ -881,21 +871,6 @@ export default function Track() {
   const ppIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pumpTimer = useTimer();
 
-  useEffect(() => {
-    // On RN Web, a View ref resolves to the actual DOM element
-    const wrap = quickNavWrapRef.current as any;
-    if (!wrap?.addEventListener) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
-      const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
-      quickNavScrollX.current = Math.min(maxX, Math.max(0, quickNavScrollX.current + delta));
-      quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: false });
-      setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
-    };
-    wrap.addEventListener('wheel', onWheel, { passive: false });
-    return () => wrap.removeEventListener('wheel', onWheel);
-  }, []);
 
   // Power pump countdown
   useEffect(() => {
@@ -1576,126 +1551,71 @@ export default function Track() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Quick nav */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <TouchableOpacity
-            onPress={() => {
-              const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
-              quickNavScrollX.current = Math.max(0, quickNavScrollX.current - 200);
-              quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: true });
-              setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
-            }}
-            activeOpacity={0.7}
-            style={[styles.quickNavArrow, { opacity: quickNavArrows.left ? 1 : 0.25 }]}
-            disabled={!quickNavArrows.left}
-          >
-            <Text style={styles.quickNavArrowText}>‹</Text>
-          </TouchableOpacity>
-
-          <View ref={quickNavWrapRef} style={{ flex: 1, overflow: 'hidden' }}>
-            <ScrollView
-              ref={quickNavRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              onScroll={e => {
-                const x = e.nativeEvent.contentOffset.x;
-                quickNavScrollX.current = x;
-                const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
-                setQuickNavArrows({ left: x > 4, right: x < maxX - 4 });
-              }}
-              onContentSizeChange={(w) => {
-                quickNavContentW.current = w;
-                const maxX = Math.max(0, w - quickNavLayoutW.current);
-                setQuickNavArrows(a => ({ ...a, right: quickNavScrollX.current < maxX - 4 }));
-              }}
-              onLayout={e => {
-                quickNavLayoutW.current = e.nativeEvent.layout.width;
-                const maxX = Math.max(0, quickNavContentW.current - e.nativeEvent.layout.width);
-                setQuickNavArrows(a => ({ ...a, right: quickNavScrollX.current < maxX - 4 }));
-              }}
-              scrollEventThrottle={16}
-              style={{ marginHorizontal: -4 }}
-              contentContainerStyle={{ paddingHorizontal: 4, gap: 8, flexDirection: 'row' }}
-            >
-              {(activeView === 'baby' ? [
-                { key: 'logging',     label: '📋 Logging' },
-                { key: 'foodtracker', label: '🍽️ Food Tracker' },
-                { key: 'foodchart',   label: '📋 Food Guide' },
-                { key: 'insights',    label: '✨ Insights' },
-                { key: 'supplies',    label: '🧴 Supplies' },
-                { key: 'sleep',       label: '🌙 Sleep' },
-                { key: 'milestones',  label: '⭐ Milestones' },
-                { key: 'vaccines',    label: '💉 Vaccines' },
-                { key: 'meds',        label: '💊 Baby Meds' },
-                { key: 'growth',      label: '📈 Growth' },
-                { key: 'allergens',   label: '🚨 Allergens' },
-                { key: 'journal',     label: '📓 Journal' },
-                { key: 'timeline',    label: '🕐 Timeline' },
-              ] : [
-                { key: 'nutrition',   label: '💧 Nutrition' },
-                { key: 'mental',      label: '🧠 Mental Health' },
-                { key: 'mood',        label: '🌈 Mood & Energy' },
-                { key: 'momSleep',    label: '🌙 Your Sleep' },
-                { key: 'meds',        label: '💊 Meds' },
-                { key: 'recovery',    label: '🌸 Recovery' },
-                { key: 'period',      label: '🩸 Period' },
-                { key: 'movement',    label: '🏃 Movement' },
-              ]).map((sec, i) => {
-                const palette = [
-                  { bg: c.cardHoney,    border: c.honey,    text: c.honey    },
-                  { bg: c.cardBlush,    border: c.blush,    text: c.blush    },
-                  { bg: c.cardBlue,     border: c.blue,     text: c.blue     },
-                  { bg: c.cardSage,     border: c.sage,     text: c.sage     },
-                  { bg: c.cardLavender, border: c.lavender, text: c.lavender },
-                ];
-                const col = palette[i % palette.length];
-                return (
-                  <TouchableOpacity
-                    key={sec.key}
-                    onPress={() => scrollToSection(sec.key)}
-                    style={{
-                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                      backgroundColor: col.bg, borderWidth: 1.5, borderColor: col.border,
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: col.text }}>{sec.label}</Text>
-                    {sec.key === 'mental' && mentalHealthAlert && (
-                      <View style={{
-                        position: 'absolute', top: -3, right: -3,
-                        width: 10, height: 10, borderRadius: 5,
-                        backgroundColor: c.blush, borderWidth: 1.5, borderColor: c.bg,
-                      }} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          <TouchableOpacity
-            onPress={() => {
-              const maxX = Math.max(0, quickNavContentW.current - quickNavLayoutW.current);
-              quickNavScrollX.current = Math.min(maxX, quickNavScrollX.current + 200);
-              quickNavRef.current?.scrollTo({ x: quickNavScrollX.current, animated: true });
-              setQuickNavArrows({ left: quickNavScrollX.current > 0, right: quickNavScrollX.current < maxX });
-            }}
-            activeOpacity={0.7}
-            style={[styles.quickNavArrow, { opacity: quickNavArrows.right ? 1 : 0.25 }]}
-            disabled={!quickNavArrows.right}
-          >
-            <Text style={styles.quickNavArrowText}>›</Text>
-          </TouchableOpacity>
-        </View>
+        {/* ── Category filter ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryRow}
+        >
+          {(() => {
+            const palette = [
+              { bg: c.cardHoney,    border: c.honey,    text: c.honey    },
+              { bg: c.cardBlush,    border: c.blush,    text: c.blush    },
+              { bg: c.cardBlue,     border: c.blue,     text: c.blue     },
+              { bg: c.cardSage,     border: c.sage,     text: c.sage     },
+              { bg: c.cardLavender, border: c.lavender, text: c.lavender },
+            ];
+            const groups = activeView === 'baby' ? BABY_NAV_GROUPS : YOU_NAV_GROUPS;
+            const category = activeView === 'baby' ? babyCategory : youCategory;
+            const setCategory = activeView === 'baby' ? setBabyCategory : setYouCategory;
+            return (
+              <>
+                <TouchableOpacity
+                  onPress={() => setCategory('All')}
+                  style={[styles.categoryChip, category === 'All' && { backgroundColor: c.primary, borderColor: c.primary }]}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.categoryChipText, category === 'All' && styles.categoryChipTextActive]}>All</Text>
+                </TouchableOpacity>
+                {groups.map((group, gi) => {
+                  const col = palette[gi % palette.length];
+                  const active = category === group.category;
+                  return (
+                    <TouchableOpacity
+                      key={group.category}
+                      onPress={() => setCategory(group.category)}
+                      style={[
+                        styles.categoryChip,
+                        { backgroundColor: active ? col.border : col.bg, borderColor: col.border },
+                      ]}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.categoryChipText, { color: active ? '#fff' : col.text }]}>
+                        {group.emoji} {group.category}
+                      </Text>
+                      {group.category === 'Wellness Check-ins' && mentalHealthAlert && (
+                        <View style={{
+                          position: 'absolute', top: -3, right: -3,
+                          width: 10, height: 10, borderRadius: 5,
+                          backgroundColor: c.blush, borderWidth: 1.5, borderColor: c.bg,
+                        }} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            );
+          })()}
+        </ScrollView>
 
         {activeView === 'baby' ? (<>
 
+        {(babyCategory === 'All' || babyCategory === 'Daily Logging') && (<>
+        {/* ═══ Group: Daily Logging ═══ */}
+        <Text style={styles.groupHeading}>📋 Daily Logging</Text>
+
         {/* ── Main buttons */}
-        <View
-          style={styles.buttonGroup}
-          ref={ref => { sectionRefs.current['logging'] = ref; }}
-          onLayout={e => { sectionY.current['logging'] = e.nativeEvent.layout.y; }}
-        >
+        <View style={styles.buttonGroup}>
           {mainButtons.map((btn, idx) => (
             <TouchableOpacity key={btn.type}
               style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
@@ -1731,109 +1651,8 @@ export default function Track() {
           </PaywallGate>
         </View>
 
-        {/* ── Baby Food Tracker */}
-        <View ref={ref => { sectionRefs.current['foodtracker'] = ref; }} onLayout={e => { sectionY.current['foodtracker'] = e.nativeEvent.layout.y; }}>
-          <BabyFoodTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} autoOpenKey={foodTrackerOpenKey} />
-        </View>
-
-        {/* ── Baby Food Chart (reference guide) */}
-        <View
-          ref={ref => { sectionRefs.current['foodchart'] = ref; }}
-          onLayout={e => { sectionY.current['foodchart'] = e.nativeEvent.layout.y; }}
-        >
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
-            activeOpacity={0.8}
-            onPress={() => setShowFoodChart(true)}
-          >
-            <Text style={styles.buttonEmoji}>🍽️</Text>
-            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Guide</Text>
-            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Insights */}
-        <View
-          ref={ref => { sectionRefs.current['insights'] = ref; }}
-          onLayout={e => { sectionY.current['insights'] = e.nativeEvent.layout.y; }}
-        >
-          <PaywallGate feature="smart_insights" title="Smart Insights" description="Pattern detection and personalized tips based on your tracking data." emoji="✨">
-            <InsightsSection babyId={babyId} userId={userId} refreshKey={insightsRefreshKey} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Supplies */}
-        <View ref={ref => { sectionRefs.current['supplies'] = ref; }} onLayout={e => { sectionY.current['supplies'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="supplies" title="Smart Supplies" description="Track formula, diapers, and milk stash with low-stock alerts and usage insights." emoji="🧴">
-            <SuppliesSection userId={userId} babyId={babyId} refreshKey={suppliesRefreshKey} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Sleep Tracker */}
-        <View ref={ref => { sectionRefs.current['sleep'] = ref; }} onLayout={e => { sectionY.current['sleep'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
-            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
-          </PaywallGate>
-        </View>
-
-
-        {/* ── Development Tracker */}
-        <View ref={ref => { sectionRefs.current['milestones'] = ref; }} onLayout={e => { sectionY.current['milestones'] = e.nativeEvent.layout.y; }}>
-          <MilestoneTracker userId={userId} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── Vaccines & Appointments */}
-        <View ref={ref => { sectionRefs.current['vaccines'] = ref; }} onLayout={e => { sectionY.current['vaccines'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="vaccines" isTracker title="Vaccines & Appointments" description="Track your baby's vaccine schedule and upcoming appointments." emoji="💉">
-            <VaccineTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Baby Medications */}
-        <View
-          ref={ref => { sectionRefs.current['meds'] = ref; }}
-          onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
-        >
-          <MedTracker
-            type="baby"
-            userId={userId}
-            babyId={babyId}
-            babyName={babyName}
-            babyWeightLbs={babyWeightLbs}
-            userName={userName}
-          />
-        </View>
-
-        {/* ── Growth Tracker */}
-        <View ref={ref => { sectionRefs.current['growth'] = ref; }} onLayout={e => { sectionY.current['growth'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
-            <GrowthTracker
-              userId={userId}
-              babyId={babyId}
-              babyBirthDate={babyBirthDate}
-              babyGender={babyGender}
-            />
-          </PaywallGate>
-        </View>
-
-        {/* ── Allergen Tracker */}
-        <View ref={ref => { sectionRefs.current['allergens'] = ref; }} onLayout={e => { sectionY.current['allergens'] = e.nativeEvent.layout.y; }}>
-          <AllergenTracker userId={userId} babyId={babyId} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── Baby Journal */}
-        <View ref={ref => { sectionRefs.current['journal'] = ref; }} onLayout={e => { sectionY.current['journal'] = e.nativeEvent.layout.y; }}>
-          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
-            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
-          </PaywallGate>
-        </View>
-
         {/* ── Timeline */}
-        <View
-          ref={ref => { sectionRefs.current['timeline'] = ref; }}
-          style={styles.timelineHeader}
-          onLayout={e => { sectionY.current['timeline'] = e.nativeEvent.layout.y; }}
-        >
+        <View style={styles.timelineHeader}>
           <Text style={styles.sectionTitle}>Timeline</Text>
           {refreshing && <ActivityIndicator size="small" color={c.trackFeed} />}
         </View>
@@ -1879,52 +1698,130 @@ export default function Track() {
             ))
           )}
         </View>
+        </>)}
+
+        {(babyCategory === 'All' || babyCategory === 'Insights & Supplies') && (<>
+        {/* ═══ Group: Insights & Supplies ═══ */}
+        <Text style={styles.groupHeading}>✨ Insights & Supplies</Text>
+
+        {/* ── Insights */}
+        <View>
+          <PaywallGate feature="smart_insights" title="Smart Insights" description="Pattern detection and personalized tips based on your tracking data." emoji="✨">
+            <InsightsSection babyId={babyId} userId={userId} refreshKey={insightsRefreshKey} />
+          </PaywallGate>
+        </View>
+
+        {/* ── Supplies */}
+        <View>
+          <PaywallGate feature="supplies" title="Smart Supplies" description="Track formula, diapers, and milk stash with low-stock alerts and usage insights." emoji="🧴">
+            <SuppliesSection userId={userId} babyId={babyId} refreshKey={suppliesRefreshKey} />
+          </PaywallGate>
+        </View>
+        </>)}
+
+        {(babyCategory === 'All' || babyCategory === 'Feeding') && (<>
+        {/* ═══ Group: Feeding ═══ */}
+        <Text style={styles.groupHeading}>🍽️ Feeding</Text>
+
+        {/* ── Baby Food Tracker */}
+        <View>
+          <BabyFoodTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} autoOpenKey={foodTrackerOpenKey} />
+        </View>
+
+        {/* ── Baby Food Chart (reference guide) */}
+        <View>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
+            activeOpacity={0.8}
+            onPress={() => setShowFoodChart(true)}
+          >
+            <Text style={styles.buttonEmoji}>🍽️</Text>
+            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Guide</Text>
+            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+        </>)}
+
+        {(babyCategory === 'All' || babyCategory === 'Sleep & Development') && (<>
+        {/* ═══ Group: Sleep & Development ═══ */}
+        <Text style={styles.groupHeading}>🌙 Sleep & Development</Text>
+
+        {/* ── Sleep Tracker */}
+        <View>
+          <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
+            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+          </PaywallGate>
+        </View>
+
+        {/* ── Development Tracker */}
+        <View>
+          <MilestoneTracker userId={userId} babyBirthDate={babyBirthDate} />
+        </View>
+
+        {/* ── Baby Journal */}
+        <View>
+          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
+            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
+          </PaywallGate>
+        </View>
+        </>)}
+
+        {(babyCategory === 'All' || babyCategory === 'Health') && (<>
+        {/* ═══ Group: Health ═══ */}
+        <Text style={styles.groupHeading}>🏥 Health</Text>
+
+        {/* ── Vaccines & Appointments */}
+        <View>
+          <PaywallGate feature="vaccines" isTracker title="Vaccines & Appointments" description="Track your baby's vaccine schedule and upcoming appointments." emoji="💉">
+            <VaccineTracker userId={userId} />
+          </PaywallGate>
+        </View>
+
+        {/* ── Baby Medications */}
+        <View>
+          <MedTracker
+            type="baby"
+            userId={userId}
+            babyId={babyId}
+            babyName={babyName}
+            babyWeightLbs={babyWeightLbs}
+            userName={userName}
+          />
+        </View>
+
+        {/* ── Growth Tracker */}
+        <View>
+          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
+            <GrowthTracker
+              userId={userId}
+              babyId={babyId}
+              babyBirthDate={babyBirthDate}
+              babyGender={babyGender}
+            />
+          </PaywallGate>
+        </View>
+
+        {/* ── Allergen Tracker */}
+        <View>
+          <AllergenTracker userId={userId} babyId={babyId} babyBirthDate={babyBirthDate} />
+        </View>
+        </>)}
 
         </>) : (<>
 
+        {(youCategory === 'All' || youCategory === 'Daily Care') && (<>
+        {/* ═══ Group: Daily Care ═══ */}
+        <Text style={styles.groupHeading}>💧 Daily Care</Text>
+
         {/* ── You: Nutrition & Hydration */}
-        <View
-          ref={ref => { sectionRefs.current['nutrition'] = ref; }}
-          onLayout={e => { sectionY.current['nutrition'] = e.nativeEvent.layout.y; }}
-        >
+        <View>
           <PaywallGate feature="nutrition_tracker" isTracker title="Nutrition & Hydration" description="Track your water intake, meals, and vitamins each day." emoji="💧">
             <NutritionTracker userId={userId} />
           </PaywallGate>
         </View>
 
-        {/* ── You: Mental Health */}
-        <View
-          ref={ref => { sectionRefs.current['mental'] = ref; }}
-          onLayout={e => { sectionY.current['mental'] = e.nativeEvent.layout.y; }}
-        >
-          <PostpartumMentalHealthTracker userId={userId} onStatusChange={setMentalHealthAlert} />
-        </View>
-
-        {/* ── You: Mood & Energy */}
-        <View
-          ref={ref => { sectionRefs.current['mood'] = ref; }}
-          onLayout={e => { sectionY.current['mood'] = e.nativeEvent.layout.y; }}
-        >
-          <PaywallGate feature="mood_energy_tracker" isTracker title="Mood & Energy" description="Log your daily mood and energy levels to spot patterns over time." emoji="🌈">
-            <MoodEnergyTracker userId={userId} onSuggestCheckIn={() => scrollToSection('mental')} />
-          </PaywallGate>
-        </View>
-
-        {/* ── You: Sleep */}
-        <View
-          ref={ref => { sectionRefs.current['momSleep'] = ref; }}
-          onLayout={e => { sectionY.current['momSleep'] = e.nativeEvent.layout.y; }}
-        >
-          <PaywallGate feature="mom_sleep_tracker" isTracker title="Your Sleep" description="Track how much sleep you're getting and how rested you feel." emoji="🌙">
-            <MomSleepTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
         {/* ── You: Meds & Supplements */}
-        <View
-          ref={ref => { sectionRefs.current['meds'] = ref; }}
-          onLayout={e => { sectionY.current['meds'] = e.nativeEvent.layout.y; }}
-        >
+        <View>
           <PaywallGate feature="meds_tracker" isTracker title="Meds & Supplements" description="Log medications, vitamins, and supplements with dosage reminders." emoji="💊">
             <MedTracker
               type="parent"
@@ -1935,34 +1832,55 @@ export default function Track() {
             />
           </PaywallGate>
         </View>
+        </>)}
+
+        {(youCategory === 'All' || youCategory === 'Wellness Check-ins') && (<>
+        {/* ═══ Group: Wellness Check-ins ═══ */}
+        <Text style={styles.groupHeading}>🌈 Wellness Check-ins</Text>
+
+        {/* ── You: Mental Health */}
+        <View>
+          <PostpartumMentalHealthTracker userId={userId} onStatusChange={setMentalHealthAlert} />
+        </View>
+
+        {/* ── You: Mood & Energy */}
+        <View>
+          <PaywallGate feature="mood_energy_tracker" isTracker title="Mood & Energy" description="Log your daily mood and energy levels to spot patterns over time." emoji="🌈">
+            <MoodEnergyTracker userId={userId} onSuggestCheckIn={() => setYouCategory('Wellness Check-ins')} />
+          </PaywallGate>
+        </View>
+
+        {/* ── You: Sleep */}
+        <View>
+          <PaywallGate feature="mom_sleep_tracker" isTracker title="Your Sleep" description="Track how much sleep you're getting and how rested you feel." emoji="🌙">
+            <MomSleepTracker userId={userId} />
+          </PaywallGate>
+        </View>
+        </>)}
+
+        {(youCategory === 'All' || youCategory === 'Body & Recovery') && (<>
+        {/* ═══ Group: Body & Recovery ═══ */}
+        <Text style={styles.groupHeading}>🌸 Body & Recovery</Text>
 
         {/* ── You: Postpartum Recovery */}
-        <View
-          ref={ref => { sectionRefs.current['recovery'] = ref; }}
-          onLayout={e => { sectionY.current['recovery'] = e.nativeEvent.layout.y; }}
-        >
+        <View>
           <PostpartumRecoveryTracker userId={userId} babyBirthDate={babyBirthDate} />
         </View>
 
         {/* ── You: Period Return */}
-        <View
-          ref={ref => { sectionRefs.current['period'] = ref; }}
-          onLayout={e => { sectionY.current['period'] = e.nativeEvent.layout.y; }}
-        >
+        <View>
           <PaywallGate feature="period_tracker" isTracker title="Period Return" description="Track the return of your menstrual cycle after birth." emoji="🩸">
             <PeriodReturnTracker userId={userId} />
           </PaywallGate>
         </View>
 
         {/* ── You: Movement */}
-        <View
-          ref={ref => { sectionRefs.current['movement'] = ref; }}
-          onLayout={e => { sectionY.current['movement'] = e.nativeEvent.layout.y; }}
-        >
+        <View>
           <PaywallGate feature="movement_tracker" isTracker title="Movement" description="Log exercise, walks, and physical activity during your recovery." emoji="🏃">
             <MovementTracker userId={userId} />
           </PaywallGate>
         </View>
+        </>)}
 
         {/* ── Village Premium upsell (bottom of page, non-subscribers only) ── */}
         {!isSubscribed && (
@@ -2674,8 +2592,11 @@ function makeStyles(c: Colors) {
                        marginBottom: 20, marginTop: 4 },
 
     // Quick nav arrows
-    quickNavArrow:     { paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center', alignItems: 'center' },
-    quickNavArrowText: { fontSize: 22, fontWeight: '600', color: c.textSecondary, lineHeight: 26 },
+    categoryRow:          { gap: 8, paddingBottom: 20, paddingRight: 4 },
+    categoryChip:         { borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.card, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+    categoryChipText:     { fontSize: 13, fontWeight: '700', color: c.textSecondary },
+    categoryChipTextActive: { color: '#fff' },
+    groupHeading:        { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginTop: 10, marginBottom: 14 },
 
     // Pump enhancements
     pumpLastSession:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

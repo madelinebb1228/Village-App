@@ -785,7 +785,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
 
   if (!profile) {
     return (
-      <View style={{ backgroundColor: c.cardBlush, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1.5, borderColor: c.blush }}>
+      <View style={{ backgroundColor: c.cardBlush, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1.5, borderColor: c.blush, marginBottom: 16 }}>
         <Text style={{ fontSize: 36, marginBottom: 8 }}>💧</Text>
         <Text style={{ fontSize: 17, fontWeight: '800', color: c.textPrimary, marginBottom: 6, textAlign: 'center' }}>
           Nutrition & Hydration
@@ -806,7 +806,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const hasMacros = totalProtein > 0 || totalCarbs > 0 || totalFat > 0;
 
   return (
-    <View style={{ gap: 14 }}>
+    <View style={{ gap: 14, marginBottom: 16 }}>
       {/* Section header */}
       <TouchableOpacity
         style={{

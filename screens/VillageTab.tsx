@@ -58,6 +58,12 @@ export default function VillageTab() {
   const [showFindPatch, setShowFindPatch]         = useState(false);
   const [showPatchTasks, setShowPatchTasks]       = useState(false);
 
+  const patchScrollRef = useRef<ScrollView>(null);
+  const patchScrollX   = useRef(0);
+  const patchContentW  = useRef(0);
+  const patchLayoutW   = useRef(0);
+  const [patchArrows, setPatchArrows] = useState({ left: false, right: true });
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -376,41 +382,90 @@ export default function VillageTab() {
         {myVillages.length > 0 && !search && (
           <>
             <Text style={s.sectionTitle}>My Patches</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={s.joinedScroll}
-              contentContainerStyle={{ paddingRight: 8 }}
-            >
-              {myVillages.map((v, i) => {
-                const chipColors = [
-                  { bg: c.cardLavender, border: c.lavender },
-                  { bg: c.cardBlue,     border: c.blue },
-                  { bg: c.cardBlush,    border: c.blush },
-                  { bg: c.cardHoney,    border: c.honey },
-                  { bg: c.cardSage,     border: c.sage },
-                ];
-                const cc = chipColors[i % chipColors.length];
-                return (
-                  <View key={v.id} style={[s.joinedChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
-                    <TouchableOpacity
-                      style={s.joinedChipBody}
-                      onPress={() => setSelectedVillage(v)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
-                      <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => toggleJoin(v.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={s.joinedChipLeave}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </ScrollView>
+            <View style={s.joinedScrollWrap}>
+              <TouchableOpacity
+                onPress={() => {
+                  const maxX = Math.max(0, patchContentW.current - patchLayoutW.current);
+                  patchScrollX.current = Math.max(0, patchScrollX.current - 200);
+                  patchScrollRef.current?.scrollTo({ x: patchScrollX.current, animated: true });
+                  setPatchArrows({ left: patchScrollX.current > 0, right: patchScrollX.current < maxX });
+                }}
+                activeOpacity={0.7}
+                style={[s.joinedArrow, { opacity: patchArrows.left ? 1 : 0.25 }]}
+                disabled={!patchArrows.left}
+              >
+                <Text style={s.joinedArrowText}>‹</Text>
+              </TouchableOpacity>
+
+              <View style={{ flex: 1, overflow: 'hidden' }}>
+                <ScrollView
+                  ref={patchScrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  onScroll={e => {
+                    const x = e.nativeEvent.contentOffset.x;
+                    patchScrollX.current = x;
+                    const maxX = Math.max(0, patchContentW.current - patchLayoutW.current);
+                    setPatchArrows({ left: x > 4, right: x < maxX - 4 });
+                  }}
+                  onContentSizeChange={w => {
+                    patchContentW.current = w;
+                    const maxX = Math.max(0, w - patchLayoutW.current);
+                    setPatchArrows(a => ({ ...a, right: patchScrollX.current < maxX - 4 }));
+                  }}
+                  onLayout={e => {
+                    patchLayoutW.current = e.nativeEvent.layout.width;
+                    const maxX = Math.max(0, patchContentW.current - e.nativeEvent.layout.width);
+                    setPatchArrows(a => ({ ...a, right: patchScrollX.current < maxX - 4 }));
+                  }}
+                  scrollEventThrottle={16}
+                  contentContainerStyle={{ paddingRight: 8, gap: 0 }}
+                >
+                  {myVillages.map((v, i) => {
+                    const chipColors = [
+                      { bg: c.cardLavender, border: c.lavender },
+                      { bg: c.cardBlue,     border: c.blue },
+                      { bg: c.cardBlush,    border: c.blush },
+                      { bg: c.cardHoney,    border: c.honey },
+                      { bg: c.cardSage,     border: c.sage },
+                    ];
+                    const cc = chipColors[i % chipColors.length];
+                    return (
+                      <View key={v.id} style={[s.joinedChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
+                        <TouchableOpacity
+                          style={s.joinedChipBody}
+                          onPress={() => setSelectedVillage(v)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
+                          <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => toggleJoin(v.id)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={s.joinedChipLeave}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => {
+                  const maxX = Math.max(0, patchContentW.current - patchLayoutW.current);
+                  patchScrollX.current = Math.min(maxX, patchScrollX.current + 200);
+                  patchScrollRef.current?.scrollTo({ x: patchScrollX.current, animated: true });
+                  setPatchArrows({ left: patchScrollX.current > 0, right: patchScrollX.current < maxX });
+                }}
+                activeOpacity={0.7}
+                style={[s.joinedArrow, { opacity: patchArrows.right ? 1 : 0.25 }]}
+                disabled={!patchArrows.right}
+              >
+                <Text style={s.joinedArrowText}>›</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
 
@@ -730,7 +785,9 @@ function makeStyles(c: Colors) {
     },
 
     // ── My Patches
-    joinedScroll: { marginBottom: 28 },
+    joinedScrollWrap: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
+    joinedArrow:      { paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center', alignItems: 'center' },
+    joinedArrowText:  { fontSize: 22, fontWeight: '600', color: c.textSecondary, lineHeight: 26 },
     joinedChip: {
       flexDirection: 'row',
       alignItems: 'center',
