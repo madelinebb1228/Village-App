@@ -211,6 +211,11 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   const [deleteTarget, setDeleteTarget] = useState<CalEvent | null>(null);
   const [deletingScope, setDeletingScope] = useState<'one' | 'future' | null>(null);
 
+  // Edit-recurring-event choice
+  const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
+  const [editScopePrompt, setEditScopePrompt] = useState<{ payload: any; starts: Date; ends: Date | null; original: CalEvent } | null>(null);
+  const [savingScope, setSavingScope] = useState<'one' | 'future' | null>(null);
+
   // Day planner
   const [generating, setGenerating] = useState(false);
   const [unfitIds, setUnfitIds] = useState<Set<string>>(new Set());
@@ -377,6 +382,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
   function openCreate() {
     setEditingId(null);
+    setEditingEvent(null);
     setTitle('');
     setDateStr(toDisplayDate(selectedDate));
     setAllDay(false);
@@ -397,6 +403,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
   function openQuickAdd(preset: { emoji: string; title: string; time: string }) {
     setEditingId(null);
+    setEditingEvent(null);
     setTitle(preset.title);
     setDateStr(toDisplayDate(selectedDate));
     setAllDay(false);
@@ -417,6 +424,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
   function openEdit(e: CalEvent) {
     setEditingId(e.id);
+    setEditingEvent(e);
     setTitle(e.title);
     const start = new Date(e.starts_at);
     setDateStr(toDisplayDate(localDateKey(start)));
@@ -506,6 +514,13 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
       let newList: CalEvent[];
       if (editingId) {
+        // Recurring fixed events span many materialized rows — ask which
+        // ones this change should apply to instead of silently only
+        // touching today's row.
+        if (editingEvent?.recurrence_id && !pendingFlexible && !editingScheduledFlexible) {
+          setEditScopePrompt({ payload, starts, ends, original: editingEvent });
+          return;
+        }
         const { data, error } = await db.from('calendar_events').update(payload).eq('id', editingId).select('*').single();
         if (error) throw error;
         newList = events.map(e => (e.id === editingId ? (data as CalEvent) : e));
@@ -609,6 +624,61 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     await doDeleteEvent(deleteTarget, scope);
     setDeletingScope(null);
     setDeleteTarget(null);
+  }
+
+  async function handleEditScopeChoice(scope: 'one' | 'future') {
+    if (!editScopePrompt) return;
+    const { payload, starts, ends, original } = editScopePrompt;
+    setSavingScope(scope);
+    try {
+      let newList: CalEvent[];
+      if (scope === 'one') {
+        const { data, error } = await db.from('calendar_events').update(payload).eq('id', original.id).select('*').single();
+        if (error) throw error;
+        newList = events.map(e => (e.id === original.id ? (data as CalEvent) : e));
+      } else {
+        // Apply the shared fields to this and every future occurrence, but
+        // keep each row's own date — only the time-of-day (and duration)
+        // changes, mirroring how the recurrence was originally materialized.
+        const { data: rows, error: findErr } = await db
+          .from('calendar_events')
+          .select('id, starts_at')
+          .eq('recurrence_id', original.recurrence_id)
+          .gte('starts_at', original.starts_at);
+        if (findErr) throw findErr;
+
+        const { starts_at: _s, ends_at: _e, ...sharedFields } = payload;
+        const newHours = starts.getHours();
+        const newMinutes = starts.getMinutes();
+        const durationMs = ends ? ends.getTime() - starts.getTime() : null;
+
+        const updates = (rows ?? []).map((r: any) => {
+          const rowStart = new Date(r.starts_at);
+          rowStart.setHours(newHours, newMinutes, 0, 0);
+          const rowEnd = durationMs != null ? new Date(rowStart.getTime() + durationMs) : null;
+          return db.from('calendar_events').update({
+            ...sharedFields,
+            starts_at: rowStart.toISOString(),
+            ends_at: rowEnd ? rowEnd.toISOString() : null,
+          }).eq('id', r.id);
+        });
+        const results = await Promise.all(updates);
+        const failed = results.find((r: any) => r.error);
+        if (failed?.error) throw failed.error;
+
+        const { data: refreshed } = await db.from('calendar_events').select('*').eq('calendar_id', activeId).order('starts_at');
+        newList = (refreshed ?? []) as CalEvent[];
+      }
+      setEvents(newList);
+      rescheduleEventReminders(newList);
+      setShowEventModal(false);
+      if (activeKind === 'personal') recomputeWindDown(userId);
+      setEditScopePrompt(null);
+    } catch (err: any) {
+      Alert.alert('Could not save', err?.message ?? 'Please try again.');
+    } finally {
+      setSavingScope(null);
+    }
   }
 
   async function handleGenerateSchedule() {
@@ -1381,6 +1451,18 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
           { label: 'Delete just this day', onPress: () => handleDeleteScopeChoice('one'), loading: deletingScope === 'one' },
           { label: 'Delete this and all future', onPress: () => handleDeleteScopeChoice('future'), variant: 'destructive', loading: deletingScope === 'future' },
           { label: 'Cancel', onPress: () => setDeleteTarget(null), variant: 'default' },
+        ]}
+      />
+
+      <ConfirmModal
+        visible={editScopePrompt !== null}
+        title="Save recurring event"
+        message={editScopePrompt ? `"${editScopePrompt.original.title}" repeats daily. Apply this change to:` : undefined}
+        onRequestClose={() => { if (!savingScope) setEditScopePrompt(null); }}
+        buttons={[
+          { label: 'Just this day', onPress: () => handleEditScopeChoice('one'), loading: savingScope === 'one' },
+          { label: 'This and all future', onPress: () => handleEditScopeChoice('future'), variant: 'primary', loading: savingScope === 'future' },
+          { label: 'Cancel', onPress: () => setEditScopePrompt(null), variant: 'default' },
         ]}
       />
     </View>
