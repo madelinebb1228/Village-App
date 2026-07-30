@@ -52,6 +52,17 @@ import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
 import TipOfTheDayCard from '../components/TipOfTheDayCard';
 
+function formatUpcomingWhen(startsAt: string, allDay: boolean): string {
+  const d = new Date(startsAt);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const day = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (allDay) return day;
+  return `${day}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeTab() {
@@ -132,6 +143,9 @@ export default function HomeTab() {
   const [followedQuestions, setFollowedQuestions] = useState<Array<{
     id: string; author: string; content: string; topic: string;
     vote_score: number; answer_count: number; created_at: string;
+  }>>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<Array<{
+    id: string; title: string; starts_at: string; all_day: boolean; calendar_type: 'personal' | 'shared';
   }>>([]);
   const [qaDetailId, setQaDetailId] = useState<string | null>(null);
 
@@ -1263,6 +1277,46 @@ export default function HomeTab() {
         }
       }
 
+      async function fetchUpcomingEvents() {
+        try {
+          const db: any = supabase;
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user || !isActive) return;
+
+          const { data: memberCals } = await db.from('calendar_members').select('calendar_id').eq('user_id', user.id);
+          const calIds = (memberCals ?? []).map((m: any) => m.calendar_id);
+          if (calIds.length === 0) { if (isActive) setUpcomingEvents([]); return; }
+
+          // Compare against the start of today, not this exact instant — an
+          // all-day event is stored at midnight, so it would otherwise drop
+          // off "Upcoming" the moment the clock passes 12:00am.
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+
+          const [{ data: evs }, { data: cals }] = await Promise.all([
+            db.from('calendar_events')
+              .select('id, title, starts_at, all_day, calendar_id')
+              .in('calendar_id', calIds)
+              .gte('starts_at', startOfToday.toISOString())
+              .order('starts_at', { ascending: true })
+              .limit(3),
+            db.from('calendars').select('id, calendar_type').in('id', calIds),
+          ]);
+
+          const typeMap = new Map((cals ?? []).map((cc: any) => [cc.id, cc.calendar_type]));
+          const mapped = (evs ?? []).map((e: any) => ({
+            id: e.id,
+            title: e.title,
+            starts_at: e.starts_at,
+            all_day: e.all_day,
+            calendar_type: (typeMap.get(e.calendar_id) as 'personal' | 'shared') ?? 'shared',
+          }));
+          if (isActive) setUpcomingEvents(mapped);
+        } catch (err: any) {
+          console.warn('HomeTab fetchUpcomingEvents error:', err.message);
+        }
+      }
+
       async function fetchFollowedQuestions() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !isActive) return;
@@ -1282,6 +1336,7 @@ export default function HomeTab() {
 
       fetchStats();
       fetchReminders();
+      fetchUpcomingEvents();
       fetchFollowedQuestions();
       fetchPosts();
       fetchFollowingPosts();
@@ -1486,6 +1541,26 @@ export default function HomeTab() {
             })}
           </View>
         )}
+
+        {/* Upcoming calendar events */}
+        <PaywallGate feature="shared_calendar" title="Upcoming" description="See what's coming up from your calendar." emoji="📅">
+        {upcomingEvents.length > 0 && (
+          <TouchableOpacity
+            style={styles.upcomingCard}
+            onPress={() => navigation.navigate('Calendar')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.sectionTitle}>Upcoming</Text>
+            {upcomingEvents.map(e => (
+              <View key={e.id} style={styles.upcomingRow}>
+                <Text style={styles.upcomingEmoji}>{e.calendar_type === 'personal' ? '🔒' : '👥'}</Text>
+                <Text style={styles.upcomingTitle} numberOfLines={1}>{e.title}</Text>
+                <Text style={styles.upcomingWhen}>{formatUpcomingWhen(e.starts_at, e.all_day)}</Text>
+              </View>
+            ))}
+          </TouchableOpacity>
+        )}
+        </PaywallGate>
 
         {/* Supplies overview card */}
         <PaywallGate feature="supplies" title="Supplies Overview" description="Track formula, diapers, and milk stash with low-stock alerts." emoji="🧴">
@@ -2942,6 +3017,25 @@ function makeStyles(c: Colors) {
       fontWeight: '500',
       lineHeight: 20,
     },
+    upcomingCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 28,
+      borderWidth: 1.5,
+      borderColor: c.separator,
+    },
+    upcomingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: c.separator,
+    },
+    upcomingEmoji: { fontSize: 14 },
+    upcomingTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: c.textPrimary },
+    upcomingWhen: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
     feedHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',

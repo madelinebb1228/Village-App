@@ -39,13 +39,28 @@ function reminderBody(e: ReminderEvent): string {
   return e.location ? `${when} · ${e.location}` : when;
 }
 
-// Cancel all previously-scheduled reminders, then schedule one for every
-// upcoming event that has a reminder set. Called whenever the calendar's
-// events change. On-device only (mobile) — no-op on web.
+function eventNotifId(eventId: string) {
+  return `event-${eventId}`;
+}
+
+// Cancel a single event's reminder directly — needed on delete, since a
+// deleted event is no longer in the list rescheduleEventReminders iterates.
+export async function cancelEventReminder(eventId: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+  await Notifications.cancelScheduledNotificationAsync(eventNotifId(eventId)).catch(() => {});
+}
+
+// Cancels/reschedules one notification per event, identified by that event's
+// own id — never a blanket cancel. Safe to call after every calendar load;
+// this never disturbs other reminder features (vaccines, nap wind-down,
+// etc). Called whenever the calendar's events change. On-device only
+// (mobile) — no-op on web.
 export async function rescheduleEventReminders(events: ReminderEvent[]): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    for (const e of events) {
+      await Notifications.cancelScheduledNotificationAsync(eventNotifId(e.id)).catch(() => {});
+    }
 
     const now = Date.now();
     for (const e of events) {
@@ -56,6 +71,7 @@ export async function rescheduleEventReminders(events: ReminderEvent[]): Promise
       if (fireAt <= now) continue; // skip reminders in the past
 
       await Notifications.scheduleNotificationAsync({
+        identifier: eventNotifId(e.id),
         content: {
           title: e.title || 'Upcoming event',
           body: reminderBody(e),

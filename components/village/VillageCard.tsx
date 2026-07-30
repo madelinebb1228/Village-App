@@ -29,6 +29,8 @@ export function VillageCard({
       ]}
       onPress={onOpen}
       activeOpacity={onOpen ? 0.78 : 1}
+      accessibilityRole={onOpen ? 'button' : undefined}
+      accessibilityLabel={`${village.name}. ${village.description}`}
     >
       <Text style={s.villageEmoji}>{village.emoji}</Text>
       <View style={s.villageInfo}>
@@ -47,6 +49,9 @@ export function VillageCard({
         ]}
         onPress={onJoin}
         disabled={joining}
+        accessibilityRole="button"
+        accessibilityLabel={joined ? `Leave ${village.name}` : `Join ${village.name}`}
+        accessibilityState={{ disabled: joining, selected: joined }}
       >
         {joining
           ? <ActivityIndicator size="small" color={color ? (joined ? color.border : '#fff') : '#fff'} />

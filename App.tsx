@@ -21,6 +21,7 @@ import AuthScreen from './screens/Auth';
 import OnboardingScreen from './screens/Onboarding';
 import HomeScreen from './screens/HomeTab';
 import TrackScreen from './screens/Track';
+import CalendarScreen from './screens/CalendarTab';
 import ResourcesScreen from './screens/ResourcesTab';
 import VillageScreen from './screens/VillageTab';
 import ProfileScreen from './screens/Profile';
@@ -44,6 +45,7 @@ function sidebarAware<T extends object>(Screen: React.ComponentType<T>): React.C
 const NAV_TABS = [
   { name: 'Home',      emoji: '🏡', label: 'Home' },
   { name: 'Track',     emoji: '📋', label: 'Track' },
+  { name: 'Calendar',  emoji: '📅', label: 'Calendar' },
   { name: 'Resources', emoji: '📚', label: 'Resources' },
   { name: 'Patch',     emoji: '🌿', label: 'Patch' },
   { name: 'Profile',   emoji: '🌸', label: 'Profile' },
@@ -183,6 +185,17 @@ function MainTabs() {
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📋</Text>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Calendar"
+        component={sidebarAware(CalendarScreen)}
+        options={{
+          tabBarLabel: 'Calendar',
+          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📅</Text>
           ),
         }}
       />

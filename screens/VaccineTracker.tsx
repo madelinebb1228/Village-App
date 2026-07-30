@@ -12,6 +12,8 @@ import {
   saveVaccineReminderSettings,
   rescheduleVaccineReminders,
 } from '../lib/vaccineNotifications';
+import { useCalendarSyncPrompt } from '../lib/calendarSync';
+import ConfirmModal from '../components/ConfirmModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -194,6 +196,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
   const [apptNotes,   setApptNotes]   = useState('');
   const [savingAppt,  setSavingAppt]  = useState(false);
 
+  const { pending: pendingCalSync, saving: savingCalSync, promptAddToCalendar, dismiss: dismissCalSync, addTo: addToCalendar } = useCalendarSyncPrompt();
+
   useEffect(() => { if (userId) loadAll(); }, [userId]);
 
   async function loadAll() {
@@ -365,7 +369,15 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       if (editApptId) {
         await safeUpdate('pediatric_appointments', editApptId, fields);
       } else {
-        await safeInsert('pediatric_appointments', { ...fields, user_id: userId, baby_id: babyId, completed: false });
+        const { id: newApptId } = await safeInsert('pediatric_appointments', { ...fields, user_id: userId, baby_id: babyId, completed: false });
+        promptAddToCalendar({
+          title: fields.title,
+          startsAt: new Date(`${fields.scheduled_date}T00:00:00`),
+          notes: fields.doctor_name ? `With ${fields.doctor_name}` : null,
+          allDay: true,
+          sourceType: 'appointment',
+          sourceId: newApptId,
+        });
       }
       await loadAll();
       setApptOpen(false);
@@ -830,6 +842,18 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
           </Modal>
         </>
       )}
+
+      <ConfirmModal
+        visible={!!pendingCalSync}
+        title="Add to your calendar?"
+        message={pendingCalSync ? `Want to add "${pendingCalSync.title}" to your calendar?` : undefined}
+        onRequestClose={dismissCalSync}
+        buttons={[
+          { label: '👥 Shared Calendar', variant: 'primary', loading: savingCalSync, onPress: () => addToCalendar('shared') },
+          { label: '🔒 Personal Calendar', loading: savingCalSync, onPress: () => addToCalendar('personal') },
+          { label: 'Not now', onPress: dismissCalSync },
+        ]}
+      />
     </View>
   );
 }

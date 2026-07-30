@@ -772,13 +772,15 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
   );
 };
 
-export default function Track() {
+export default function Track({ route }: any) {
   const c = useColors();
   const { isSubscribed, openPaywall } = useSubscription();
   const styles = useMemo(() => makeStyles(c), [c]);
   const cal = useMemo(() => makeCalStyles(c), [c]);
   const det = useMemo(() => makeDetStyles(c), [c]);
   const pf = useMemo(() => makePfStyles(c), [c]);
+  const initialCategory = route?.params?.initialCategory as string | undefined;
+  const initialActiveView = route?.params?.activeView as 'baby' | 'you' | undefined;
 
   const [entries,    setEntries]    = useState<TimelineEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -792,13 +794,26 @@ export default function Track() {
   const [babyWeightLbs,  setBabyWeightLbs]  = useState<number | null>(null);
   const [userName,       setUserName]       = useState<string | null>(null);
   const [showFoodChart, setShowFoodChart] = useState(false);
-  const [activeView,    setActiveView]    = useState<'baby' | 'you'>('baby');
+  const [activeView,    setActiveView]    = useState<'baby' | 'you'>(initialActiveView ?? 'baby');
   const [mentalHealthAlert, setMentalHealthAlert] = useState(false);
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
   const scrollRef       = useRef<ScrollView>(null);
-  const [babyCategory, setBabyCategory] = useState<string>('All');
-  const [youCategory,  setYouCategory]  = useState<string>('All');
+  const [babyCategory, setBabyCategory] = useState<string>(initialActiveView !== 'you' ? initialCategory ?? 'All' : 'All');
+  const [youCategory,  setYouCategory]  = useState<string>(initialActiveView === 'you' ? initialCategory ?? 'All' : 'All');
+
+  // Jump to the category a synced calendar event points back to, e.g. Health
+  // for a vaccine appointment, whenever the Calendar tab navigates here.
+  useEffect(() => {
+    if (!initialCategory) return;
+    if (initialActiveView === 'you') {
+      setActiveView('you');
+      setYouCategory(initialCategory);
+    } else {
+      setActiveView('baby');
+      setBabyCategory(initialCategory);
+    }
+  }, [initialCategory, initialActiveView]);
   const [suppliesRefreshKey,  setSuppliesRefreshKey]  = useState(0);
   const [pumpChartKey,       setPumpChartKey]        = useState(0);
   const [insightsRefreshKey, setInsightsRefreshKey]  = useState(0);
@@ -1749,7 +1764,7 @@ export default function Track() {
         {/* ── Sleep Tracker */}
         <View>
           <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
-            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} />
+            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} userId={userId} babyName={babyName} />
           </PaywallGate>
         </View>
 

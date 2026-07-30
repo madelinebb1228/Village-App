@@ -4,18 +4,25 @@ import {
   Alert, ActivityIndicator, Switch, Share, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
-import { ensureNotificationPermission, rescheduleEventReminders } from '../lib/notifications';
+import { ensureNotificationPermission, rescheduleEventReminders, cancelEventReminder } from '../lib/notifications';
 import { autoFormatDate, parseDisplayDate, toDisplayDate } from '../lib/dateUtils';
+import { recomputeWindDown } from '../lib/napSchedule';
+import { generateDaySchedule } from '../lib/daySchedule';
+import ConfirmModal from '../components/ConfirmModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type CalendarKind = 'personal' | 'shared';
 
 interface Calendar {
   id: string;
   owner_id: string;
   name: string;
   invite_code: string;
+  calendar_type: CalendarKind;
 }
 
 interface Member {
@@ -36,7 +43,50 @@ interface CalEvent {
   ends_at: string | null;
   all_day: boolean;
   reminder_minutes: number | null;
+  assigned_to: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  is_flexible: boolean;
+  is_scheduled: boolean;
+  estimated_minutes: number | null;
+  nap_ok: boolean;
+  recurrence_id: string | null;
 }
+
+const RECURRENCE_DAYS = 90; // how far ahead a "repeat daily" series is materialized
+
+const DURATION_OPTIONS: { label: string; value: number }[] = [
+  { label: '15m', value: 15 },
+  { label: '30m', value: 30 },
+  { label: '45m', value: 45 },
+  { label: '1h',  value: 60 },
+  { label: '1.5h', value: 90 },
+  { label: '2h',  value: 120 },
+];
+
+// Common daily anchors — quick-add pre-fills the event form (title + a
+// sensible default time, as a Fixed event) so the user just confirms or
+// nudges the time instead of typing everything from scratch.
+const QUICK_ADD_PRESETS: { emoji: string; title: string; time: string }[] = [
+  { emoji: '🌅', title: 'Wake up',   time: '07:00' },
+  { emoji: '☕', title: 'Breakfast', time: '08:00' },
+  { emoji: '🥪', title: 'Lunch',     time: '12:00' },
+  { emoji: '🍴', title: 'Dinner',    time: '18:00' },
+  { emoji: '🌙', title: 'Bedtime',   time: '19:30' },
+];
+
+// Where a "jump to source" tap on a synced event should land.
+const SOURCE_NAV: Record<string, { screen: string; params: Record<string, any> }> = {
+  appointment: { screen: 'Track', params: { initialCategory: 'Health', activeView: 'baby' } },
+  vaccine:     { screen: 'Track', params: { initialCategory: 'Health', activeView: 'baby' } },
+  medication:  { screen: 'Track', params: { initialCategory: 'Daily Care', activeView: 'you' } },
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  appointment: '📋 From Appointments',
+  vaccine:     '💉 From Vaccines',
+  medication:  '💊 From Medications',
+};
 
 interface MiniProfile {
   id: string;
@@ -118,9 +168,11 @@ function selectedDateLabel(key: string): string {
 export default function SharedCalendar({ userId }: { userId: string | null }) {
   const c = useColors();
   const db: any = supabase;
+  const navigation = useNavigation<any>();
 
   const now = new Date();
   const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [activeKind, setActiveKind] = useState<CalendarKind>('shared');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MiniProfile>>({});
@@ -146,7 +198,22 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [reminderMinutes, setReminderMinutes] = useState<number | null>(null);
+  const [assignedTo, setAssignedTo] = useState<string | null>(null);
+  const [isFlexible, setIsFlexible] = useState(false);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(30);
+  const [showCustomDuration, setShowCustomDuration] = useState(false);
+  const [napOk, setNapOk] = useState(true);
+  const [editingOriginalStartsAt, setEditingOriginalStartsAt] = useState<string | null>(null);
+  const [repeatDaily, setRepeatDaily] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Delete-recurring-event choice
+  const [deleteTarget, setDeleteTarget] = useState<CalEvent | null>(null);
+  const [deletingScope, setDeletingScope] = useState<'one' | 'future' | null>(null);
+
+  // Day planner
+  const [generating, setGenerating] = useState(false);
+  const [unfitIds, setUnfitIds] = useState<Set<string>>(new Set());
 
   // Share modal
   const [showShare, setShowShare] = useState(false);
@@ -166,17 +233,23 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
       const { data: cals, error } = await db.from('calendars').select('*').order('created_at');
       if (error) throw error;
       let list: Calendar[] = cals ?? [];
-      if (list.length === 0) {
-        const { data: created, error: cErr } = await db
-          .from('calendars')
-          .insert({ owner_id: userId, name: 'Our Calendar' })
-          .select('*')
-          .single();
+
+      // Every user gets exactly one personal calendar and at least one shared one.
+      const hasShared = list.some(c2 => c2.calendar_type === 'shared');
+      const hasPersonal = list.some(c2 => c2.calendar_type === 'personal' && c2.owner_id === userId);
+      const toCreate: { owner_id: string; name: string; calendar_type: CalendarKind }[] = [];
+      if (!hasShared) toCreate.push({ owner_id: userId, name: 'Our Calendar', calendar_type: 'shared' });
+      if (!hasPersonal) toCreate.push({ owner_id: userId, name: 'My Calendar', calendar_type: 'personal' });
+
+      if (toCreate.length > 0) {
+        const { data: created, error: cErr } = await db.from('calendars').insert(toCreate).select('*');
         if (cErr) throw cErr;
-        list = created ? [created] : [];
+        list = [...list, ...(created ?? [])];
       }
+
       setCalendars(list);
-      setActiveId(prev => (prev && list.some(c2 => c2.id === prev) ? prev : list[0]?.id ?? null));
+      const inKind = list.filter(c2 => c2.calendar_type === activeKind);
+      setActiveId(inKind[0]?.id ?? null);
     } catch (err: any) {
       setLoadError(err?.message ?? 'Could not load your calendar.');
     } finally {
@@ -184,6 +257,14 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
       setLoaded(true);
     }
   }, [userId]);
+
+  // Switch to a calendar of the newly-selected kind whenever the Personal/Shared
+  // tab changes (after the initial load, which already picks one above).
+  useEffect(() => {
+    if (!loaded) return;
+    const inKind = calendars.filter(c2 => c2.calendar_type === activeKind);
+    setActiveId(prev => (prev && inKind.some(c2 => c2.id === prev) ? prev : inKind[0]?.id ?? null));
+  }, [activeKind, calendars, loaded]);
 
   const loadActive = useCallback(async () => {
     if (!activeId) return;
@@ -222,10 +303,26 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   useEffect(() => { if (!loaded) loadCalendars(); }, [loaded, loadCalendars]);
   useEffect(() => { if (activeId) loadActive(); }, [activeId, loadActive]);
 
+  // Refetch on focus — events can change from elsewhere (a nap-driven shift,
+  // an appointment synced from a tracker) while this screen isn't mounted.
+  useFocusEffect(
+    useCallback(() => {
+      if (activeId) loadActive();
+    }, [activeId, loadActive])
+  );
+
   // ─── Derived ──────────────────────────────────────────────────────────────────
 
   const activeCalendar = calendars.find(c2 => c2.id === activeId) ?? null;
   const isOwner = !!activeCalendar && activeCalendar.owner_id === userId;
+  const calendarsInKind = useMemo(() => calendars.filter(c2 => c2.calendar_type === activeKind), [calendars, activeKind]);
+
+  // A flexible task with no placement yet — it needs a duration, not a
+  // time, until "Generate Schedule" runs.
+  const pendingFlexible = activeKind === 'personal' && isFlexible && editingOriginalStartsAt === null;
+  // An already-placed flexible task being edited — its time is preserved;
+  // only duration/nap-friendly (used next time it shifts) can change here.
+  const editingScheduledFlexible = activeKind === 'personal' && isFlexible && editingOriginalStartsAt !== null;
 
   const weeks = useMemo(() => buildMonthMatrix(viewYear, viewMonth), [viewYear, viewMonth]);
 
@@ -239,11 +336,17 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   }, [events]);
 
   const selectedDayEvents = useMemo(() => {
-    const list = (eventsByDay[selectedDate] ?? []).slice();
+    const list = (eventsByDay[selectedDate] ?? []).filter(e => e.is_scheduled !== false);
     list.sort((a, b) =>
       (a.all_day ? 0 : 1) - (b.all_day ? 0 : 1) || a.starts_at.localeCompare(b.starts_at)
     );
     return list;
+  }, [eventsByDay, selectedDate]);
+
+  // Flexible tasks entered with just a duration, waiting for "Generate
+  // Schedule" to place them — only relevant on the Personal calendar.
+  const selectedDayPending = useMemo(() => {
+    return (eventsByDay[selectedDate] ?? []).filter(e => e.is_scheduled === false);
   }, [eventsByDay, selectedDate]);
 
   function memberName(uid: string | null): string {
@@ -262,6 +365,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   }
   function onPressDay(cell: { dateKey: string; inMonth: boolean }) {
     setSelectedDate(cell.dateKey);
+    setUnfitIds(new Set());
     if (!cell.inMonth) {
       const [yy, mm] = cell.dateKey.split('-').map(Number);
       setViewYear(yy);
@@ -281,6 +385,33 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     setLocation('');
     setNotes('');
     setReminderMinutes(null);
+    setAssignedTo(null);
+    setIsFlexible(false);
+    setEstimatedMinutes(30);
+    setNapOk(true);
+    setEditingOriginalStartsAt(null);
+    setShowCustomDuration(false);
+    setRepeatDaily(false);
+    setShowEventModal(true);
+  }
+
+  function openQuickAdd(preset: { emoji: string; title: string; time: string }) {
+    setEditingId(null);
+    setTitle(preset.title);
+    setDateStr(toDisplayDate(selectedDate));
+    setAllDay(false);
+    setStartTime(preset.time);
+    setEndTime('');
+    setLocation('');
+    setNotes('');
+    setReminderMinutes(null);
+    setAssignedTo(null);
+    setIsFlexible(false);
+    setEstimatedMinutes(30);
+    setNapOk(true);
+    setEditingOriginalStartsAt(null);
+    setShowCustomDuration(false);
+    setRepeatDaily(false);
     setShowEventModal(true);
   }
 
@@ -300,6 +431,14 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     setLocation(e.location ?? '');
     setNotes(e.notes ?? '');
     setReminderMinutes(e.reminder_minutes);
+    setAssignedTo(e.assigned_to ?? null);
+    setIsFlexible(e.is_flexible ?? false);
+    const mins = e.estimated_minutes ?? 30;
+    setEstimatedMinutes(mins);
+    setShowCustomDuration(!DURATION_OPTIONS.some(o => o.value === mins));
+    setNapOk(e.nap_ok ?? true);
+    setEditingOriginalStartsAt(e.is_scheduled && e.is_flexible ? e.starts_at : null);
+    setRepeatDaily(false);
     setShowEventModal(true);
   }
 
@@ -315,7 +454,15 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
     let starts: Date;
     let ends: Date | null = null;
-    if (allDay) {
+
+    if (pendingFlexible) {
+      if (!estimatedMinutes || estimatedMinutes <= 0) { Alert.alert('Add a duration', 'How long do you think this will take?'); return; }
+      starts = new Date(yy, mo - 1, dd, 0, 0, 0, 0);
+    } else if (editingScheduledFlexible) {
+      if (!estimatedMinutes || estimatedMinutes <= 0) { Alert.alert('Add a duration', 'How long do you think this will take?'); return; }
+      starts = new Date(editingOriginalStartsAt!);
+      ends = new Date(starts.getTime() + estimatedMinutes * 60000);
+    } else if (allDay) {
       starts = new Date(yy, mo - 1, dd, 0, 0, 0, 0);
     } else {
       const sm = startTime.trim().match(/^(\d{1,2}):(\d{2})$/);
@@ -328,7 +475,7 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
       }
     }
 
-    if (reminderMinutes != null) {
+    if (!pendingFlexible && reminderMinutes != null) {
       const granted = await ensureNotificationPermission();
       if (!granted && Platform.OS !== 'web') {
         Alert.alert(
@@ -348,8 +495,13 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
         location: location.trim() || null,
         starts_at: starts.toISOString(),
         ends_at: ends ? ends.toISOString() : null,
-        all_day: allDay,
-        reminder_minutes: reminderMinutes,
+        all_day: pendingFlexible ? false : allDay,
+        reminder_minutes: pendingFlexible ? null : reminderMinutes,
+        assigned_to: assignedTo,
+        is_flexible: activeKind === 'personal' ? isFlexible : false,
+        is_scheduled: !pendingFlexible,
+        estimated_minutes: (pendingFlexible || editingScheduledFlexible) ? estimatedMinutes : null,
+        nap_ok: napOk,
       };
 
       let newList: CalEvent[];
@@ -360,11 +512,42 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
       } else {
         const { data, error } = await db.from('calendar_events').insert(payload).select('*').single();
         if (error) throw error;
-        newList = [...events, data as CalEvent];
+        let created = data as CalEvent;
+
+        // Repeat daily: only offered for new Fixed events (an anchor like
+        // "Bedtime" repeating at the same time every day) — materialize
+        // real rows ahead of time so every existing feature (shifting,
+        // day generation) keeps treating each occurrence as a normal event.
+        if (repeatDaily && !isFlexible) {
+          const recurrenceId = created.id;
+          await db.from('calendar_events').update({ recurrence_id: recurrenceId }).eq('id', created.id);
+          created = { ...created, recurrence_id: recurrenceId };
+
+          const extraRows = [];
+          for (let i = 1; i < RECURRENCE_DAYS; i++) {
+            const dayStarts = new Date(starts.getTime());
+            dayStarts.setDate(dayStarts.getDate() + i);
+            const dayEnds = ends ? new Date(ends.getTime()) : null;
+            if (dayEnds) dayEnds.setDate(dayEnds.getDate() + i);
+            extraRows.push({
+              ...payload,
+              starts_at: dayStarts.toISOString(),
+              ends_at: dayEnds ? dayEnds.toISOString() : null,
+              recurrence_id: recurrenceId,
+            });
+          }
+          if (extraRows.length > 0) {
+            const { error: recurErr } = await db.from('calendar_events').insert(extraRows);
+            if (recurErr) throw recurErr;
+          }
+        }
+
+        newList = [...events, created];
       }
       setEvents(newList);
       rescheduleEventReminders(newList);
       setShowEventModal(false);
+      if (activeKind === 'personal') recomputeWindDown(userId);
     } catch (err: any) {
       Alert.alert('Could not save', err?.message ?? 'Please try again.');
     } finally {
@@ -372,19 +555,80 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     }
   }
 
+  async function doDeleteEvent(e: CalEvent, scope: 'one' | 'future' = 'one') {
+    let removedIds = [e.id];
+    if (scope === 'future' && e.recurrence_id) {
+      const { data: matches, error: findErr } = await db
+        .from('calendar_events')
+        .select('id')
+        .eq('recurrence_id', e.recurrence_id)
+        .gte('starts_at', e.starts_at);
+      if (findErr) { Alert.alert('Could not delete', findErr.message); return; }
+      removedIds = (matches ?? []).map((m: any) => m.id as string);
+
+      const { error } = await db
+        .from('calendar_events')
+        .delete()
+        .eq('recurrence_id', e.recurrence_id)
+        .gte('starts_at', e.starts_at);
+      if (error) { Alert.alert('Could not delete', error.message); return; }
+    } else {
+      const { error } = await db.from('calendar_events').delete().eq('id', e.id);
+      if (error) { Alert.alert('Could not delete', error.message); return; }
+    }
+
+    const removedSet = new Set(removedIds);
+    const newList = events.filter(ev => !removedSet.has(ev.id));
+    setEvents(newList);
+    for (const id of removedIds) await cancelEventReminder(id);
+    rescheduleEventReminders(newList);
+    if (activeKind === 'personal') recomputeWindDown(userId);
+  }
+
   function confirmDeleteEvent(e: CalEvent) {
-    Alert.alert('Delete event', `Delete "${e.title}"?`, [
+    if (e.recurrence_id) {
+      setDeleteTarget(e);
+      return;
+    }
+    const message = `Delete "${e.title}"?`;
+    // On web, RN's multi-button Alert doesn't fire onPress callbacks —
+    // the browser confirm() dialog is the reliable alternative.
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) doDeleteEvent(e);
+      return;
+    }
+    Alert.alert('Delete event', message, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          const newList = events.filter(ev => ev.id !== e.id);
-          const { error } = await db.from('calendar_events').delete().eq('id', e.id);
-          if (error) { Alert.alert('Could not delete', error.message); return; }
-          setEvents(newList);
-          rescheduleEventReminders(newList);
-        },
-      },
+      { text: 'Delete', style: 'destructive', onPress: () => doDeleteEvent(e) },
     ]);
+  }
+
+  async function handleDeleteScopeChoice(scope: 'one' | 'future') {
+    if (!deleteTarget) return;
+    setDeletingScope(scope);
+    await doDeleteEvent(deleteTarget, scope);
+    setDeletingScope(null);
+    setDeleteTarget(null);
+  }
+
+  async function handleGenerateSchedule() {
+    if (!userId) return;
+    setGenerating(true);
+    try {
+      const [yy, mm, dd] = selectedDate.split('-').map(Number);
+      const forDate = new Date(yy, mm - 1, dd);
+      const result = await generateDaySchedule(userId, forDate);
+      setUnfitIds(new Set(result.unplaced.map(u => u.id)));
+      await loadActive();
+      const msg = result.unplaced.length > 0
+        ? `Scheduled ${result.placed} task${result.placed === 1 ? '' : 's'}. Couldn't fit: ${result.unplaced.map(u => u.title).join(', ')}.`
+        : `Scheduled ${result.placed} task${result.placed === 1 ? '' : 's'}.`;
+      Alert.alert('Schedule generated', msg);
+    } catch (err: any) {
+      Alert.alert('Could not generate schedule', err?.message ?? 'Please try again.');
+    } finally {
+      setGenerating(false);
+    }
   }
 
   // ─── Sharing ──────────────────────────────────────────────────────────────────
@@ -491,6 +735,29 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
 
   return (
     <View>
+      {/* Personal vs Shared toggle */}
+      <View style={{ flexDirection: 'row', backgroundColor: c.inputBg, borderRadius: 14, padding: 4, marginBottom: 14 }}>
+        {(['shared', 'personal'] as const).map(kind => {
+          const active = activeKind === kind;
+          return (
+            <TouchableOpacity
+              key={kind}
+              onPress={() => setActiveKind(kind)}
+              activeOpacity={0.8}
+              style={{
+                flex: 1, paddingVertical: 10, borderRadius: 11, alignItems: 'center',
+                backgroundColor: active ? c.card : 'transparent',
+                ...(active ? { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 } : {}),
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: active ? c.textPrimary : c.textMuted }}>
+                {kind === 'shared' ? '👥 Shared' : '🔒 Personal'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* Header: calendar name + actions */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <View style={{ flex: 1, paddingRight: 10 }}>
@@ -498,17 +765,20 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
             {activeCalendar?.name ?? 'Calendar'}
           </Text>
           <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 1 }}>
-            {members.length} {members.length === 1 ? 'person' : 'people'}
-            {!isOwner ? ' · shared with you' : ''}
+            {activeKind === 'personal'
+              ? 'Only visible to you'
+              : `${members.length} ${members.length === 1 ? 'person' : 'people'}${!isOwner ? ' · shared with you' : ''}`}
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={openShare}
-          style={{ borderWidth: 1.5, borderColor: c.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, marginRight: 8 }}
-          activeOpacity={0.8}
-        >
-          <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>👥 Share</Text>
-        </TouchableOpacity>
+        {activeKind === 'shared' && (
+          <TouchableOpacity
+            onPress={openShare}
+            style={{ borderWidth: 1.5, borderColor: c.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, marginRight: 8 }}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>👥 Share</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={openCreate}
           style={{ backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}
@@ -518,10 +788,32 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
         </TouchableOpacity>
       </View>
 
-      {/* Calendar switcher (only when in more than one) */}
-      {calendars.length > 1 && (
+      {/* Quick add — common daily anchors, pre-filled as Fixed with an
+          editable default time so a tap plus a confirm is usually enough. */}
+      {activeKind === 'personal' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ gap: 8 }}>
+          {QUICK_ADD_PRESETS.map(preset => (
+            <TouchableOpacity
+              key={preset.title}
+              onPress={() => openQuickAdd(preset)}
+              activeOpacity={0.8}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
+              }}
+            >
+              <Text style={{ fontSize: 14 }}>{preset.emoji}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }}>{preset.title}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Calendar switcher (only when this kind has more than one) */}
+      {calendarsInKind.length > 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
-          {calendars.map(cal => {
+          {calendarsInKind.map(cal => {
             const active = cal.id === activeId;
             return (
               <TouchableOpacity
@@ -612,6 +904,52 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
         ))}
       </View>
 
+      {/* To schedule — flexible tasks with a duration but no time yet */}
+      {activeKind === 'personal' && selectedDayPending.length > 0 && (
+        <View style={{
+          backgroundColor: c.cardHoney, borderRadius: 14, padding: 14, marginBottom: 16,
+          borderWidth: 1.5, borderColor: c.honey,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: c.textPrimary }}>📝 To schedule</Text>
+            <TouchableOpacity
+              onPress={handleGenerateSchedule}
+              disabled={generating}
+              style={{ backgroundColor: c.primary, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7, opacity: generating ? 0.7 : 1 }}
+              activeOpacity={0.8}
+            >
+              {generating ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ Generate Schedule</Text>}
+            </TouchableOpacity>
+          </View>
+          {selectedDayPending.map(t => {
+            const unfit = unfitIds.has(t.id);
+            return (
+              <TouchableOpacity
+                key={t.id}
+                onPress={() => openEdit(t)}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  backgroundColor: c.card, borderRadius: 10, padding: 10, marginBottom: 8,
+                  borderWidth: 1.5, borderColor: unfit ? c.blush : c.separator,
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textPrimary }}>{t.title}</Text>
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 2 }}>
+                    {t.estimated_minutes ?? 30} min · {t.nap_ok ? '💤 nap-friendly' : '☀️ awake time'}
+                    {unfit ? '  ·  ⚠️ Couldn\'t fit' : ''}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => confirmDeleteEvent(t)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: 14, color: c.textMuted }}>🗑</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       {/* Selected day's events */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: c.textPrimary }}>{selectedDateLabel(selectedDate)}</Text>
@@ -637,7 +975,19 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <Text style={{ flex: 1, fontSize: 15, fontWeight: '800', color: c.textPrimary, paddingRight: 8 }}>{e.title}</Text>
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, paddingRight: 8 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: c.textPrimary }}>{e.title}</Text>
+                {e.is_flexible ? (
+                  <View style={{ backgroundColor: c.cardLavender, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: c.lavender }}>🔀 Flexible</Text>
+                  </View>
+                ) : null}
+                {e.recurrence_id ? (
+                  <View style={{ backgroundColor: c.card, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: c.separator }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: c.textMuted }}>🔁 Daily</Text>
+                  </View>
+                ) : null}
+              </View>
               <TouchableOpacity onPress={() => confirmDeleteEvent(e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text style={{ fontSize: 14, color: c.textMuted }}>🗑</Text>
               </TouchableOpacity>
@@ -645,6 +995,22 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
             <Text style={{ fontSize: 13, color: c.textSecondary, fontWeight: '600', marginTop: 3 }}>🕐 {eventTimeLabel(e)}</Text>
             {e.location ? <Text style={{ fontSize: 13, color: c.textSecondary, marginTop: 3 }}>📍 {e.location}</Text> : null}
             {e.notes ? <Text style={{ fontSize: 13, color: c.textMuted, marginTop: 3, lineHeight: 18 }}>{e.notes}</Text> : null}
+            {e.assigned_to ? (
+              <Text style={{ fontSize: 12, color: c.primary, fontWeight: '700', marginTop: 5 }}>
+                🙋 {e.assigned_to === userId ? 'You' : memberName(e.assigned_to)}
+              </Text>
+            ) : null}
+            {e.source_type && SOURCE_NAV[e.source_type] ? (
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SOURCE_NAV[e.source_type!].screen, SOURCE_NAV[e.source_type!].params)}
+                hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
+                style={{ marginTop: 6 }}
+              >
+                <Text style={{ fontSize: 11, color: c.textMuted, fontWeight: '600', textDecorationLine: 'underline' }}>
+                  {SOURCE_LABEL[e.source_type] ?? 'Synced'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
               {e.reminder_minutes != null ? (
                 <Text style={{ fontSize: 11, color: c.primary, fontWeight: '700' }}>{reminderLabel(e.reminder_minutes)}</Text>
@@ -675,25 +1041,177 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
             <Text style={lbl(c)}>Title</Text>
             <TextInput style={inp(c)} placeholder="e.g. Pediatrician appointment" placeholderTextColor={c.textMuted} value={title} onChangeText={setTitle} />
 
-            <Text style={lbl(c)}>Date</Text>
-            <TextInput style={inp(c)} placeholder="MM/DD/YYYY" placeholderTextColor={c.textMuted} value={dateStr} onChangeText={v => setDateStr(autoFormatDate(v, dateStr))} keyboardType="numeric" maxLength={10} />
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>All day</Text>
-              <Switch value={allDay} onValueChange={setAllDay} trackColor={{ false: c.cardSage, true: c.sage }} />
-            </View>
-
-            {!allDay && (
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={lbl(c)}>Start (24h)</Text>
-                  <TextInput style={inp(c)} placeholder="09:00" placeholderTextColor={c.textMuted} value={startTime} onChangeText={setStartTime} keyboardType="numbers-and-punctuation" />
+            {activeKind === 'personal' && !editingScheduledFlexible && (
+              <>
+                <Text style={lbl(c)}>Flexibility</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setIsFlexible(false)}
+                    style={{
+                      flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                      backgroundColor: !isFlexible ? c.primary : c.card,
+                      borderWidth: 1.5, borderColor: !isFlexible ? c.primary : c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: !isFlexible ? '#fff' : c.textMuted }}>📌 Fixed time</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => { setIsFlexible(true); setAllDay(false); }}
+                    style={{
+                      flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                      backgroundColor: isFlexible ? c.primary : c.card,
+                      borderWidth: 1.5, borderColor: isFlexible ? c.primary : c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: isFlexible ? '#fff' : c.textMuted }}>🔀 Flexible</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={lbl(c)}>End (optional)</Text>
-                  <TextInput style={inp(c)} placeholder="10:00" placeholderTextColor={c.textMuted} value={endTime} onChangeText={setEndTime} keyboardType="numbers-and-punctuation" />
+                <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 6, lineHeight: 16 }}>
+                  {isFlexible
+                    ? "No fixed time — just an estimated duration. Can shift automatically if a nap runs early or long."
+                    : "Never moves — protect this time and we'll remind you to wind the baby down beforehand."}
+                </Text>
+              </>
+            )}
+
+            {!editingScheduledFlexible && (
+              <>
+                <Text style={lbl(c)}>Date</Text>
+                <TextInput style={inp(c)} placeholder="MM/DD/YYYY" placeholderTextColor={c.textMuted} value={dateStr} onChangeText={v => setDateStr(autoFormatDate(v, dateStr))} keyboardType="numeric" maxLength={10} />
+              </>
+            )}
+
+            {!pendingFlexible && !editingScheduledFlexible && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>All day</Text>
+                  <Switch value={allDay} onValueChange={setAllDay} trackColor={{ false: c.cardSage, true: c.sage }} />
                 </View>
-              </View>
+
+                {!allDay && (
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={lbl(c)}>Start (24h)</Text>
+                      <TextInput style={inp(c)} placeholder="09:00" placeholderTextColor={c.textMuted} value={startTime} onChangeText={setStartTime} keyboardType="numbers-and-punctuation" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={lbl(c)}>End (optional)</Text>
+                      <TextInput style={inp(c)} placeholder="10:00" placeholderTextColor={c.textMuted} value={endTime} onChangeText={setEndTime} keyboardType="numbers-and-punctuation" />
+                    </View>
+                  </View>
+                )}
+
+                {!editingId && !isFlexible && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>🔁 Repeat daily</Text>
+                      <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 2 }}>Adds this at the same time every day for the next ~3 months.</Text>
+                    </View>
+                    <Switch value={repeatDaily} onValueChange={setRepeatDaily} trackColor={{ false: c.cardSage, true: c.sage }} />
+                  </View>
+                )}
+              </>
+            )}
+
+            {(pendingFlexible || editingScheduledFlexible) && (
+              <>
+                <Text style={lbl(c)}>Estimated duration</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {DURATION_OPTIONS.map(opt => {
+                    const active = !showCustomDuration && estimatedMinutes === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        onPress={() => { setShowCustomDuration(false); setEstimatedMinutes(opt.value); }}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                          backgroundColor: active ? c.primary : c.card,
+                          borderWidth: 1.5, borderColor: active ? c.primary : c.separator,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : c.textMuted }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity
+                    onPress={() => setShowCustomDuration(true)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: showCustomDuration ? c.primary : c.card,
+                      borderWidth: 1.5, borderColor: showCustomDuration ? c.primary : c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: showCustomDuration ? '#fff' : c.textMuted }}>Other…</Text>
+                  </TouchableOpacity>
+                </View>
+                {showCustomDuration && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                    <TextInput
+                      style={[inp(c), { flex: 1 }]}
+                      placeholder="Minutes"
+                      placeholderTextColor={c.textMuted}
+                      value={estimatedMinutes ? String(estimatedMinutes) : ''}
+                      onChangeText={v => setEstimatedMinutes(parseInt(v.replace(/[^0-9]/g, ''), 10) || 0)}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={{ fontSize: 13, color: c.textMuted }}>minutes</Text>
+                  </View>
+                )}
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>Nap-friendly?</Text>
+                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 2 }}>Can this be done while baby naps?</Text>
+                  </View>
+                  <Switch value={napOk} onValueChange={setNapOk} trackColor={{ false: c.cardSage, true: c.sage }} />
+                </View>
+
+                {editingScheduledFlexible ? (
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 10, lineHeight: 16 }}>
+                    Currently scheduled for {new Date(editingOriginalStartsAt!).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. Saving keeps this time.
+                  </Text>
+                ) : (
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 10, lineHeight: 16 }}>
+                    No time yet — this goes into "To schedule" until you tap Generate Schedule.
+                  </Text>
+                )}
+              </>
+            )}
+
+            {activeKind === 'shared' && members.length > 1 && (
+              <>
+                <Text style={lbl(c)}>Assign to (optional)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setAssignedTo(null)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: assignedTo === null ? c.primary : c.card,
+                      borderWidth: 1.5, borderColor: assignedTo === null ? c.primary : c.separator,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: assignedTo === null ? '#fff' : c.textMuted }}>Unassigned</Text>
+                  </TouchableOpacity>
+                  {members.map(m => {
+                    const active = assignedTo === m.user_id;
+                    return (
+                      <TouchableOpacity
+                        key={m.id}
+                        onPress={() => setAssignedTo(m.user_id)}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                          backgroundColor: active ? c.primary : c.card,
+                          borderWidth: 1.5, borderColor: active ? c.primary : c.separator,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : c.textMuted }}>
+                          {m.user_id === userId ? 'You' : memberName(m.user_id)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
             )}
 
             <Text style={lbl(c)}>Location (optional)</Text>
@@ -706,30 +1224,34 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
               value={notes} onChangeText={setNotes} multiline
             />
 
-            <Text style={lbl(c)}>Reminder</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {REMINDER_OPTIONS.map(opt => {
-                const active = reminderMinutes === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.label}
-                    onPress={() => setReminderMinutes(opt.value)}
-                    style={{
-                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                      backgroundColor: active ? c.primary : c.card,
-                      borderWidth: 1.5, borderColor: active ? c.primary : c.separator,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : c.textMuted }}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {Platform.OS === 'web' && reminderMinutes != null ? (
-              <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 8, lineHeight: 16 }}>
-                Note: reminders fire on the phone app, not the web/desktop version.
-              </Text>
-            ) : null}
+            {!pendingFlexible && (
+              <>
+                <Text style={lbl(c)}>Reminder</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {REMINDER_OPTIONS.map(opt => {
+                    const active = reminderMinutes === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.label}
+                        onPress={() => setReminderMinutes(opt.value)}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                          backgroundColor: active ? c.primary : c.card,
+                          borderWidth: 1.5, borderColor: active ? c.primary : c.separator,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : c.textMuted }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {Platform.OS === 'web' && reminderMinutes != null ? (
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 8, lineHeight: 16 }}>
+                    Note: reminders fire on the phone app, not the web/desktop version.
+                  </Text>
+                ) : null}
+              </>
+            )}
 
             <TouchableOpacity
               onPress={saveEvent}
@@ -849,6 +1371,18 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      <ConfirmModal
+        visible={deleteTarget !== null}
+        title="Delete recurring event"
+        message={deleteTarget ? `"${deleteTarget.title}" repeats daily. What would you like to delete?` : undefined}
+        onRequestClose={() => { if (!deletingScope) setDeleteTarget(null); }}
+        buttons={[
+          { label: 'Delete just this day', onPress: () => handleDeleteScopeChoice('one'), loading: deletingScope === 'one' },
+          { label: 'Delete this and all future', onPress: () => handleDeleteScopeChoice('future'), variant: 'destructive', loading: deletingScope === 'future' },
+          { label: 'Cancel', onPress: () => setDeleteTarget(null), variant: 'default' },
+        ]}
+      />
     </View>
   );
 }

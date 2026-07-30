@@ -20,7 +20,6 @@ import { supabase } from '../lib/supabase';
 import { VILLAGE_MAP } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
-import SharedCalendar from './SharedCalendar';
 import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
@@ -147,7 +146,7 @@ export default function Profile() {
   const [followingCount, setFollowingCount] = useState(0);
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
-  const [profileTab, setProfileTab] = useState<'posts' | 'saved' | 'journal' | 'calendar'>('posts');
+  const [profileTab, setProfileTab] = useState<'posts' | 'saved' | 'journal'>('posts');
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -828,17 +827,6 @@ export default function Profile() {
               </Text>
             </TouchableOpacity>
           )}
-          {isSubscribed && (
-            <TouchableOpacity
-              style={[s.tabToggleBtn, profileTab === 'calendar' && s.tabToggleBtnActive]}
-              onPress={() => setProfileTab('calendar')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.tabToggleText, profileTab === 'calendar' && s.tabToggleTextActive]}>
-                📅 Calendar
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {profileTab === 'posts' ? (
@@ -937,17 +925,13 @@ export default function Profile() {
               </View>
             ))
           )
-        ) : profileTab === 'journal' ? (
+        ) : (
           <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
             <BabyJournal
               userId={profile?.id ?? null}
               babyId={baby?.id ?? null}
               babyName={baby?.name ?? null}
             />
-          </PaywallGate>
-        ) : (
-          <PaywallGate feature="shared_calendar" title="Shared Parents Calendar" description="Share schedules, appointments, and reminders with your co-parent or support circle." emoji="📅">
-            <SharedCalendar userId={profile?.id ?? null} />
           </PaywallGate>
         )}
 

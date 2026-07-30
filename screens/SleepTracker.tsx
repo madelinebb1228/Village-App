@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, AppState, Image, StyleSheet, Text, TextInput,
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
+import { getRange, getSleepGoal, scheduleWindDownNow, handleNapEnded } from '../lib/napSchedule';
 
 type Mode = 'idle' | 'awake' | 'sleeping' | 'quality' | 'manual';
 type SleepType = 'nap' | 'night';
@@ -18,52 +19,12 @@ type SleepLog = {
   notes: string | null;
 };
 
-type WakeRange = { maxWeeks: number; label: string; minMin: number; maxMin: number };
-type AgeGoal  = { maxWeeks: number; minHours: number; maxHours: number; minNaps: number; maxNaps: number };
-
-const WAKE_RANGES: WakeRange[] = [
-  { maxWeeks: 4,    label: 'Newborn (0–4 weeks)',  minMin: 45,  maxMin: 60  },
-  { maxWeeks: 8,    label: '1–2 months',            minMin: 60,  maxMin: 90  },
-  { maxWeeks: 12,   label: '2–3 months',            minMin: 75,  maxMin: 90  },
-  { maxWeeks: 16,   label: '3–4 months',            minMin: 90,  maxMin: 120 },
-  { maxWeeks: 20,   label: '4–5 months',            minMin: 90,  maxMin: 120 },
-  { maxWeeks: 24,   label: '5–6 months',            minMin: 90,  maxMin: 150 },
-  { maxWeeks: 36,   label: '6–9 months',            minMin: 120, maxMin: 180 },
-  { maxWeeks: 52,   label: '9–12 months',           minMin: 150, maxMin: 210 },
-  { maxWeeks: 78,   label: '12–18 months',          minMin: 180, maxMin: 300 },
-  { maxWeeks: 104,  label: '18–24 months',          minMin: 240, maxMin: 360 },
-  { maxWeeks: 9999, label: '2+ years',              minMin: 300, maxMin: 480 },
-];
-
-const AGE_SLEEP_GOALS: AgeGoal[] = [
-  { maxWeeks: 4,    minHours: 14, maxHours: 17, minNaps: 4, maxNaps: 5 },
-  { maxWeeks: 12,   minHours: 14, maxHours: 17, minNaps: 3, maxNaps: 5 },
-  { maxWeeks: 24,   minHours: 12, maxHours: 15, minNaps: 3, maxNaps: 4 },
-  { maxWeeks: 36,   minHours: 12, maxHours: 14, minNaps: 2, maxNaps: 3 },
-  { maxWeeks: 52,   minHours: 12, maxHours: 14, minNaps: 2, maxNaps: 3 },
-  { maxWeeks: 78,   minHours: 11, maxHours: 14, minNaps: 1, maxNaps: 2 },
-  { maxWeeks: 104,  minHours: 11, maxHours: 14, minNaps: 1, maxNaps: 1 },
-  { maxWeeks: 9999, minHours: 10, maxHours: 13, minNaps: 0, maxNaps: 1 },
-];
-
 const QUALITY_OPTIONS: { value: SleepQuality; emoji: string; label: string }[] = [
   { value: 'great', emoji: '😊', label: 'Great' },
   { value: 'good',  emoji: '🙂', label: 'Good'  },
   { value: 'fair',  emoji: '😐', label: 'Fair'  },
   { value: 'poor',  emoji: '😣', label: 'Poor'  },
 ];
-
-function getRange(birthDate: string | null): WakeRange {
-  if (!birthDate) return WAKE_RANGES[1];
-  const ageWeeks = Math.floor((Date.now() - new Date(birthDate).getTime()) / (7 * 24 * 3600 * 1000));
-  return WAKE_RANGES.find(r => ageWeeks < r.maxWeeks) ?? WAKE_RANGES[WAKE_RANGES.length - 1];
-}
-
-function getSleepGoal(birthDate: string | null): AgeGoal {
-  if (!birthDate) return AGE_SLEEP_GOALS[2];
-  const ageWeeks = Math.floor((Date.now() - new Date(birthDate).getTime()) / (7 * 24 * 3600 * 1000));
-  return AGE_SLEEP_GOALS.find(g => ageWeeks < g.maxWeeks) ?? AGE_SLEEP_GOALS[AGE_SLEEP_GOALS.length - 1];
-}
 
 function fmtMins(mins: number): string {
   if (mins < 60) return `${mins}m`;
@@ -231,9 +192,13 @@ function makeStyles(c: Colors) {
 export default function SleepTracker({
   babyId,
   babyBirthDate,
+  userId,
+  babyName,
 }: {
   babyId: string | null;
   babyBirthDate: string | null;
+  userId?: string | null;
+  babyName?: string | null;
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
@@ -373,6 +338,7 @@ export default function SleepTracker({
         [{ text: 'Got it' }],
       );
     }, range.maxMin * 60 * 1000);
+    scheduleWindDownNow(userId ?? null, babyId, babyName ?? null, babyBirthDate).catch(() => {});
   }
 
   async function startSleep() {
@@ -408,10 +374,12 @@ export default function SleepTracker({
   async function saveAndStartAwake(skipQuality = false) {
     setSaving(true);
     try {
+      const wasNap = sleepType === 'nap';
+      const durationMinutes = Math.round(finalSleepSecs / 60);
       if (activeSleepIdRef.current) {
         await safeUpdate('sleep_logs', activeSleepIdRef.current, {
           end_time: new Date().toISOString(),
-          duration_minutes: Math.round(finalSleepSecs / 60),
+          duration_minutes: durationMinutes,
           ...(!skipQuality && quality ? { quality } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
         });
@@ -420,6 +388,17 @@ export default function SleepTracker({
       setNotes('');
       await loadTodayLogs();
       startAwake();
+
+      if (wasNap) {
+        const result = await handleNapEnded(userId ?? null, babyId, babyBirthDate, durationMinutes);
+        if (result && result.shiftedCount > 0) {
+          const early = result.deltaMinutes > 0;
+          Alert.alert(
+            'Plans adjusted',
+            `${babyName || 'Baby'} ${early ? 'woke up' : 'napped'} ${Math.abs(result.deltaMinutes)} min ${early ? 'early' : 'longer than usual'} — shifted ${result.shiftedCount} flexible task${result.shiftedCount === 1 ? '' : 's'} ${early ? 'later' : 'earlier'} on your Personal calendar.`,
+          );
+        }
+      }
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Unknown error');
     } finally {

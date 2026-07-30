@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -108,6 +109,7 @@ export default function VillageTab() {
     if (!user) return;
 
     if (!joinedIds.has(villageId) && !isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT) {
+      openPaywall();
       return;
     }
 
@@ -120,6 +122,24 @@ export default function VillageTab() {
       setJoinedIds(prev => new Set([...prev, villageId]));
     }
     setJoining(null);
+  }
+
+  function confirmLeave(village: Village) {
+    const message = "You'll stop seeing posts from this patch and can rejoin any time.";
+    // On web, RN's multi-button Alert doesn't fire onPress callbacks —
+    // the browser confirm() dialog is the reliable alternative.
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Leave ${village.name}? ${message}`)) toggleJoin(village.id);
+      return;
+    }
+    Alert.alert(
+      `Leave ${village.name}?`,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: () => toggleJoin(village.id) },
+      ]
+    );
   }
 
   function toggleAnswer(questionId: string, option: string, multi: boolean) {
@@ -179,6 +199,24 @@ export default function VillageTab() {
       setJoinedIds(prev => new Set([...prev, ...limited]));
     }
     closeQuiz();
+    const skipped = toJoin.length - limited.length;
+    if (skipped > 0) {
+      const message = `You joined ${limited.length} patch${limited.length === 1 ? '' : 'es'}. ${skipped} more suggested patch${skipped === 1 ? ' was' : 'es were'} skipped — upgrade to join unlimited patches.`;
+      // On web, RN's multi-button Alert doesn't fire onPress callbacks —
+      // the browser confirm() dialog is the reliable alternative.
+      if (Platform.OS === 'web') {
+        if (window.confirm(`${message} Open upgrade screen?`)) openPaywall();
+        return;
+      }
+      Alert.alert(
+        'Free patch limit reached',
+        message,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Upgrade', onPress: () => openPaywall() },
+        ]
+      );
+    }
   }
 
   const filtered = search.trim()
@@ -239,7 +277,7 @@ export default function VillageTab() {
             onChangeText={setSearch}
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="Clear search" accessibilityRole="button">
               <Text style={s.searchClear}>✕</Text>
             </TouchableOpacity>
           )}
@@ -250,6 +288,8 @@ export default function VillageTab() {
           style={s.requestBanner}
           onPress={() => { setRequestDone(false); setShowRequestModal(true); }}
           activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel="Don't see your community? Request one"
         >
           <Text style={s.requestBannerEmoji}>💌</Text>
           <Text style={s.requestBannerText}>Don't see your community? Request one</Text>
@@ -320,7 +360,13 @@ export default function VillageTab() {
 
         {/* Find Your Patches quiz card */}
         {!quizDone && !search && (
-          <TouchableOpacity style={s.quizCard} onPress={() => setShowQuiz(true)} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={s.quizCard}
+            onPress={() => setShowQuiz(true)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Find Your Patches. Answer a few questions to discover your perfect communities"
+          >
             <Text style={s.quizCardEmoji}>🏘️</Text>
             <View style={s.quizCardBody}>
               <Text style={s.quizCardTitle}>Find Your Patches</Text>
@@ -332,7 +378,13 @@ export default function VillageTab() {
 
         {/* Retake quiz button */}
         {quizDone && !search && (
-          <TouchableOpacity style={s.retakeRow} onPress={retakeQuiz} activeOpacity={0.75}>
+          <TouchableOpacity
+            style={s.retakeRow}
+            onPress={retakeQuiz}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Retake community quiz. Update your communities"
+          >
             <Text style={s.retakeIcon}>🔄</Text>
             <View style={s.retakeBody}>
               <Text style={s.retakeTitle}>Retake community quiz</Text>
@@ -348,6 +400,8 @@ export default function VillageTab() {
             style={s.findPatchCard}
             onPress={() => setShowFindPatch(true)}
             activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Meet Parents Like You. Get matched with parents in similar situations"
           >
             <View style={s.findPatchLeft}>
               <Text style={s.findPatchEmoji}>🤝</Text>
@@ -366,6 +420,8 @@ export default function VillageTab() {
             style={s.patchTasksCard}
             onPress={() => setShowPatchTasks(true)}
             activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Patch Requests. Ask for help or offer it to a neighbor"
           >
             <View style={s.findPatchLeft}>
               <Text style={s.patchTasksEmoji}>🙋</Text>
@@ -393,6 +449,8 @@ export default function VillageTab() {
                 activeOpacity={0.7}
                 style={[s.joinedArrow, { opacity: patchArrows.left ? 1 : 0.25 }]}
                 disabled={!patchArrows.left}
+                accessibilityLabel="Scroll patches left"
+                accessibilityRole="button"
               >
                 <Text style={s.joinedArrowText}>‹</Text>
               </TouchableOpacity>
@@ -436,13 +494,17 @@ export default function VillageTab() {
                           style={s.joinedChipBody}
                           onPress={() => setSelectedVillage(v)}
                           activeOpacity={0.75}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open ${v.name}`}
                         >
                           <Text style={s.joinedChipEmoji}>{v.emoji}</Text>
                           <Text style={s.joinedChipName} numberOfLines={1}>{v.name}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() => toggleJoin(v.id)}
+                          onPress={() => confirmLeave(v)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityLabel={`Leave ${v.name}`}
+                          accessibilityRole="button"
                         >
                           <Text style={s.joinedChipLeave}>✕</Text>
                         </TouchableOpacity>
@@ -462,10 +524,26 @@ export default function VillageTab() {
                 activeOpacity={0.7}
                 style={[s.joinedArrow, { opacity: patchArrows.right ? 1 : 0.25 }]}
                 disabled={!patchArrows.right}
+                accessibilityLabel="Scroll patches right"
+                accessibilityRole="button"
               >
                 <Text style={s.joinedArrowText}>›</Text>
               </TouchableOpacity>
             </View>
+
+            {!isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT && (
+              <TouchableOpacity
+                style={s.limitBanner}
+                onPress={openPaywall}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`You've joined ${FREE_VILLAGE_LIMIT} free patches. Upgrade to join more.`}
+              >
+                <Text style={s.limitBannerText}>
+                  You've joined {FREE_VILLAGE_LIMIT} free patches. <Text style={s.limitBannerLink}>Upgrade</Text> to join more.
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
