@@ -166,7 +166,8 @@ export default function StoryViewer({ visible, groups, startGroupIndex, onClose 
                 <Text style={s.storyTime}>{timeAgo(story.created_at)}</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button" accessibilityLabel="Close story">
               <Text style={s.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -174,8 +175,10 @@ export default function StoryViewer({ visible, groups, startGroupIndex, onClose 
 
         {/* Tap zones — behind the header */}
         <View style={s.tapRow} pointerEvents="box-none">
-          <TouchableOpacity style={s.tapLeft} onPress={goPrev} activeOpacity={1} />
-          <TouchableOpacity style={s.tapRight} onPress={goNext} activeOpacity={1} />
+          <TouchableOpacity style={s.tapLeft} onPress={goPrev} activeOpacity={1}
+            accessibilityRole="button" accessibilityLabel="Previous story" />
+          <TouchableOpacity style={s.tapRight} onPress={goNext} activeOpacity={1}
+            accessibilityRole="button" accessibilityLabel="Next story" />
         </View>
       </View>
     </Modal>

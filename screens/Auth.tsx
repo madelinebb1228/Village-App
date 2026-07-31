@@ -35,6 +35,7 @@ export default function Auth() {
       return
     }
 
+    let dobIso: string | undefined;
     if (isSignUp) {
       if (!firstName.trim()) {
         Alert.alert('Error', 'Please enter your first name.');
@@ -49,13 +50,14 @@ export default function Auth() {
         return;
       }
       const dob = new Date(year, month - 1, day);
+      dobIso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const today = new Date();
       let age = today.getFullYear() - dob.getFullYear();
       if (today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) {
         age--;
       }
-      if (age < 18) {
-        Alert.alert('Age Requirement', 'Sorry — you must be 18 or older to use Parent Patch.');
+      if (age < 15) {
+        Alert.alert('Age Requirement', 'Sorry — you must be 15 or older to use Parent Patch.');
         return;
       }
     }
@@ -70,6 +72,7 @@ export default function Auth() {
             id: data.user.id,
             display_name: firstName.trim(),
             first_name: firstName.trim(),
+            date_of_birth: dobIso,
           } as any, { onConflict: 'id' }).catch((e: any) => console.warn('Profile name save failed:', e.message));
         }
         Alert.alert(
@@ -221,7 +224,7 @@ export default function Auth() {
                 />
               </View>
               <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 5 }}>
-                You must be 18 or older to create an account.
+                You must be 15 or older to create an account.
               </Text>
             </View>
           )}

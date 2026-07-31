@@ -318,11 +318,13 @@ function DetailModal({
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={s.container}>
         <View style={s.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button" accessibilityLabel="Cancel">
             <Text style={s.cancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={s.headerTitle}>{emoji} {name}</Text>
-          <TouchableOpacity onPress={save} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={save} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button" accessibilityLabel="Save">
             <Text style={s.saveBtn}>Save</Text>
           </TouchableOpacity>
         </View>
@@ -340,6 +342,7 @@ function DetailModal({
                     key={st}
                     style={[s.statusChip, { backgroundColor: cfg.bg, borderColor: cfg.border, opacity: status === st ? 1 : 0.4 }]}
                     onPress={() => setStatus(st)}
+                    accessibilityRole="button" accessibilityLabel={cfg.label}
                     activeOpacity={0.7}
                   >
                     <Text style={[s.statusChipText, { color: cfg.text }]}>{cfg.label}</Text>
@@ -413,6 +416,7 @@ function DetailModal({
                 style={s.logGivenBtn}
                 onPress={() => { onLogGivenToday(); onClose(); }}
                 activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel="Log given today"
               >
                 <Text style={s.logGivenText}>✓ Log given today</Text>
               </TouchableOpacity>
@@ -462,11 +466,13 @@ function AddCustomModal({
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={s.container}>
         <View style={s.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button" accessibilityLabel="Cancel">
             <Text style={s.cancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={s.headerTitle}>Add {tab === 'food' ? 'Food' : 'Other'} Allergen</Text>
-          <TouchableOpacity onPress={add} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={add} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button" accessibilityLabel="Add">
             <Text style={s.saveBtn}>Add</Text>
           </TouchableOpacity>
         </View>
@@ -531,7 +537,8 @@ function AllergenRow({
     : null;
 
   return (
-    <TouchableOpacity style={s.row} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={s.row} onPress={onPress} activeOpacity={0.75}
+      accessibilityRole="button" accessibilityLabel={`${name} allergen details`}>
       <Text style={s.emoji}>{emoji}</Text>
       <View style={s.body}>
         <Text style={s.name}>{name}</Text>
@@ -563,6 +570,7 @@ function AllergenRow({
             ])}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={s.deleteBtn}
+            accessibilityRole="button" accessibilityLabel={`Remove ${name}`}
           >
             <Text style={s.deleteX}>✕</Text>
           </TouchableOpacity>
@@ -776,7 +784,8 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
   return (
     <View style={s.container}>
       {/* ── Section header ── */}
-      <TouchableOpacity style={s.sectionHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.7}>
+      <TouchableOpacity style={s.sectionHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.7}
+        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Allergen Tracker' : 'Collapse Allergen Tracker'}>
         <Text style={s.sectionTitle}>🚨 Allergen Tracker</Text>
         <Text style={s.chevron}>{collapsed ? '›' : '⌄'}</Text>
       </TouchableOpacity>
@@ -804,7 +813,8 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
 
           {/* ── Tap-to-filter hint ── */}
           {statusFilter !== 'all' && (
-            <TouchableOpacity style={s.filterClearRow} onPress={() => setStatusFilter('all')} activeOpacity={0.7}>
+            <TouchableOpacity style={s.filterClearRow} onPress={() => setStatusFilter('all')} activeOpacity={0.7}
+              accessibilityRole="button" accessibilityLabel="Clear filter">
               <Text style={s.filterClearText}>Showing: {STATUS[statusFilter].label}  ✕ Clear</Text>
             </TouchableOpacity>
           )}
@@ -837,6 +847,7 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
                 key={t}
                 style={[s.tabBtn, tab === t && s.tabBtnActive]}
                 onPress={() => setTab(t)}
+                accessibilityRole="button" accessibilityLabel={t === 'food' ? 'Food allergens' : 'Other allergens'}
                 activeOpacity={0.75}
               >
                 <Text style={[s.tabLabel, tab === t && s.tabLabelActive]}>
@@ -906,7 +917,8 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
                 );
               })()}
 
-              <TouchableOpacity style={s.addBtn} onPress={() => setShowAddCustom(true)} activeOpacity={0.75}>
+              <TouchableOpacity style={s.addBtn} onPress={() => setShowAddCustom(true)} activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Add food allergen">
                 <Text style={s.addBtnText}>+ Add food allergen</Text>
               </TouchableOpacity>
             </>
@@ -952,7 +964,8 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
                 );
               })()}
 
-              <TouchableOpacity style={s.addBtn} onPress={() => setShowAddCustom(true)} activeOpacity={0.75}>
+              <TouchableOpacity style={s.addBtn} onPress={() => setShowAddCustom(true)} activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Add allergen">
                 <Text style={s.addBtnText}>+ Add allergen</Text>
               </TouchableOpacity>
             </>

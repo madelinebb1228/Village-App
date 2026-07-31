@@ -178,7 +178,8 @@ export default function MoodEnergyTracker({
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={toggleExpanded} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={toggleExpanded} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel="Toggle Mood and Energy section">
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🌈</Text>
           <View>
@@ -202,7 +203,8 @@ export default function MoodEnergyTracker({
           {!showForm ? (
             <>
               {showNudge && (
-                <TouchableOpacity style={s.nudgeBanner} onPress={onSuggestCheckIn} activeOpacity={0.85}>
+                <TouchableOpacity style={s.nudgeBanner} onPress={onSuggestCheckIn} activeOpacity={0.85}
+                  accessibilityRole="button" accessibilityLabel="Go to Postpartum Mental Health check-in">
                   <Text style={s.nudgeText}>
                     💜 We've noticed some tough days lately. Consider taking a Postpartum Mental Health check-in.
                   </Text>
@@ -210,7 +212,8 @@ export default function MoodEnergyTracker({
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity style={s.logBtn} onPress={openNewEntry}>
+              <TouchableOpacity style={s.logBtn} onPress={openNewEntry}
+                accessibilityRole="button" accessibilityLabel="Log a check-in">
                 <Text style={s.logBtnText}>✏️  Log a Check-in</Text>
               </TouchableOpacity>
 
@@ -269,10 +272,12 @@ export default function MoodEnergyTracker({
                         </Text>
                         {entry.notes ? <Text style={s.entryNotes}>"{entry.notes}"</Text> : null}
                       </View>
-                      <TouchableOpacity onPress={() => openEditEntry(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => openEditEntry(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button" accessibilityLabel="Edit check-in">
                         <Text style={s.entryAction}>✎</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteEntry(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => deleteEntry(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button" accessibilityLabel="Delete check-in">
                         <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
                       </TouchableOpacity>
                     </View>
@@ -290,6 +295,7 @@ export default function MoodEnergyTracker({
                     key={i}
                     style={[s.emojiBtn, mood === i + 1 && { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
                     onPress={() => setMood(i + 1)}
+                    accessibilityRole="button" accessibilityLabel={`Mood level ${i + 1}`}
                   >
                     <Text style={s.emojiBtnText}>{e}</Text>
                     <Text style={s.emojiBtnNum}>{i + 1}</Text>
@@ -304,6 +310,7 @@ export default function MoodEnergyTracker({
                     key={i}
                     style={[s.emojiBtn, energy === i + 1 && { backgroundColor: c.cardSage, borderColor: c.sage }]}
                     onPress={() => setEnergy(i + 1)}
+                    accessibilityRole="button" accessibilityLabel={`Energy level ${i + 1}`}
                   >
                     <Text style={s.emojiBtnText}>{e}</Text>
                     <Text style={s.emojiBtnNum}>{i + 1}</Text>
@@ -318,6 +325,7 @@ export default function MoodEnergyTracker({
                     key={e}
                     style={[s.chip, emotions.includes(e) && { backgroundColor: c.cardBlush, borderColor: c.blush }]}
                     onPress={() => toggleEmotion(e)}
+                    accessibilityRole="button" accessibilityLabel={e}
                   >
                     <Text style={[s.chipText, emotions.includes(e) && { color: c.blush, fontWeight: '700' }]}>{e}</Text>
                   </TouchableOpacity>
@@ -332,8 +340,10 @@ export default function MoodEnergyTracker({
                   onChangeText={setCustomEmotion}
                   onSubmitEditing={addCustomEmotion}
                   returnKeyType="done"
+                  accessibilityLabel="Add your own emotion"
                 />
-                <TouchableOpacity style={s.customAddBtn} onPress={addCustomEmotion} disabled={!customEmotion.trim()}>
+                <TouchableOpacity style={s.customAddBtn} onPress={addCustomEmotion} disabled={!customEmotion.trim()}
+                  accessibilityRole="button" accessibilityLabel="Add emotion">
                   <Text style={s.customAddBtnText}>Add</Text>
                 </TouchableOpacity>
               </View>
@@ -350,10 +360,12 @@ export default function MoodEnergyTracker({
               />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => { setShowForm(false); setEditingLogId(null); }}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setShowForm(false); setEditingLogId(null); }}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel={editingLogId ? 'Save changes' : 'Save check-in'}>
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingLogId ? 'Save Changes' : 'Save Check-In'}</Text>}
                 </TouchableOpacity>
               </View>

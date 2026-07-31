@@ -275,6 +275,7 @@ export default function VillageTab() {
             placeholderTextColor={c.textMuted}
             value={search}
             onChangeText={setSearch}
+            accessibilityLabel="Search patches"
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="Clear search" accessibilityRole="button">
@@ -300,7 +301,8 @@ export default function VillageTab() {
         <Modal visible={showRequestModal} animationType="slide" presentationStyle="pageSheet">
           <SafeAreaView style={s.modalSafe}>
             <View style={s.modalHeader}>
-              <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowRequestModal(false)}>
+              <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowRequestModal(false)}
+                accessibilityRole="button" accessibilityLabel="Close">
                 <Text style={s.modalCloseText}>✕</Text>
               </TouchableOpacity>
               <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>Request a Patch</Text>
@@ -320,6 +322,7 @@ export default function VillageTab() {
                   <TouchableOpacity
                     style={[s.joinBtn, { marginTop: 32, paddingHorizontal: 28, paddingVertical: 12 }]}
                     onPress={() => setShowRequestModal(false)}
+                    accessibilityRole="button" accessibilityLabel="Done"
                   >
                     <Text style={s.joinBtnText}>Done</Text>
                   </TouchableOpacity>
@@ -339,6 +342,7 @@ export default function VillageTab() {
                     multiline
                     maxLength={300}
                     textAlignVertical="top"
+                    accessibilityLabel="Describe your community idea"
                   />
                   <Text style={s.requestCharCount}>{requestText.length}/300</Text>
                   <TouchableOpacity
@@ -346,6 +350,7 @@ export default function VillageTab() {
                     onPress={submitVillageRequest}
                     disabled={submittingRequest || !requestText.trim()}
                     activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel="Send request"
                   >
                     {submittingRequest
                       ? <ActivityIndicator color="#fff" size="small" />
@@ -595,7 +600,8 @@ export default function VillageTab() {
       >
         <SafeAreaView style={s.modalSafe}>
           <View style={s.modalHeader}>
-            <TouchableOpacity onPress={closeQuiz} style={s.modalCloseBtn}>
+            <TouchableOpacity onPress={closeQuiz} style={s.modalCloseBtn}
+              accessibilityRole="button" accessibilityLabel="Close quiz">
               <Text style={s.modalCloseText}>✕</Text>
             </TouchableOpacity>
             {!quizComplete && (
@@ -629,11 +635,13 @@ export default function VillageTab() {
               ))}
 
               {suggestions.length > 0 && (
-                <TouchableOpacity style={s.joinAllBtn} onPress={joinAllSuggested}>
+                <TouchableOpacity style={s.joinAllBtn} onPress={joinAllSuggested}
+                  accessibilityRole="button" accessibilityLabel="Join all suggested patches and continue">
                   <Text style={s.joinAllBtnText}>Join All & Continue</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={s.skipBtn} onPress={closeQuiz}>
+              <TouchableOpacity style={s.skipBtn} onPress={closeQuiz}
+                accessibilityRole="button" accessibilityLabel={suggestions.length > 0 ? 'Skip for now' : 'Done'}>
                 <Text style={s.skipBtnText}>{suggestions.length > 0 ? 'Skip for now' : 'Done'}</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -669,6 +677,7 @@ export default function VillageTab() {
                         style={[s.optionBtn, selected && s.optionBtnSelected]}
                         onPress={() => toggleAnswer(currentQ.id, option, currentQ.multi)}
                         activeOpacity={0.75}
+                        accessibilityRole="button" accessibilityLabel={option}
                       >
                         <View style={[s.optionDot, selected && s.optionDotSelected]} />
                         <Text style={[s.optionText, selected && s.optionTextSelected]}>{option}</Text>
@@ -679,7 +688,8 @@ export default function VillageTab() {
                     <TouchableOpacity
                       style={lp.requestBtn}
                       activeOpacity={0.75}
-                      onPress={() => Alert.alert('Coming soon', 'Patch request submissions will be available soon!')}
+                      onPress={() => setShowRequestModal(true)}
+                      accessibilityRole="button" accessibilityLabel="Don't see yours? Request to add a patch"
                     >
                       <Text style={lp.requestBtnText}>✋ Don't see yours? Request to add a patch</Text>
                     </TouchableOpacity>
@@ -689,12 +699,14 @@ export default function VillageTab() {
 
               <View style={s.quizNavRow}>
                 {quizStep > 0 && (
-                  <TouchableOpacity style={s.backBtn} onPress={() => setQuizStep(q => getPrevVisibleStep(q, quizAnswers))}>
+                  <TouchableOpacity style={s.backBtn} onPress={() => setQuizStep(q => getPrevVisibleStep(q, quizAnswers))}
+                    accessibilityRole="button" accessibilityLabel="Back">
                     <Text style={s.backBtnText}>← Back</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
                   style={[s.nextBtn, !canAdvance && s.nextBtnDisabled]}
+                  accessibilityRole="button" accessibilityLabel={isLastStep ? 'See my patches' : 'Next'}
                   onPress={() => {
                     if (isLocationStep) {
                       const loc: Record<string, string[]> = {};

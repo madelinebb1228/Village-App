@@ -172,7 +172,8 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
             )}
           </View>
         </View>
-        <TouchableOpacity style={s.colorGuideBtn} onPress={() => setShowColorGuide(true)} activeOpacity={0.8}>
+        <TouchableOpacity style={s.colorGuideBtn} onPress={() => setShowColorGuide(true)} activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Open poop color guide">
           <Text style={s.colorGuideBtnText}>🎨 Color guide</Text>
         </TouchableOpacity>
       </View>
@@ -188,7 +189,8 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
       )}
 
       {/* ── Reminder settings toggle ── */}
-      <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide reminder settings' : 'Show reminder settings'}>
         <View style={s.settingsToggleLeft}>
           <Text style={s.settingsToggleIcon}>🔔</Text>
           <Text style={s.settingsToggleLabel}>
@@ -204,6 +206,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
             style={[s.toggle, settings.enabled && { backgroundColor: c.trackDiaper }]}
             onPress={() => applySettings({ ...settings, enabled: !settings.enabled })}
             activeOpacity={0.8}
+            accessibilityRole="switch" accessibilityLabel="Diaper change reminders" accessibilityState={{ checked: settings.enabled }}
           >
             <View style={[s.toggleThumb, settings.enabled && { transform: [{ translateX: 20 }] }]} />
           </TouchableOpacity>
@@ -232,6 +235,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
                     else setIntervalHours(opt.h);
                   }}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={opt.label}
                 >
                   <Text style={[s.chipText, active && { color: c.sage, fontWeight: '700' }]}>{opt.label}</Text>
                 </TouchableOpacity>
@@ -251,6 +255,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
                 onEndEditing={commitCustomInterval}
                 returnKeyType="done"
                 onSubmitEditing={commitCustomInterval}
+                accessibilityLabel="Hours between changes"
               />
               <Text style={s.customUnit}>hours</Text>
             </View>
@@ -266,6 +271,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
                   style={[s.chip, active && { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
                   onPress={() => setQuiet(p.quietStart, p.quietEnd)}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={p.label}
                 >
                   <Text style={[s.chipText, active && { color: c.lavender, fontWeight: '700' }]}>{p.label}</Text>
                 </TouchableOpacity>
@@ -287,7 +293,8 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
       {/* ══ Color guide modal ═════════════════════════════════════════════════ */}
       <Modal visible={showColorGuide} transparent animationType="slide" onRequestClose={() => setShowColorGuide(false)}>
         <View style={s.modalOverlay}>
-          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setShowColorGuide(false)} />
+          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setShowColorGuide(false)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={s.modalSheet}>
             <View style={s.modalHandle} />
             <Text style={s.modalTitle}>🎨 Poop Color Guide</Text>
@@ -306,7 +313,8 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
                 This is general guidance only. When in doubt, contact your pediatrician.
               </Text>
             </ScrollView>
-            <TouchableOpacity style={s.closeBtn} onPress={() => setShowColorGuide(false)} activeOpacity={0.8}>
+            <TouchableOpacity style={s.closeBtn} onPress={() => setShowColorGuide(false)} activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Got it">
               <Text style={s.closeBtnText}>Got it</Text>
             </TouchableOpacity>
           </View>

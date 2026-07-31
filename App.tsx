@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
 import { AppContext } from './lib/AppContext';
 import { SubscriptionProvider } from './lib/subscriptionContext';
+import { BabyProvider } from './lib/babyContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import AuthScreen from './screens/Auth';
@@ -290,6 +291,7 @@ export default function App() {
       <OneHandedProvider>
       <SyncProvider>
       <SubscriptionProvider>
+      <BabyProvider>
       <OfflineBanner />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -303,6 +305,7 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
       <OneHandedIndicator />
+      </BabyProvider>
       </SubscriptionProvider>
       </SyncProvider>
       </OneHandedProvider>

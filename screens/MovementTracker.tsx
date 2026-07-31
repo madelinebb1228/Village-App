@@ -148,7 +148,8 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Movement section' : 'Expand Movement section'}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🏃</Text>
           <View>
@@ -202,10 +203,12 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 {l.duration_minutes ? <Text style={s.entryDur}>{l.duration_minutes} min</Text> : null}
                 {l.intensity ? <Text style={s.entryIntensity}>{INTENSITY.find(i => i.value === l.intensity)?.label}</Text> : null}
                 <Text style={s.entryTime}>{fmtTime(l.logged_at)}</Text>
-                <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="Edit activity">
                   <Text style={s.entryAction}>✎</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="Delete activity">
                   <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -213,7 +216,8 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
           })}
 
           {!adding ? (
-            <TouchableOpacity style={s.addBtn} onPress={() => openEditor()}>
+            <TouchableOpacity style={s.addBtn} onPress={() => openEditor()}
+              accessibilityRole="button" accessibilityLabel="Log activity">
               <Text style={s.addBtnText}>+ Log Activity</Text>
             </TouchableOpacity>
           ) : (
@@ -225,6 +229,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                     key={a.value}
                     style={[s.activityBtn, activity === a.value && s.activityBtnActive]}
                     onPress={() => setActivity(a.value)}
+                    accessibilityRole="button" accessibilityLabel={a.label}
                   >
                     <Text style={s.activityEmoji}>{a.emoji}</Text>
                     <Text style={[s.activityLabel, activity === a.value && { color: c.sage, fontWeight: '700' }]}>{a.label}</Text>
@@ -241,6 +246,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 value={duration}
                 onChangeText={setDuration}
                 maxLength={3}
+                accessibilityLabel="Duration in minutes"
               />
 
               <Text style={s.formLabel}>Intensity</Text>
@@ -250,6 +256,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                     key={i.value}
                     style={[s.chip, intensity === i.value && s.chipActive]}
                     onPress={() => setIntensity(i.value)}
+                    accessibilityRole="button" accessibilityLabel={i.label}
                   >
                     <Text style={[s.chipText, intensity === i.value && { color: c.sage, fontWeight: '700' }]}>{i.label}</Text>
                   </TouchableOpacity>
@@ -261,10 +268,12 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 placeholderTextColor={c.textMuted} value={notes} onChangeText={setNotes} maxLength={200} />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel={editingId ? 'Save changes' : 'Log it'}>
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingId ? 'Save Changes' : 'Log It 💪'}</Text>}
                 </TouchableOpacity>
               </View>

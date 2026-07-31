@@ -166,6 +166,7 @@ export default function ContentBlockedModal({
                   marginTop: 4, backgroundColor: c.primary,
                   borderRadius: 20, paddingHorizontal: 28, paddingVertical: 12,
                 }}
+                accessibilityRole="button" accessibilityLabel="Done"
               >
                 <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Done</Text>
               </TouchableOpacity>
@@ -187,6 +188,7 @@ export default function ContentBlockedModal({
                 placeholder="Explain why you believe this content is appropriate..."
                 placeholderTextColor={c.textMuted}
                 multiline
+                accessibilityLabel="Explain why you believe this content is appropriate"
                 style={{
                   backgroundColor: c.card,
                   borderRadius: 12,
@@ -209,13 +211,15 @@ export default function ContentBlockedModal({
                   alignItems: 'center',
                   opacity: !disputeText.trim() || submitting || logging ? 0.4 : 1,
                 }}
+                accessibilityRole="button" accessibilityLabel="Submit dispute"
               >
                 {submitting
                   ? <ActivityIndicator color="#fff" />
                   : <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Submit Dispute</Text>
                 }
               </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={{ paddingVertical: 12, alignItems: 'center' }}>
+              <TouchableOpacity onPress={onClose} style={{ paddingVertical: 12, alignItems: 'center' }}
+                accessibilityRole="button" accessibilityLabel="Dismiss">
                 <Text style={{ fontSize: 15, color: c.textMuted, fontWeight: '600' }}>Dismiss</Text>
               </TouchableOpacity>
             </View>

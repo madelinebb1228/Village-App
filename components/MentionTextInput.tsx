@@ -120,6 +120,7 @@ export default function MentionTextInput({
             key={user.id}
             onPress={() => selectUser(user)}
             activeOpacity={0.75}
+            accessibilityRole="button" accessibilityLabel={`Mention ${user.display_name || user.username}`}
             style={{
               flexDirection: 'row',
               alignItems: 'center',

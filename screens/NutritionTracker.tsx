@@ -596,6 +596,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             <TouchableOpacity
               onPress={() => setupStep > 0 ? setSetupStep(s => s - 1) : setShowSetup(false)}
               style={{ width: 40 }}
+              accessibilityRole="button" accessibilityLabel={setupStep > 0 ? 'Back' : 'Close'}
             >
               <Text style={{ fontSize: 20, color: c.textMuted }}>{setupStep > 0 ? '‹' : '✕'}</Text>
             </TouchableOpacity>
@@ -622,7 +623,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary }}>Height</Text>
-                  <TouchableOpacity onPress={toggleHeightUnit}>
+                  <TouchableOpacity onPress={toggleHeightUnit}
+                    accessibilityRole="button" accessibilityLabel={`Switch height unit to ${heightUnit === 'ft' ? 'cm' : 'ft/in'}`}>
                     <Text style={{ fontSize: 12, color: c.primary, fontWeight: '700' }}>
                       Switch to {heightUnit === 'ft' ? 'cm' : 'ft/in'}
                     </Text>
@@ -632,33 +634,39 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
                     <View style={{ flex: 1 }}>
                       <TextInput style={inputStyle(c)} placeholder="5" placeholderTextColor={c.textMuted}
-                        value={heightFt} onChangeText={setHeightFt} keyboardType="numeric" maxLength={1} />
+                        value={heightFt} onChangeText={setHeightFt} keyboardType="numeric" maxLength={1}
+                        accessibilityLabel="Height feet" />
                       <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>feet</Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <TextInput style={inputStyle(c)} placeholder="4" placeholderTextColor={c.textMuted}
-                        value={heightIn} onChangeText={setHeightIn} keyboardType="numeric" maxLength={2} />
+                        value={heightIn} onChangeText={setHeightIn} keyboardType="numeric" maxLength={2}
+                        accessibilityLabel="Height inches" />
                       <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>inches</Text>
                     </View>
                   </View>
                 ) : (
                   <View style={{ marginBottom: 20 }}>
                     <TextInput style={inputStyle(c)} placeholder="e.g. 163" placeholderTextColor={c.textMuted}
-                      value={heightCm} onChangeText={setHeightCm} keyboardType="numeric" maxLength={3} />
+                      value={heightCm} onChangeText={setHeightCm} keyboardType="numeric" maxLength={3}
+                      accessibilityLabel="Height in centimeters" />
                     <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>cm</Text>
                   </View>
                 )}
 
                 <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Current Weight (lbs)</Text>
                 <TextInput style={[inputStyle(c), { marginBottom: 20 }]} placeholder="e.g. 145"
-                  placeholderTextColor={c.textMuted} value={weight} onChangeText={setWeight} keyboardType="decimal-pad" />
+                  placeholderTextColor={c.textMuted} value={weight} onChangeText={setWeight} keyboardType="decimal-pad"
+                  accessibilityLabel="Current weight in pounds" />
                 <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Age</Text>
                 <TextInput style={[inputStyle(c), { marginBottom: 32 }]} placeholder="e.g. 28"
-                  placeholderTextColor={c.textMuted} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={3} />
+                  placeholderTextColor={c.textMuted} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={3}
+                  accessibilityLabel="Age" />
                 <TouchableOpacity
                   style={[primaryBtn(c), { opacity: (currentHeightCm() && weight && age) ? 1 : 0.45 }]}
                   disabled={!currentHeightCm() || !weight || !age}
                   onPress={() => setSetupStep(1)}
+                  accessibilityRole="button" accessibilityLabel="Continue"
                 >
                   <Text style={primaryBtnText}>Continue</Text>
                 </TouchableOpacity>
@@ -674,6 +682,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 </Text>
                 {ACTIVITY_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt.key} onPress={() => setActivity(opt.key)} activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel={opt.label}
                     style={[optionCard(c), activity === opt.key && optionCardSelected(c), { marginBottom: 12 }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>{opt.label}</Text>
@@ -685,6 +694,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 <TouchableOpacity
                   style={[primaryBtn(c), { marginTop: 20, opacity: activity ? 1 : 0.45 }]}
                   disabled={!activity} onPress={() => setSetupStep(2)}
+                  accessibilityRole="button" accessibilityLabel="Continue"
                 >
                   <Text style={primaryBtnText}>Continue</Text>
                 </TouchableOpacity>
@@ -700,6 +710,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 </Text>
                 {BF_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt.key} onPress={() => setBfType(opt.key)} activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel={opt.label}
                     style={[optionCard(c), bfType === opt.key && optionCardSelected(c), { marginBottom: 12 }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>{opt.label}</Text>
@@ -711,6 +722,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 <TouchableOpacity
                   style={[primaryBtn(c), { marginTop: 20, opacity: bfType ? 1 : 0.45 }]}
                   disabled={!bfType} onPress={() => setSetupStep(3)}
+                  accessibilityRole="button" accessibilityLabel="Continue"
                 >
                   <Text style={primaryBtnText}>Continue</Text>
                 </TouchableOpacity>
@@ -726,6 +738,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 </Text>
                 {GOAL_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt.key} onPress={() => setGoalChoice(opt.key)} activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel={opt.label}
                     style={[optionCard(c), goalChoice === opt.key && optionCardSelected(c), { marginBottom: 12 }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>{opt.label}</Text>
@@ -765,6 +778,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   style={[primaryBtn(c), { marginTop: 16, opacity: goalChoice ? 1 : 0.45 }]}
                   disabled={!goalChoice || saving}
                   onPress={saveProfile}
+                  accessibilityRole="button" accessibilityLabel="Save goals"
                 >
                   {saving
                     ? <ActivityIndicator color="#fff" />
@@ -793,7 +807,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
           Track daily calories and water with goals personalized for breastfeeding parents.
         </Text>
-        <TouchableOpacity style={primaryBtn(c)} onPress={openSetup}>
+        <TouchableOpacity style={primaryBtn(c)} onPress={openSetup}
+          accessibilityRole="button" accessibilityLabel="Set up my goals">
           <Text style={[primaryBtnText, { paddingHorizontal: 24 }]}>Set Up My Goals</Text>
         </TouchableOpacity>
         {renderSetup()}
@@ -816,11 +831,13 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         }}
         onPress={toggleCollapsed}
         activeOpacity={0.75}
+        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Nutrition and Hydration' : 'Collapse Nutrition and Hydration'}
       >
         <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>💧 Nutrition & Hydration</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {!collapsed && (
-            <TouchableOpacity onPress={e => { e.stopPropagation?.(); openSetup(); }}>
+            <TouchableOpacity onPress={e => { e.stopPropagation?.(); openSetup(); }}
+              accessibilityRole="button" accessibilityLabel="Edit goals">
               <Text style={{ fontSize: 13, color: c.blue, fontWeight: '600' }}>Edit goals ›</Text>
             </TouchableOpacity>
           )}
@@ -833,13 +850,16 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       {!collapsed && (<>
       {/* ── Date nav ── */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={goPrevDay} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={goPrevDay} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel="Previous day">
           <Text style={{ fontSize: 20, color: c.textSecondary }}>‹</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={goToday} disabled={isToday}>
+        <TouchableOpacity onPress={goToday} disabled={isToday}
+          accessibilityRole="button" accessibilityLabel="Back to today">
           <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>{formatDateLabel(selectedDate)}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={goNextDay} disabled={isToday} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={goNextDay} disabled={isToday} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel="Next day">
           <Text style={{ fontSize: 20, color: isToday ? c.separator : c.textSecondary }}>›</Text>
         </TouchableOpacity>
       </View>
@@ -906,10 +926,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   {typeCal > 0 && (
                     <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '600' }}>{typeCal} kcal</Text>
                   )}
-                  <TouchableOpacity onPress={() => openScanner(type)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <TouchableOpacity onPress={() => openScanner(type)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityRole="button" accessibilityLabel={`Scan barcode for ${type}`}>
                     <Text style={{ fontSize: 14 }}>📷</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => openAddMeal(type)}>
+                  <TouchableOpacity onPress={() => openAddMeal(type)}
+                    accessibilityRole="button" accessibilityLabel={`Add ${type}`}>
                     <Text style={{ fontSize: 13, color: c.primary, fontWeight: '700' }}>+ Add</Text>
                   </TouchableOpacity>
                 </View>
@@ -919,6 +941,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   key={entry.id}
                   onPress={() => openEditMeal(entry)}
                   activeOpacity={0.7}
+                  accessibilityRole="button" accessibilityLabel={`Edit ${entry.description ?? type}`}
                   style={{
                     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                     backgroundColor: c.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 4,
@@ -929,7 +952,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Text style={{ fontSize: 12, color: c.textMuted }}>{entry.calories} kcal</Text>
-                    <TouchableOpacity onPress={() => deleteLog(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <TouchableOpacity onPress={() => deleteLog(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityRole="button" accessibilityLabel={`Delete ${entry.description ?? type}`}>
                       <Text style={{ fontSize: 14, color: c.textMuted }}>✕</Text>
                     </TouchableOpacity>
                   </View>
@@ -946,7 +970,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           <View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>💧 Water</Text>
-              <TouchableOpacity onPress={openWaterGoalEdit} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <TouchableOpacity onPress={openWaterGoalEdit} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityRole="button" accessibilityLabel="Edit water goal">
                 <Text style={{ fontSize: 12 }}>✏️</Text>
               </TouchableOpacity>
             </View>
@@ -973,18 +998,21 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               value={waterGoalInput}
               onChangeText={setWaterGoalInput}
               keyboardType="decimal-pad"
+              accessibilityLabel="Water goal in cups"
             />
             <TouchableOpacity
               style={[waterBtn(c), { paddingHorizontal: 16, paddingVertical: 10, opacity: savingWaterGoal ? 0.6 : 1 }]}
               disabled={savingWaterGoal}
               onPress={saveWaterGoal}
+              accessibilityRole="button" accessibilityLabel="Save water goal"
             >
               {savingWaterGoal
                 ? <ActivityIndicator color={c.blue} size="small" />
                 : <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>Save</Text>
               }
             </TouchableOpacity>
-            <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 10 }} onPress={() => setEditingWaterGoal(false)}>
+            <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 10 }} onPress={() => setEditingWaterGoal(false)}
+              accessibilityRole="button" accessibilityLabel="Cancel">
               <Text style={{ fontSize: 14, color: c.textMuted }}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -1004,15 +1032,18 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
 
         {/* Quick-add buttons */}
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(8)} disabled={addingWater}>
+          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(8)} disabled={addingWater}
+            accessibilityRole="button" accessibilityLabel="Add 1 cup of water, 8 ounces">
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue, marginBottom: 2 }}>+ 1 cup</Text>
             <Text style={{ fontSize: 11, color: c.textMuted }}>8 oz</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(4)} disabled={addingWater}>
+          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(4)} disabled={addingWater}
+            accessibilityRole="button" accessibilityLabel="Add half cup of water, 4 ounces">
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue, marginBottom: 2 }}>+ ½ cup</Text>
             <Text style={{ fontSize: 11, color: c.textMuted }}>4 oz</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(16)} disabled={addingWater}>
+          <TouchableOpacity style={[waterBtn(c), { flex: 1 }]} onPress={() => addWater(16)} disabled={addingWater}
+            accessibilityRole="button" accessibilityLabel="Add large cup of water, 16 ounces">
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue, marginBottom: 2 }}>+ large</Text>
             <Text style={{ fontSize: 11, color: c.textMuted }}>16 oz</Text>
           </TouchableOpacity>
@@ -1032,6 +1063,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             onChangeText={setCustomWater}
             keyboardType="decimal-pad"
             returnKeyType="done"
+            accessibilityLabel="Custom water amount in ounces"
             onSubmitEditing={() => {
               const oz = parseFloat(customWater);
               if (!isNaN(oz) && oz > 0) { addWater(oz); setCustomWater(''); }
@@ -1043,6 +1075,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               opacity: customWater.trim() && !isNaN(parseFloat(customWater)) ? 1 : 0.4,
             }]}
             disabled={addingWater || !customWater.trim() || isNaN(parseFloat(customWater))}
+            accessibilityRole="button" accessibilityLabel="Add custom water amount"
             onPress={() => {
               const oz = parseFloat(customWater);
               if (!isNaN(oz) && oz > 0) { addWater(oz); setCustomWater(''); }
@@ -1063,7 +1096,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 <Text style={{ fontSize: 12, color: c.textSecondary }}>
                   {entry.water_oz} oz · {formatTime(entry.created_at)}
                 </Text>
-                <TouchableOpacity onPress={() => deleteLog(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={() => deleteLog(entry.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="Delete water entry">
                   <Text style={{ fontSize: 13, color: c.textMuted }}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -1080,7 +1114,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             paddingHorizontal: 20, paddingVertical: 16,
             borderBottomWidth: 1, borderBottomColor: c.separator,
           }}>
-            <TouchableOpacity onPress={() => { setShowMealModal(false); setEditingLog(null); }} style={{ width: 40 }}>
+            <TouchableOpacity onPress={() => { setShowMealModal(false); setEditingLog(null); }} style={{ width: 40 }}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 17, fontWeight: '700', color: c.textPrimary }}>
@@ -1094,6 +1129,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
               {MEAL_TYPES.map(type => (
                 <TouchableOpacity key={type} onPress={() => setMealType(type)}
+                  accessibilityRole="button" accessibilityLabel={type}
                   style={{
                     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
                     backgroundColor: mealType === type ? c.primary : c.card,
@@ -1118,6 +1154,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 }}
                 onPress={() => { setShowMealModal(false); openScanner(mealType); }}
                 activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel="Scan a barcode"
               >
                 <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>📷 Scan a barcode</Text>
               </TouchableOpacity>
@@ -1131,6 +1168,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                     <TouchableOpacity
                       key={i}
                       onPress={() => applyRecentMeal(m)}
+                      accessibilityRole="button" accessibilityLabel={`Use recent meal: ${m.description}`}
                       style={{
                         paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
                         backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
@@ -1148,28 +1186,28 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>What did you eat?</Text>
             <TextInput style={[inputStyle(c), { marginBottom: 20 }]}
               placeholder="e.g. Oatmeal with berries" placeholderTextColor={c.textMuted}
-              value={mealDesc} onChangeText={setMealDesc} />
+              value={mealDesc} onChangeText={setMealDesc} accessibilityLabel="What did you eat" />
 
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Calories (kcal)</Text>
             <TextInput style={[inputStyle(c), { marginBottom: 20 }]}
               placeholder="e.g. 350" placeholderTextColor={c.textMuted}
-              value={mealCal} onChangeText={setMealCal} keyboardType="numeric" />
+              value={mealCal} onChangeText={setMealCal} keyboardType="numeric" accessibilityLabel="Calories" />
 
             <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Macros (optional)</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 32 }}>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealProtein} onChangeText={setMealProtein} keyboardType="decimal-pad" />
+                  value={mealProtein} onChangeText={setMealProtein} keyboardType="decimal-pad" accessibilityLabel="Protein in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>protein g</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealCarbs} onChangeText={setMealCarbs} keyboardType="decimal-pad" />
+                  value={mealCarbs} onChangeText={setMealCarbs} keyboardType="decimal-pad" accessibilityLabel="Carbs in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>carbs g</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealFat} onChangeText={setMealFat} keyboardType="decimal-pad" />
+                  value={mealFat} onChangeText={setMealFat} keyboardType="decimal-pad" accessibilityLabel="Fat in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>fat g</Text>
               </View>
             </View>
@@ -1178,6 +1216,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               style={[primaryBtn(c), { opacity: mealCal.trim() ? 1 : 0.45 }]}
               disabled={addingMeal || !mealCal.trim()}
               onPress={saveMeal}
+              accessibilityRole="button" accessibilityLabel={editingLog ? 'Save changes' : 'Save meal'}
             >
               {addingMeal
                 ? <ActivityIndicator color="#fff" />
@@ -1212,6 +1251,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               }}
               onPress={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
               activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Close scanner"
             >
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>✕ Close</Text>
             </TouchableOpacity>
@@ -1292,6 +1332,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                       keyboardType="decimal-pad"
                       placeholder={scanMode === 'serving' ? '1' : '100'}
                       placeholderTextColor="#6B7280"
+                      accessibilityLabel={scanMode === 'serving' ? 'Servings eaten' : 'Grams eaten'}
                     />
                   </View>
                 )}
@@ -1311,6 +1352,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                       style={{ backgroundColor: c.blue, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
                       onPress={applyScannedProduct}
                       activeOpacity={0.85}
+                      accessibilityRole="button" accessibilityLabel="Use this product"
                     >
                       <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Use this product →</Text>
                     </TouchableOpacity>
@@ -1319,6 +1361,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                     style={{ alignItems: 'center', paddingVertical: 8 }}
                     onPress={() => { setScannerLocked(false); setScannedProduct(null); }}
                     activeOpacity={0.7}
+                    accessibilityRole="button" accessibilityLabel="Scan again"
                   >
                     <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>
                       {scanMode ? 'Scan again' : 'Scan again / enter manually'}

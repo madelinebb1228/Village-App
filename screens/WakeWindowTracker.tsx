@@ -181,6 +181,7 @@ export default function WakeWindowTracker({ babyBirthDate }: { babyBirthDate: st
           style={[s.awakeBtn, { backgroundColor: c.cardSage, borderColor: c.sage }]}
           onPress={startAwake}
           activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Baby is awake"
         >
           <Text style={[s.awakeBtnLabel, { color: c.sage }]}>
             <Image source={require('../assets/sun-icon.png')} style={s.sunIcon} />{'  Baby is Awake'}
@@ -211,6 +212,7 @@ export default function WakeWindowTracker({ babyBirthDate }: { babyBirthDate: st
             style={[s.napBtn, { borderColor: c.lavender }]}
             onPress={stopAwake}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Baby is napping"
           >
             <Text style={[s.napBtnText, { color: c.lavender }]}>
               <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={s.moonIcon} />{'  Baby is Napping'}

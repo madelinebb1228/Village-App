@@ -41,6 +41,7 @@ export default function TipOfTheDayCard({ onPress }: { onPress: (resourceId: str
       style={s.card}
       activeOpacity={0.85}
       onPress={() => onPress(tip.resourceId)}
+      accessibilityRole="button" accessibilityLabel={`Tip of the day: ${tip.title}`}
     >
       <View style={s.headerRow}>
         <Text style={s.emoji}>{tip.emoji}</Text>

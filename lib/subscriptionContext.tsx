@@ -9,6 +9,10 @@ const RC_API_KEY = 'test_aKoxsimzJRFcHMqvzVjlVzGjkZX';
 const ENTITLEMENT = 'premium';
 const FREE_PICK_KEY = 'village_free_tracker_pick';
 
+function entitlementCacheKey(userId: string) {
+  return `subscription_cache_${userId}`;
+}
+
 // Developer accounts always have premium
 const DEV_EMAILS = ['madelinebb1228@gmail.com'];
 
@@ -42,9 +46,11 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const init = async () => {
+      let user: { id: string; email?: string | null } | null = null;
       try {
         if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data } = await supabase.auth.getUser();
+        user = data.user;
         if (user?.email && DEV_EMAILS.includes(user.email)) {
           setIsSubscribed(true);
           setIsLoading(false);
@@ -52,17 +58,31 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         }
         Purchases.configure({ apiKey: RC_API_KEY, appUserID: user?.id ?? null });
         Purchases.addCustomerInfoUpdateListener((info: any) => {
-          setIsSubscribed(!!info.entitlements.active[ENTITLEMENT]);
+          const subscribed = !!info.entitlements.active[ENTITLEMENT];
+          setIsSubscribed(subscribed);
+          if (user?.id) AsyncStorage.setItem(entitlementCacheKey(user.id), JSON.stringify(subscribed)).catch(() => {});
         });
       } catch (e) {
         console.warn('[Subscription] init error:', e);
       }
 
+      // A subscribed user shouldn't lose premium access just because a
+      // transient network error hit the entitlement check at launch — fall
+      // back to the last-known status instead of defaulting to unsubscribed.
+      if (user?.id) {
+        try {
+          const cached = await AsyncStorage.getItem(entitlementCacheKey(user.id));
+          if (cached !== null) setIsSubscribed(JSON.parse(cached));
+        } catch {}
+      }
+
       try {
         const info = await Purchases.getCustomerInfo();
-        setIsSubscribed(!!info.entitlements.active[ENTITLEMENT]);
+        const subscribed = !!info.entitlements.active[ENTITLEMENT];
+        setIsSubscribed(subscribed);
+        if (user?.id) await AsyncStorage.setItem(entitlementCacheKey(user.id), JSON.stringify(subscribed));
       } catch (e) {
-        console.warn('[Subscription] initial check error:', e);
+        console.warn('[Subscription] initial check error, using cached entitlement:', e);
       } finally {
         setIsLoading(false);
       }

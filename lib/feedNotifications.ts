@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { ensureNotificationPermission } from './notifications';
+import { adjustForQuietHours } from './reminderUtils';
 
 export interface FeedReminderSettings {
   enabled: boolean;
@@ -61,19 +62,6 @@ function buildMessage(babyName: string, intervalHours: number): { title: string;
     },
   ];
   return variants[Math.floor(Math.random() * variants.length)];
-}
-
-function adjustForQuietHours(fireAt: Date, quietStart: number, quietEnd: number): Date {
-  const h = fireAt.getHours();
-  const inQuiet =
-    quietStart > quietEnd
-      ? h >= quietStart || h < quietEnd
-      : h >= quietStart && h < quietEnd;
-  if (!inQuiet) return fireAt;
-  const adjusted = new Date(fireAt);
-  adjusted.setHours(quietEnd, 0, 0, 0);
-  if (adjusted <= fireAt) adjusted.setDate(adjusted.getDate() + 1);
-  return adjusted;
 }
 
 const NOTIF_ID = (babyId: string) => `feed-reminder-${babyId}`;

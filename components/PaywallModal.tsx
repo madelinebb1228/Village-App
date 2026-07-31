@@ -52,7 +52,8 @@ export default function PaywallModal({ visible, onClose, onSubscribe, onRestore 
       onRequestClose={onClose}
     >
       <View style={s.container}>
-        <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button" accessibilityLabel="Close">
           <Text style={s.closeBtnText}>✕</Text>
         </TouchableOpacity>
 
@@ -84,6 +85,7 @@ export default function PaywallModal({ visible, onClose, onSubscribe, onRestore 
             onPress={handleSubscribe}
             disabled={subscribing || restoring}
             activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel="Start Premium, $5.99 per month"
           >
             {subscribing
               ? <ActivityIndicator color="#fff" />
@@ -96,6 +98,7 @@ export default function PaywallModal({ visible, onClose, onSubscribe, onRestore 
             onPress={handleRestore}
             disabled={subscribing || restoring}
             activeOpacity={0.7}
+            accessibilityRole="button" accessibilityLabel="Restore purchase"
           >
             {restoring
               ? <ActivityIndicator color={c.textMuted} size="small" />

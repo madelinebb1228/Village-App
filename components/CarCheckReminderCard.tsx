@@ -124,6 +124,7 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
         style={s.headerRow}
         onPress={() => setShowSettings(p => !p)}
         activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide car check settings' : 'Show car check settings'}
       >
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🚗</Text>
@@ -167,6 +168,7 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
                     style={[s.toggle, settings.enabled && { backgroundColor: c.honey }]}
                     onPress={() => (settings.enabled ? turnOff() : turnOn())}
                     activeOpacity={0.8}
+                    accessibilityRole="switch" accessibilityLabel="Remind me to check the back seat" accessibilityState={{ checked: settings.enabled }}
                   >
                     <View style={[s.toggleThumb, settings.enabled && { transform: [{ translateX: 20 }] }]} />
                   </TouchableOpacity>
@@ -185,6 +187,7 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
                       style={[s.chip, active && { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
                       onPress={() => setQuiet(p.quietStart, p.quietEnd)}
                       activeOpacity={0.8}
+                      accessibilityRole="button" accessibilityLabel={p.label}
                     >
                       <Text style={[s.chipText, active && { color: c.lavender, fontWeight: '700' }]}>{p.label}</Text>
                     </TouchableOpacity>
@@ -199,7 +202,8 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
       {/* ══ Background-location explainer, shown before the OS "Always" prompt ══ */}
       <Modal visible={showBgModal} transparent animationType="fade" onRequestClose={() => setShowBgModal(false)}>
         <View style={s.modalOverlay}>
-          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setShowBgModal(false)} />
+          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setShowBgModal(false)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={s.modalSheet}>
             <View style={s.modalHandle} />
             <Text style={s.modalTitle}>One more permission</Text>
@@ -208,10 +212,12 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
               to allow location "Always." This app only uses it to watch your speed and detect stops —
               it doesn't track or store where you go.
             </Text>
-            <TouchableOpacity style={s.modalConfirmBtn} onPress={confirmBackgroundPermission} activeOpacity={0.8}>
+            <TouchableOpacity style={s.modalConfirmBtn} onPress={confirmBackgroundPermission} activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Continue">
               <Text style={s.modalConfirmText}>Continue</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.modalCancelBtn} onPress={() => setShowBgModal(false)} activeOpacity={0.8}>
+            <TouchableOpacity style={s.modalCancelBtn} onPress={() => setShowBgModal(false)} activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Not now">
               <Text style={s.modalCancelText}>Not now</Text>
             </TouchableOpacity>
           </View>

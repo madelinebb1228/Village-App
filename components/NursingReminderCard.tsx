@@ -126,7 +126,8 @@ export default function NursingReminderCard({ userId, babyId, babyName }: Props)
         </View>
       </View>
 
-      <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide reminder settings' : 'Show reminder settings'}>
         <View style={s.settingsToggleLeft}>
           <Text style={s.settingsToggleIcon}>🔔</Text>
           <Text style={s.settingsToggleLabel}>
@@ -141,6 +142,7 @@ export default function NursingReminderCard({ userId, babyId, babyName }: Props)
             style={[s.toggle, settings.enabled && { backgroundColor: c.blush }]}
             onPress={() => applySettings({ ...settings, enabled: !settings.enabled })}
             activeOpacity={0.8}
+            accessibilityRole="switch" accessibilityLabel="Nursing reminders" accessibilityState={{ checked: settings.enabled }}
           >
             <View style={[s.toggleThumb, settings.enabled && { transform: [{ translateX: 20 }] }]} />
           </TouchableOpacity>
@@ -168,6 +170,7 @@ export default function NursingReminderCard({ userId, babyId, babyName }: Props)
                     else setIntervalHours(opt.h);
                   }}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={opt.label}
                 >
                   <Text style={[s.chipText, active && { color: c.blush, fontWeight: '700' }]}>{opt.label}</Text>
                 </TouchableOpacity>
@@ -187,6 +190,7 @@ export default function NursingReminderCard({ userId, babyId, babyName }: Props)
                 onEndEditing={commitCustomInterval}
                 returnKeyType="done"
                 onSubmitEditing={commitCustomInterval}
+                accessibilityLabel="Hours between nursing sessions"
               />
               <Text style={s.customUnit}>hours</Text>
             </View>
@@ -202,6 +206,7 @@ export default function NursingReminderCard({ userId, babyId, babyName }: Props)
                   style={[s.chip, active && { backgroundColor: c.cardBlush, borderColor: c.blush }]}
                   onPress={() => setQuiet(p.quietStart, p.quietEnd)}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={p.label}
                 >
                   <Text style={[s.chipText, active && { color: c.blush, fontWeight: '700' }]}>{p.label}</Text>
                 </TouchableOpacity>

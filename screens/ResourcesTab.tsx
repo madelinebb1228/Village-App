@@ -24,6 +24,9 @@ import Breastfeeding101 from './Breastfeeding101';
 import WaterSafety from './WaterSafety';
 import ChokingSafety from './ChokingSafety';
 import EmergencyContacts from './EmergencyContacts';
+import ArticlesScreen from './ArticlesScreen';
+import TopQuestionsScreen from './TopQuestionsScreen';
+import VideoGuidesScreen from './VideoGuidesScreen';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -38,7 +41,7 @@ const CARD_PALETTE: Array<{ bg: (c: Colors) => string; border: (c: Colors) => st
 const CATEGORIES = ['Safety', 'Feeding', 'Guides & Learning', 'Shopping & Gear', 'Community', 'Local & Reviews'] as const;
 type Category = typeof CATEGORIES[number];
 
-const RESOURCES = [
+export const RESOURCES = [
   { id: 'breastfeeding_101', emoji: '🤱',  title: 'Breastfeeding 101',            description: 'Tips & tricks, common challenges, pumping guide, milk storage, recipes, and supplement reviews', category: 'Feeding' },
   { id: 'shopping_lists',    emoji: '🛍️',  title: 'Smart Shopping Lists',          description: 'Curated packing lists for hospital bags, travel, newborns, and more — or post your own', category: 'Shopping & Gear' },
   { id: 'babynames',         emoji: '🌸',  title: 'Baby Name Finder',              description: 'Browse hundreds of names with meanings, origins, and style tags', category: 'Guides & Learning' },
@@ -80,7 +83,8 @@ function ResourceDetail({
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity onPress={onBack} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button" accessibilityLabel="Back to Resources">
           <Text style={s.backArrow}>←</Text>
           <Text style={s.backLabel}>Resources</Text>
         </TouchableOpacity>
@@ -198,6 +202,18 @@ export default function ResourcesTab({ route }: any) {
     return <EmergencyContacts onBack={() => setSelected(null)} />;
   }
 
+  if (selected === 'articles') {
+    return <ArticlesScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'top100') {
+    return <TopQuestionsScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'videos') {
+    return <VideoGuidesScreen onBack={() => setSelected(null)} />;
+  }
+
   if (selected) {
     return <ResourceDetail id={selected} onBack={() => setSelected(null)} />;
   }
@@ -219,6 +235,7 @@ export default function ResourcesTab({ route }: any) {
           value={query}
           onChangeText={setQuery}
           returnKeyType="search"
+          accessibilityLabel="Search resources"
         />
 
         <View style={s.categoryRowWrap}>
@@ -232,6 +249,7 @@ export default function ResourcesTab({ route }: any) {
             activeOpacity={0.7}
             style={[s.categoryArrow, { opacity: catArrows.left ? 1 : 0.25 }]}
             disabled={!catArrows.left}
+            accessibilityRole="button" accessibilityLabel="Scroll categories left"
           >
             <Text style={s.categoryArrowText}>‹</Text>
           </TouchableOpacity>
@@ -268,6 +286,7 @@ export default function ResourcesTab({ route }: any) {
                     activeOpacity={0.8}
                     style={[s.categoryChip, active && { backgroundColor: c.primary, borderColor: c.primary }]}
                     onPress={() => setActiveCategory(cat)}
+                    accessibilityRole="button" accessibilityLabel={`Filter by ${cat}`}
                   >
                     <Text style={[s.categoryChipText, active && s.categoryChipTextActive]}>{cat}</Text>
                   </TouchableOpacity>
@@ -286,6 +305,7 @@ export default function ResourcesTab({ route }: any) {
             activeOpacity={0.7}
             style={[s.categoryArrow, { opacity: catArrows.right ? 1 : 0.25 }]}
             disabled={!catArrows.right}
+            accessibilityRole="button" accessibilityLabel="Scroll categories right"
           >
             <Text style={s.categoryArrowText}>›</Text>
           </TouchableOpacity>
@@ -306,6 +326,7 @@ export default function ResourcesTab({ route }: any) {
                 activeOpacity={0.8}
                 style={[s.card, { backgroundColor: palette.bg(c), borderColor: palette.border(c) }]}
                 onPress={() => setSelected(r.id)}
+                accessibilityRole="button" accessibilityLabel={r.title}
               >
                 <Text style={s.cardEmoji}>{r.emoji}</Text>
                 <View style={s.cardText}>

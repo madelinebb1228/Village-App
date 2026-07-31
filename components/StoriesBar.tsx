@@ -84,6 +84,7 @@ export default function StoriesBar({ currentUserId, onAddStory, onViewStories, r
             }
           }}
           activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel={myGroup ? 'View your story' : 'Add story'}
         >
           <View style={[s.ring, myGroup ? s.ringOwn : s.ringAdd]}>
             <View style={s.inner}>
@@ -108,6 +109,7 @@ export default function StoriesBar({ currentUserId, onAddStory, onViewStories, r
               onViewStories(allGroups, myGroup ? i + 1 : i);
             }}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel={`View ${group.author}'s story`}
           >
             <View style={[s.ring, allSeen(group) ? s.ringSeen : s.ringUnseen]}>
               <View style={s.inner}>

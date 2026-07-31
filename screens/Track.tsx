@@ -37,6 +37,8 @@ import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
+import LoadErrorBanner from '../components/LoadErrorBanner';
+import { useBaby } from '../lib/babyContext';
 import { useSubscription } from '../lib/subscriptionContext';
 
 const screenWidth = Dimensions.get('window').width;
@@ -219,7 +221,8 @@ function PickerField({ label, options, value, onChange, accent }: {
           return (
             <TouchableOpacity key={opt.value}
               style={[pf.chip, sel && { backgroundColor: accent, borderColor: accent }]}
-              onPress={() => onChange(opt.value)} activeOpacity={0.75}>
+              onPress={() => onChange(opt.value)} activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={opt.label}>
               <Text style={[pf.chipText, sel && pf.chipSel]}>{opt.label}</Text>
             </TouchableOpacity>
           );
@@ -246,7 +249,8 @@ function ColorCirclePicker({ label, options, value, onChange }: {
           return (
             <TouchableOpacity key={opt.value}
               style={[cp.circle, { backgroundColor: opt.color }, sel && cp.selected]}
-              onPress={() => onChange(opt.value)} activeOpacity={0.8}>
+              onPress={() => onChange(opt.value)} activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel={opt.label}>
               {sel && <Text style={cp.check}>✓</Text>}
             </TouchableOpacity>
           );
@@ -270,12 +274,14 @@ function Stepper({ label, value, onChange, min = 0, max = 10, accent }: {
       <Text style={pf.label}>{label}</Text>
       <View style={st.row}>
         <TouchableOpacity style={[st.btn, { borderColor: accent }]}
-          onPress={() => onChange(Math.max(min, value - 1))} activeOpacity={0.7}>
+          onPress={() => onChange(Math.max(min, value - 1))} activeOpacity={0.7}
+          accessibilityRole="button" accessibilityLabel={`Decrease ${label}`}>
           <Text style={[st.btnText, { color: accent }]}>−</Text>
         </TouchableOpacity>
         <Text style={st.val}>{value}</Text>
         <TouchableOpacity style={[st.btn, { borderColor: accent }]}
-          onPress={() => onChange(Math.min(max, value + 1))} activeOpacity={0.7}>
+          onPress={() => onChange(Math.min(max, value + 1))} activeOpacity={0.7}
+          accessibilityRole="button" accessibilityLabel={`Increase ${label}`}>
           <Text style={[st.btnText, { color: accent }]}>+</Text>
         </TouchableOpacity>
       </View>
@@ -297,7 +303,8 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
     <View style={tw.wrap}>
       <View style={tw.header}>
         <Text style={pf.label}>Duration</Text>
-        <TouchableOpacity onPress={onToggleManual}>
+        <TouchableOpacity onPress={onToggleManual}
+          accessibilityRole="button" accessibilityLabel={useManual ? 'Use timer' : 'Enter duration manually'}>
           <Text style={[tw.toggleLink, { color: accent }]}>
             {useManual ? 'Use timer' : 'Enter manually'}
           </Text>
@@ -307,7 +314,8 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
       {useManual ? (
         <View style={tw.manualRow}>
           <TextInput style={tw.manualInput} placeholder="0" placeholderTextColor={c.textMuted}
-            value={manualValue} onChangeText={onManualChange} keyboardType="number-pad" />
+            value={manualValue} onChangeText={onManualChange} keyboardType="number-pad"
+            accessibilityLabel="Duration in minutes" />
           <Text style={tw.manualUnit}>min</Text>
         </View>
       ) : (
@@ -315,26 +323,31 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
           <Text style={[tw.display, { color: accent }]}>{formatTimer(timer.elapsed)}</Text>
           <View style={tw.btnRow}>
             {!timer.running && !timer.paused && (
-              <TouchableOpacity style={[tw.timerBtn, { backgroundColor: accent }]} onPress={timer.start}>
+              <TouchableOpacity style={[tw.timerBtn, { backgroundColor: accent }]} onPress={timer.start}
+                accessibilityRole="button" accessibilityLabel="Start timer">
                 <Text style={tw.timerBtnText}>▶  Start</Text>
               </TouchableOpacity>
             )}
             {timer.running && !timer.paused && (
               <>
-                <TouchableOpacity style={[tw.timerBtn, tw.outline, { borderColor: accent }]} onPress={timer.pause}>
+                <TouchableOpacity style={[tw.timerBtn, tw.outline, { borderColor: accent }]} onPress={timer.pause}
+                  accessibilityRole="button" accessibilityLabel="Pause timer">
                   <Text style={[tw.outlineText, { color: accent }]}>⏸  Pause</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[tw.timerBtn, tw.danger]} onPress={timer.stop}>
+                <TouchableOpacity style={[tw.timerBtn, tw.danger]} onPress={timer.stop}
+                  accessibilityRole="button" accessibilityLabel="Stop timer">
                   <Text style={tw.timerBtnText}>■  Stop</Text>
                 </TouchableOpacity>
               </>
             )}
             {timer.paused && (
               <>
-                <TouchableOpacity style={[tw.timerBtn, { backgroundColor: accent }]} onPress={timer.resume}>
+                <TouchableOpacity style={[tw.timerBtn, { backgroundColor: accent }]} onPress={timer.resume}
+                  accessibilityRole="button" accessibilityLabel="Resume timer">
                   <Text style={tw.timerBtnText}>▶  Resume</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[tw.timerBtn, tw.danger]} onPress={timer.reset}>
+                <TouchableOpacity style={[tw.timerBtn, tw.danger]} onPress={timer.reset}
+                  accessibilityRole="button" accessibilityLabel="Reset timer">
                   <Text style={tw.timerBtnText}>↺  Reset</Text>
                 </TouchableOpacity>
               </>
@@ -359,10 +372,12 @@ function ModalSheet({ visible, onClose, title, accent, onSave, saving, children 
   const actionButtons = (
     <>
       <TouchableOpacity style={[ms.saveBtn, { backgroundColor: accent }, saving && ms.saveBtnOff]}
-        onPress={onSave} disabled={saving} activeOpacity={0.85}>
+        onPress={onSave} disabled={saving} activeOpacity={0.85}
+        accessibilityRole="button" accessibilityLabel="Save">
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={ms.saveBtnText}>Save</Text>}
       </TouchableOpacity>
-      <TouchableOpacity style={ms.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+      <TouchableOpacity style={ms.cancelBtn} onPress={onClose} activeOpacity={0.7}
+        accessibilityRole="button" accessibilityLabel="Cancel">
         <Text style={ms.cancelText}>Cancel</Text>
       </TouchableOpacity>
     </>
@@ -371,7 +386,8 @@ function ModalSheet({ visible, onClose, title, accent, onSave, saving, children 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={ms.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableOpacity style={ms.backdrop} activeOpacity={1} onPress={onClose} />
+        <TouchableOpacity style={ms.backdrop} activeOpacity={1} onPress={onClose}
+          accessibilityRole="button" accessibilityLabel="Close" />
         <View style={ms.sheet}>
           <View style={ms.handle} />
           <OneHandedTray actions={actionButtons} bottomPad={insets.bottom + 8}>
@@ -397,7 +413,8 @@ function NotesInput({ value, onChange }: { value: string; onChange: (v: string) 
     <View style={{ marginBottom: 8 }}>
       <Text style={pf.label}>Notes</Text>
       <TextInput style={ni.input} placeholder="Any additional notes…" placeholderTextColor={c.textMuted}
-        value={value} onChangeText={onChange} multiline numberOfLines={3} textAlignVertical="top" />
+        value={value} onChangeText={onChange} multiline numberOfLines={3} textAlignVertical="top"
+        accessibilityLabel="Notes" />
     </View>
   );
 }
@@ -426,7 +443,8 @@ const PeriodToggle = ({ period, onChange }: { period: ChartPeriod; onChange: (p:
   return (
     <View style={chartStyles.toggleContainer}>
       {(['daily', 'weekly', 'monthly'] as ChartPeriod[]).map((p) => (
-        <TouchableOpacity key={p} style={[chartStyles.toggle, period === p && chartStyles.toggleActive]} onPress={() => onChange(p)}>
+        <TouchableOpacity key={p} style={[chartStyles.toggle, period === p && chartStyles.toggleActive]} onPress={() => onChange(p)}
+          accessibilityRole="button" accessibilityLabel={`Show ${p} data`}>
           <Text style={[chartStyles.toggleText, period === p && chartStyles.toggleTextActive]}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
         </TouchableOpacity>
       ))}
@@ -784,6 +802,7 @@ export default function Track({ route }: any) {
 
   const [entries,    setEntries]    = useState<TimelineEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [timelineError, setTimelineError] = useState(false);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [saving,      setSaving]      = useState(false);
   const [babyId,         setBabyId]         = useState<string | null>(null);
@@ -924,19 +943,24 @@ export default function Track({ route }: any) {
       if (!user) return;
       setUserId(user.id);
       setUserName(user.user_metadata?.name ?? user.email?.split('@')[0] ?? null);
-      supabase.from('babies').select('id,name,birth_date,gender,current_weight').eq('user_id', user.id).limit(1).maybeSingle()
-        .then(({ data }) => {
-          setBabyId(data?.id ?? null);
-          setBabyName(data?.name ?? null);
-          setBabyBirthDate(data?.birth_date ?? null);
-          setBabyGender(data?.gender ?? null);
-          setBabyWeightLbs(data?.current_weight ?? null);
-        });
     });
   }, []);
 
+  // Source the current baby from the shared BabyContext (multi-child +
+  // multi-caregiver aware) rather than an independent single-baby query —
+  // every tracker below reads babyId/babyName/etc. from this screen's state.
+  const { activeBaby } = useBaby();
+  useEffect(() => {
+    setBabyId(activeBaby?.id ?? null);
+    setBabyName(activeBaby?.name ?? null);
+    setBabyBirthDate(activeBaby?.birth_date ?? null);
+    setBabyGender(activeBaby?.gender ?? null);
+    setBabyWeightLbs(activeBaby?.current_weight ?? null);
+  }, [activeBaby]);
+
   const fetchTimeline = useCallback(async () => {
     setRefreshing(true);
+    setTimelineError(false);
     try {
       const dayStart = new Date(selectedDate); dayStart.setHours(0, 0, 0, 0);
       const dayEnd   = new Date(selectedDate); dayEnd.setHours(23, 59, 59, 999);
@@ -980,6 +1004,7 @@ export default function Track({ route }: any) {
       setEntries(merged);
     } catch (err: any) {
       console.warn('Timeline fetch error:', err.message);
+      setTimelineError(true);
     } finally {
       setRefreshing(false);
     }
@@ -988,9 +1013,10 @@ export default function Track({ route }: any) {
   useEffect(() => { fetchTimeline(); }, [fetchTimeline]);
 
   async function getFirstBabyId(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('babies').select('id').eq('user_id', user.id).limit(1).maybeSingle();
+    // Fallback for the rare race where BabyContext hasn't resolved yet —
+    // RLS (see supabase/baby_sharing.sql) already scopes this to babies the
+    // signed-in user owns or has been invited to as a caregiver.
+    const { data } = await supabase.from('babies').select('id').limit(1).maybeSingle();
     return data?.id ?? null;
   }
 
@@ -1550,6 +1576,7 @@ export default function Track({ route }: any) {
             style={[styles.viewToggleBtn, activeView === 'baby' && styles.viewToggleBtnActive]}
             onPress={() => { setActiveView('baby'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Show baby tracking"
           >
             <Text style={[styles.viewToggleText, activeView === 'baby' && styles.viewToggleTextActive]}>
               👶  Baby
@@ -1559,6 +1586,7 @@ export default function Track({ route }: any) {
             style={[styles.viewToggleBtn, activeView === 'you' && styles.viewToggleBtnActive]}
             onPress={() => { setActiveView('you'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Show your tracking"
           >
             <Text style={[styles.viewToggleText, activeView === 'you' && styles.viewToggleTextActive]}>
               🌷  You
@@ -1589,6 +1617,7 @@ export default function Track({ route }: any) {
                   onPress={() => setCategory('All')}
                   style={[styles.categoryChip, category === 'All' && { backgroundColor: c.primary, borderColor: c.primary }]}
                   activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel="Show all categories"
                 >
                   <Text style={[styles.categoryChipText, category === 'All' && styles.categoryChipTextActive]}>All</Text>
                 </TouchableOpacity>
@@ -1604,6 +1633,7 @@ export default function Track({ route }: any) {
                         { backgroundColor: active ? col.border : col.bg, borderColor: col.border },
                       ]}
                       activeOpacity={0.75}
+                      accessibilityRole="button" accessibilityLabel={`Filter by ${group.category}`}
                     >
                       <Text style={[styles.categoryChipText, { color: active ? '#fff' : col.text }]}>
                         {group.emoji} {group.category}
@@ -1634,7 +1664,8 @@ export default function Track({ route }: any) {
           {mainButtons.map((btn, idx) => (
             <TouchableOpacity key={btn.type}
               style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
-              activeOpacity={0.8} onPress={() => openModal(btn.type)}>
+              activeOpacity={0.8} onPress={() => openModal(btn.type)}
+              accessibilityRole="button" accessibilityLabel={btn.label}>
               <Text style={styles.buttonEmoji}>{btn.emoji}</Text>
               <Text style={[styles.buttonLabel, { color: btn.accent }]}>{btn.label}</Text>
               <Text style={[styles.buttonArrow, { color: btn.accent }]}>›</Text>
@@ -1674,31 +1705,38 @@ export default function Track({ route }: any) {
 
         {/* Date navigation */}
         <View style={styles.dateNav}>
-          <TouchableOpacity style={styles.dateNavBtn} onPress={goToPrevDay} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.dateNavBtn} onPress={goToPrevDay} activeOpacity={0.7}
+            accessibilityRole="button" accessibilityLabel="Previous day">
             <Text style={styles.dateNavArrow}>‹</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.dateNavCenter} onPress={openCalendar} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.dateNavCenter} onPress={openCalendar} activeOpacity={0.7}
+            accessibilityRole="button" accessibilityLabel="Open calendar to pick a date">
             <Text style={styles.dateNavLabel}>{dateLabel} <Text style={styles.dateNavCal}>▾</Text></Text>
             {!isToday && (
-              <TouchableOpacity onPress={() => setSelectedDate(new Date())} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => setSelectedDate(new Date())} activeOpacity={0.7}
+                accessibilityRole="button" accessibilityLabel="Back to today">
                 <Text style={styles.dateNavToday}>Back to today</Text>
               </TouchableOpacity>
             )}
           </TouchableOpacity>
           <TouchableOpacity style={[styles.dateNavBtn, isToday && styles.dateNavBtnDisabled]}
-            onPress={goToNextDay} activeOpacity={isToday ? 1 : 0.7}>
+            onPress={goToNextDay} activeOpacity={isToday ? 1 : 0.7}
+            accessibilityRole="button" accessibilityLabel="Next day">
             <Text style={[styles.dateNavArrow, isToday && styles.dateNavArrowDisabled]}>›</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.timeline}>
-          {entries.length === 0 ? (
+          {timelineError ? (
+            <LoadErrorBanner message="Couldn't load today's entries." onRetry={fetchTimeline} />
+          ) : entries.length === 0 ? (
             <Text style={styles.empty}>No entries for this day</Text>
           ) : (
             entries.map((entry, i) => (
               <TouchableOpacity key={entry.id} activeOpacity={0.75} onPress={() => openDetail(entry)}
                 style={[styles.entry, i < entries.length - 1 && styles.entryBorder,
-                  { backgroundColor: entry.type === 'feed' ? c.cardLavender : entry.type === 'diaper' ? c.cardSage : c.cardBlush }]}>
+                  { backgroundColor: entry.type === 'feed' ? c.cardLavender : entry.type === 'diaper' ? c.cardSage : c.cardBlush }]}
+                accessibilityRole="button" accessibilityLabel={`${entry.label} at ${formatTime(entry.logged_at)}`}>
                 <Text style={styles.entryEmoji}>{entry.emoji}</Text>
                 <View style={styles.entryBody}>
                   <Text style={styles.entryLabel}>{entry.label}</Text>
@@ -1706,7 +1744,8 @@ export default function Track({ route }: any) {
                 </View>
                 <Text style={styles.entryTime}>{formatTime(entry.logged_at)}</Text>
                 <TouchableOpacity style={styles.deleteBtn}
-                  onPress={() => handleDeleteEntry(entry)} activeOpacity={0.7}>
+                  onPress={() => handleDeleteEntry(entry)} activeOpacity={0.7}
+                  accessibilityRole="button" accessibilityLabel={`Delete ${entry.label.toLowerCase()} entry`}>
                   <Text style={styles.deleteIcon}>🗑</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -1749,6 +1788,7 @@ export default function Track({ route }: any) {
             style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
             activeOpacity={0.8}
             onPress={() => setShowFoodChart(true)}
+            accessibilityRole="button" accessibilityLabel="Open baby food guide"
           >
             <Text style={styles.buttonEmoji}>🍽️</Text>
             <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Guide</Text>
@@ -1905,7 +1945,8 @@ export default function Track({ route }: any) {
             <Text style={styles.premiumBody}>
               Unlock all trackers, your journal & calendar, unlimited patches, community sharing, and more — for $5.99/mo.
             </Text>
-            <TouchableOpacity style={styles.premiumBtn} onPress={openPaywall} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.premiumBtn} onPress={openPaywall} activeOpacity={0.85}
+              accessibilityRole="button" accessibilityLabel="Learn more and upgrade to Village Premium">
               <Text style={styles.premiumBtnText}>Learn More & Upgrade</Text>
             </TouchableOpacity>
           </View>
@@ -1918,7 +1959,8 @@ export default function Track({ route }: any) {
       <Modal visible={detailEntry !== null} animationType="slide" transparent
         onRequestClose={() => setDetailEntry(null)}>
         <View style={det.overlay}>
-          <TouchableOpacity style={det.backdrop} activeOpacity={1} onPress={() => setDetailEntry(null)} />
+          <TouchableOpacity style={det.backdrop} activeOpacity={1} onPress={() => setDetailEntry(null)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={det.sheet}>
             <View style={det.handle} />
             <View style={det.header}>
@@ -1926,7 +1968,8 @@ export default function Track({ route }: any) {
                 {detailEntry?.emoji} {detailEntry?.label}
                 {'  '}<Text style={det.titleTime}>{detailEntry ? formatTime(detailEntry.logged_at) : ''}</Text>
               </Text>
-              <TouchableOpacity onPress={() => setDetailEntry(null)} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => setDetailEntry(null)} activeOpacity={0.7}
+                accessibilityRole="button" accessibilityLabel="Close">
                 <Text style={det.close}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -1942,11 +1985,13 @@ export default function Track({ route }: any) {
                   </View>
                 ))}
                 <TouchableOpacity style={det.editBtn} activeOpacity={0.8}
-                  onPress={() => { if (detailEntry) openEdit(detailEntry); }}>
+                  onPress={() => { if (detailEntry) openEdit(detailEntry); }}
+                  accessibilityRole="button" accessibilityLabel="Edit entry">
                   <Text style={det.editBtnText}>✏️  Edit Entry</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={det.deleteBtn} activeOpacity={0.8}
-                  onPress={() => { setDetailEntry(null); if (detailEntry) handleDeleteEntry(detailEntry); }}>
+                  onPress={() => { setDetailEntry(null); if (detailEntry) handleDeleteEntry(detailEntry); }}
+                  accessibilityRole="button" accessibilityLabel="Delete entry">
                   <Text style={det.deleteBtnText}>🗑  Delete Entry</Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -1981,6 +2026,7 @@ export default function Track({ route }: any) {
               }
             }}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Fill in same as last feed"
           >
             <Text style={[pf.chipText, { color: c.lavender, fontWeight: '700' }]}>↩ Same as last time</Text>
           </TouchableOpacity>
@@ -2009,6 +2055,7 @@ export default function Track({ route }: any) {
                   }
                 }}
                 activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Left breast nursing timer"
               >
                 <Text style={styles.breastToggleEmoji}>🤱</Text>
                 <Text style={[styles.breastToggleLabel, (leftBreastTimer.elapsed > 0) && styles.breastToggleLabelActive]}>
@@ -2034,6 +2081,7 @@ export default function Track({ route }: any) {
                   }
                 }}
                 activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Right breast nursing timer"
               >
                 <Text style={styles.breastToggleEmoji}>🤱</Text>
                 <Text style={[styles.breastToggleLabel, (rightBreastTimer.elapsed > 0) && styles.breastToggleLabelActive]}>
@@ -2066,6 +2114,7 @@ export default function Track({ route }: any) {
                 placeholderTextColor={c.textMuted}
                 value={feedPositionOther}
                 onChangeText={setFeedPositionOther}
+                accessibilityLabel="Describe nursing position"
               />
             )}
             <PickerField label="Latch quality" options={FEED_LATCH}
@@ -2080,17 +2129,20 @@ export default function Track({ route }: any) {
               <View style={pf.row}>
                 <TouchableOpacity
                   style={[pf.chip, bottleSource === 'breastmilk' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
-                  onPress={() => setBottleSource('breastmilk')} activeOpacity={0.75}>
+                  onPress={() => setBottleSource('breastmilk')} activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel="Breastmilk">
                   <Text style={[pf.chipText, bottleSource === 'breastmilk' && pf.chipSel]}>🤱 Breastmilk</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[pf.chip, bottleSource === 'formula' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
-                  onPress={() => setBottleSource('formula')} activeOpacity={0.75}>
+                  onPress={() => setBottleSource('formula')} activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel="Formula">
                   <Text style={[pf.chipText, bottleSource === 'formula' && pf.chipSel]}>🍶 Formula</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[pf.chip, bottleSource === 'mixed' && { backgroundColor: c.trackFeed, borderColor: c.trackFeed }]}
-                  onPress={() => setBottleSource('mixed')} activeOpacity={0.75}>
+                  onPress={() => setBottleSource('mixed')} activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel="Mixed breastmilk and formula">
                   <Text style={[pf.chipText, bottleSource === 'mixed' && pf.chipSel]}>🤱🍶 Mixed</Text>
                 </TouchableOpacity>
               </View>
@@ -2102,7 +2154,8 @@ export default function Track({ route }: any) {
                 <View style={styles.breastRow}>
                   <View style={[styles.breastField, { flex: 1 }]}>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad" />
+                      value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad"
+                      accessibilityLabel="Bottle amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
                 </View>
@@ -2114,14 +2167,16 @@ export default function Track({ route }: any) {
                   <View style={styles.breastField}>
                     <Text style={styles.breastSideLabel}>Breastmilk 🤱</Text>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={bottleMixBmOz} onChangeText={setBottleMixBmOz} keyboardType="decimal-pad" />
+                      value={bottleMixBmOz} onChangeText={setBottleMixBmOz} keyboardType="decimal-pad"
+                      accessibilityLabel="Breastmilk amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
                   <View style={styles.breastDivider} />
                   <View style={styles.breastField}>
                     <Text style={styles.breastSideLabel}>Formula 🍶</Text>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={bottleMixFmOz} onChangeText={setBottleMixFmOz} keyboardType="decimal-pad" />
+                      value={bottleMixFmOz} onChangeText={setBottleMixFmOz} keyboardType="decimal-pad"
+                      accessibilityLabel="Formula amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
                 </View>
@@ -2190,7 +2245,8 @@ export default function Track({ route }: any) {
                   setLeftBreast(String(lastPumpSession.left_breast || ''));
                   setRightBreast(String(lastPumpSession.right_breast || ''));
                 }
-              }}>
+              }}
+                accessibilityRole="button" accessibilityLabel="Fill in same as last pumping session">
                 <Text style={styles.pumpSameAsLast}>↩ Same as last</Text>
               </TouchableOpacity>
             </View>
@@ -2202,13 +2258,15 @@ export default function Track({ route }: any) {
           <TouchableOpacity
             style={[styles.pumpModeChip, !powerPumpMode && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
             onPress={() => { setPowerPumpMode(false); setPpRunning(false); setPpDone(false); pumpTimer.reset(); }}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Normal pumping mode">
             <Text style={[styles.pumpModeChipText, !powerPumpMode && { color: '#fff' }]}>⏱ Normal</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.pumpModeChip, powerPumpMode && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
             onPress={() => { setPowerPumpMode(true); pumpTimer.reset(); }}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Power pump mode">
             <Text style={[styles.pumpModeChipText, powerPumpMode && { color: '#fff' }]}>⚡ Power Pump</Text>
           </TouchableOpacity>
         </View>
@@ -2233,7 +2291,8 @@ export default function Track({ route }: any) {
                     setPpRunning(false);
                     setPpDone(false);
                   }}
-                  activeOpacity={0.8}>
+                  activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={`${proto.label} power pump protocol`}>
                   <Text style={[pf.chipText, powerPumpProto === key && pf.chipSel]}>{proto.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -2281,14 +2340,16 @@ export default function Track({ route }: any) {
                     setPpRunning(v => !v);
                     if (!ppRunning) pumpTimer.start?.();
                   }}
-                  activeOpacity={0.8}>
+                  activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={ppRunning ? 'Pause power pump' : ppSecondsLeft > 0 ? 'Resume power pump' : 'Start power pump'}>
                   <Text style={styles.ppBtnText}>{ppRunning ? '⏸ Pause' : ppSecondsLeft > 0 ? '▶ Resume' : '▶ Start'}</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
                 style={[styles.ppBtn, styles.ppBtnOutline]}
                 onPress={() => { setPpRunning(false); setPpDone(false); setPpPhaseIdx(0); setPpSecondsLeft(0); pumpTimer.reset(); }}
-                activeOpacity={0.8}>
+                activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel="Reset power pump">
                 <Text style={[styles.ppBtnText, { color: c.textSecondary }]}>↺ Reset</Text>
               </TouchableOpacity>
             </View>
@@ -2301,12 +2362,14 @@ export default function Track({ route }: any) {
           <View style={styles.pumpUnitToggle}>
             <TouchableOpacity
               style={[styles.pumpUnitChip, pumpUnit === 'ml' && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
-              onPress={() => { setPumpUnit('ml'); setLeftBreast(''); setRightBreast(''); }}>
+              onPress={() => { setPumpUnit('ml'); setLeftBreast(''); setRightBreast(''); }}
+              accessibilityRole="button" accessibilityLabel="Milliliters">
               <Text style={[styles.pumpUnitText, pumpUnit === 'ml' && { color: '#fff' }]}>ml</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.pumpUnitChip, pumpUnit === 'oz' && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
-              onPress={() => { setPumpUnit('oz'); setLeftBreast(''); setRightBreast(''); }}>
+              onPress={() => { setPumpUnit('oz'); setLeftBreast(''); setRightBreast(''); }}
+              accessibilityRole="button" accessibilityLabel="Ounces">
               <Text style={[styles.pumpUnitText, pumpUnit === 'oz' && { color: '#fff' }]}>oz</Text>
             </TouchableOpacity>
           </View>
@@ -2315,14 +2378,16 @@ export default function Track({ route }: any) {
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Left</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
-              value={leftBreast} onChangeText={setLeftBreast} keyboardType="decimal-pad" />
+              value={leftBreast} onChangeText={setLeftBreast} keyboardType="decimal-pad"
+              accessibilityLabel={`Left breast amount in ${pumpUnit}`} />
             <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>
           <View style={styles.breastDivider} />
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Right</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
-              value={rightBreast} onChangeText={setRightBreast} keyboardType="decimal-pad" />
+              value={rightBreast} onChangeText={setRightBreast} keyboardType="decimal-pad"
+              accessibilityLabel={`Right breast amount in ${pumpUnit}`} />
             <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>
         </View>
@@ -2342,12 +2407,14 @@ export default function Track({ route }: any) {
           <View style={pf.row}>
             <TouchableOpacity
               style={[pf.chip, letdownAchieved && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
-              onPress={() => setLetdownAchieved(true)} activeOpacity={0.75}>
+              onPress={() => setLetdownAchieved(true)} activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel="Letdown achieved: yes">
               <Text style={[pf.chipText, letdownAchieved && pf.chipSel]}>Yes ✓</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[pf.chip, !letdownAchieved && { backgroundColor: c.trackPump, borderColor: c.trackPump }]}
-              onPress={() => setLetdownAchieved(false)} activeOpacity={0.75}>
+              onPress={() => setLetdownAchieved(false)} activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel="Letdown achieved: no">
               <Text style={[pf.chipText, !letdownAchieved && pf.chipSel]}>No</Text>
             </TouchableOpacity>
           </View>
@@ -2368,23 +2435,27 @@ export default function Track({ route }: any) {
       <Modal visible={showCalendar} animationType="fade" transparent
         onRequestClose={() => setShowCalendar(false)}>
         <View style={cal.overlay}>
-          <TouchableOpacity style={cal.backdrop} activeOpacity={1} onPress={() => setShowCalendar(false)} />
+          <TouchableOpacity style={cal.backdrop} activeOpacity={1} onPress={() => setShowCalendar(false)}
+            accessibilityRole="button" accessibilityLabel="Close calendar" />
           <View style={cal.container}>
 
             {/* Month/Year header */}
             <View style={cal.header}>
               {calMode === 'month' ? (
                 <>
-                  <TouchableOpacity onPress={calPrevMonth} style={cal.headerBtn}>
+                  <TouchableOpacity onPress={calPrevMonth} style={cal.headerBtn}
+                    accessibilityRole="button" accessibilityLabel="Previous month">
                     <Text style={cal.headerArrow}>‹</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setCalMode('year')} activeOpacity={0.7}>
+                  <TouchableOpacity onPress={() => setCalMode('year')} activeOpacity={0.7}
+                    accessibilityRole="button" accessibilityLabel="Select year">
                     <Text style={cal.headerTitle}>
                       {calViewDate.toLocaleDateString('en-US', { month: 'long' })}{' '}
                       <Text style={cal.headerYear}>{calYear}</Text>
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={calNextMonth} style={cal.headerBtn}>
+                  <TouchableOpacity onPress={calNextMonth} style={cal.headerBtn}
+                    accessibilityRole="button" accessibilityLabel="Next month">
                     <Text style={cal.headerArrow}>›</Text>
                   </TouchableOpacity>
                 </>
@@ -2392,7 +2463,8 @@ export default function Track({ route }: any) {
                 <>
                   <View style={cal.headerBtn} />
                   <Text style={cal.headerTitle}>Select Year</Text>
-                  <TouchableOpacity onPress={() => setCalMode('month')} style={cal.headerBtn}>
+                  <TouchableOpacity onPress={() => setCalMode('month')} style={cal.headerBtn}
+                    accessibilityRole="button" accessibilityLabel="Close year picker">
                     <Text style={[cal.headerArrow, { fontSize: 14 }]}>✕</Text>
                   </TouchableOpacity>
                 </>
@@ -2406,7 +2478,8 @@ export default function Track({ route }: any) {
                   const isCurYear = y === calYear;
                   return (
                     <TouchableOpacity key={y} style={[cal.yearCell, isCurYear && cal.yearCellSel]}
-                      onPress={() => selectCalYear(y)} activeOpacity={0.75}>
+                      onPress={() => selectCalYear(y)} activeOpacity={0.75}
+                      accessibilityRole="button" accessibilityLabel={`Year ${y}`}>
                       <Text style={[cal.yearText, isCurYear && cal.yearTextSel]}>{y}</Text>
                     </TouchableOpacity>
                   );
@@ -2435,7 +2508,8 @@ export default function Track({ route }: any) {
                     const isFut = date > todayDate;
                     return (
                       <TouchableOpacity key={day} style={cal.cell} disabled={isFut}
-                        onPress={() => selectCalDay(day)} activeOpacity={0.75}>
+                        onPress={() => selectCalDay(day)} activeOpacity={0.75}
+                        accessibilityRole="button" accessibilityLabel={`${date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}${isSel ? ', selected' : ''}`}>
                         <View style={[cal.dayCell, isSel && cal.dayCellSel, isTod && !isSel && cal.dayCellToday]}>
                           <Text style={[cal.dayText, isFut && cal.dayFuture, isSel && cal.daySel]}>{day}</Text>
                         </View>

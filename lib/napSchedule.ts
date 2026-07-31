@@ -262,8 +262,11 @@ async function scheduleWindDownCore(
     .order('starts_at', { ascending: true })
     .limit(1);
 
+  // A conflicting fixed event soon gets the more urgent "wind down because
+  // of X" message; otherwise still give a general heads-up for the
+  // predicted nap window itself rather than staying silent.
   const nextFixed = (events ?? [])[0];
-  if (!nextFixed || new Date(nextFixed.starts_at).getTime() <= predictedNapStart.getTime()) return;
+  const hasConflict = !!nextFixed && new Date(nextFixed.starts_at).getTime() > predictedNapStart.getTime();
 
   const fireAt = new Date(predictedNapStart.getTime() - WIND_DOWN_BUFFER_MIN * 60000);
   if (fireAt.getTime() <= Date.now()) return;
@@ -271,12 +274,18 @@ async function scheduleWindDownCore(
   const ok = await ensureNotificationPermission();
   if (!ok) return;
 
-  const when = new Date(nextFixed.starts_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const body = hasConflict
+    ? (() => {
+        const when = new Date(nextFixed.starts_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        return `Start winding ${babyName} down — you have "${nextFixed.title}" at ${when}.`;
+      })()
+    : `${babyName}'s next nap window is opening up soon, based on their recent sleep pattern.`;
+
   await Notifications.scheduleNotificationAsync({
     identifier,
     content: {
       title: 'Nap window coming up',
-      body: `Start winding ${babyName} down — you have "${nextFixed.title}" at ${when}.`,
+      body,
       sound: true,
     },
     trigger: {

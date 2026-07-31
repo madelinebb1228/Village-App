@@ -476,10 +476,12 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
           </View>
         </View>
         <View style={s.headerActions}>
-          <TouchableOpacity style={s.scanBtn} onPress={openScanner} activeOpacity={0.8}>
+          <TouchableOpacity style={s.scanBtn} onPress={openScanner} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Scan barcode">
             <Text style={s.scanBtnText}>📷 Scan</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.addBtn} onPress={openAdd} activeOpacity={0.8}>
+          <TouchableOpacity style={s.addBtn} onPress={openAdd} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Log food">
             <Text style={s.addBtnText}>+ Log</Text>
           </TouchableOpacity>
         </View>
@@ -600,7 +602,8 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
               </View>
               <View style={s.logRight}>
                 <Text style={s.logDate}>{formatDate(log.tried_at)}</Text>
-                <TouchableOpacity onPress={() => handleDelete(log)} activeOpacity={0.7} style={{ padding: 4 }}>
+                <TouchableOpacity onPress={() => handleDelete(log)} activeOpacity={0.7} style={{ padding: 4 }}
+                  accessibilityRole="button" accessibilityLabel="Delete food log">
                   <Text style={s.deleteIcon}>🗑</Text>
                 </TouchableOpacity>
               </View>
@@ -620,14 +623,16 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => { setShowModal(false); resetModal(); }}>
         <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableOpacity style={s.modalBackdrop} activeOpacity={1}
-            onPress={() => { setShowModal(false); resetModal(); }} />
+            onPress={() => { setShowModal(false); resetModal(); }}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={[s.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
             <View style={s.modalHandle} />
 
             {/* Title + step indicator */}
             <View style={s.modalTitleRow}>
               {step > 1 && !editId && (
-                <TouchableOpacity onPress={() => setStep(s => (s - 1) as ModalStep)} style={s.backBtn}>
+                <TouchableOpacity onPress={() => setStep(s => (s - 1) as ModalStep)} style={s.backBtn}
+                  accessibilityRole="button" accessibilityLabel="Back">
                   <Text style={s.backBtnText}>‹ Back</Text>
                 </TouchableOpacity>
               )}
@@ -973,6 +978,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
                   }}
                   disabled={step === 1 ? !canAdvanceStep1() : !canAdvanceStep2()}
                   activeOpacity={0.85}
+                  accessibilityRole="button" accessibilityLabel="Next"
                 >
                   <Text style={s.nextBtnText}>Next →</Text>
                 </TouchableOpacity>
@@ -982,6 +988,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
                   onPress={handleSave}
                   disabled={saving}
                   activeOpacity={0.85}
+                  accessibilityRole="button" accessibilityLabel={editId ? 'Save changes' : 'Save food log'}
                 >
                   {saving
                     ? <ActivityIndicator color="#fff" />
@@ -990,7 +997,8 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={s.cancelBtn}
-                onPress={() => { setShowModal(false); resetModal(); }} activeOpacity={0.7}>
+                onPress={() => { setShowModal(false); resetModal(); }} activeOpacity={0.7}
+                accessibilityRole="button" accessibilityLabel="Cancel">
                 <Text style={s.cancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1018,6 +1026,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
               style={s.scanCloseBtn}
               onPress={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
               activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Close scanner"
             >
               <Text style={s.scanCloseTxt}>✕ Close</Text>
             </TouchableOpacity>
@@ -1075,6 +1084,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
                     style={[s.scanUseBtn, { backgroundColor: '#D97706' }]}
                     onPress={useScannedProduct}
                     activeOpacity={0.85}
+                    accessibilityRole="button" accessibilityLabel={scannedProduct.found ? 'Use this product' : 'Log manually'}
                   >
                     <Text style={s.scanUseBtnText}>
                       {scannedProduct.found ? 'Use this product →' : 'Log manually →'}
@@ -1084,6 +1094,7 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
                     style={s.scanRetryBtn}
                     onPress={() => { setScannerLocked(false); setScannedProduct(null); }}
                     activeOpacity={0.7}
+                    accessibilityRole="button" accessibilityLabel="Scan again"
                   >
                     <Text style={s.scanRetryText}>Scan again</Text>
                   </TouchableOpacity>

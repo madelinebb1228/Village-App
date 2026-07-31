@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useSubscription } from '../lib/subscriptionContext';
 
 interface PublicProfile {
@@ -272,6 +273,8 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [theirVillageIds, setTheirVillageIds] = useState<string[]>([]);
   const [myVillageIds, setMyVillageIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -306,6 +309,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
 
     (async () => {
       setLoading(true);
+      setLoadError(false);
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -352,11 +356,12 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         }
       } catch (err: any) {
         console.warn('PublicProfileSheet error:', err.message);
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
     })();
-  }, [visible, userId]);
+  }, [visible, userId, retryTick]);
 
   async function toggleFollow() {
     if (!myId || !userId || followLoading) return;
@@ -460,6 +465,10 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         ) : isOwnProfile ? (
           <View style={s.center}>
             <Text style={s.ownProfileText}>That's you! Edit your profile from the Profile tab.</Text>
+          </View>
+        ) : loadError ? (
+          <View style={s.center}>
+            <LoadErrorBanner message="Couldn't load this profile." onRetry={() => setRetryTick(t => t + 1)} />
           </View>
         ) : !profile ? (
           <View style={s.center}>

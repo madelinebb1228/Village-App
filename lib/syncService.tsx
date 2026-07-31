@@ -23,8 +23,11 @@ type SyncStatus = {
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
+  failedCount: number;
   lastSyncedAt: Date | null;
   triggerSync: () => Promise<void>;
+  retryFailed: () => Promise<void>;
+  dismissFailed: () => Promise<void>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -96,6 +99,16 @@ async function dequeue(queueId: string): Promise<void> {
 async function incrementRetry(queueId: string): Promise<void> {
   const queue = await readQueue();
   await writeQueue(queue.map(op => op.queueId === queueId ? { ...op, retries: op.retries + 1 } : op));
+}
+
+async function resetFailedRetries(): Promise<void> {
+  const queue = await readQueue();
+  await writeQueue(queue.map(op => op.retries >= MAX_RETRIES ? { ...op, retries: 0 } : op));
+}
+
+async function dropFailedOps(): Promise<void> {
+  const queue = await readQueue();
+  await writeQueue(queue.filter(op => op.retries < MAX_RETRIES));
 }
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
@@ -288,8 +301,11 @@ const SyncContext = createContext<SyncStatus>({
   isOnline: true,
   isSyncing: false,
   pendingCount: 0,
+  failedCount: 0,
   lastSyncedAt: null,
   triggerSync: async () => {},
+  retryFailed: async () => {},
+  dismissFailed: async () => {},
 });
 
 export function useSyncStatus(): SyncStatus {
@@ -300,12 +316,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline]       = useState(true);
   const [isSyncing, setIsSyncing]     = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const syncingRef = useRef(false);
 
   const refreshPendingCount = useCallback(async () => {
     const queue = await readQueue();
     setPendingCount(queue.filter(op => op.retries < MAX_RETRIES).length);
+    setFailedCount(queue.filter(op => op.retries >= MAX_RETRIES).length);
   }, []);
 
   const triggerSync = useCallback(async () => {
@@ -324,6 +342,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setIsSyncing(false);
       await refreshPendingCount();
     }
+  }, [refreshPendingCount]);
+
+  const retryFailed = useCallback(async () => {
+    await resetFailedRetries();
+    await refreshPendingCount();
+    await triggerSync();
+  }, [refreshPendingCount, triggerSync]);
+
+  const dismissFailed = useCallback(async () => {
+    await dropFailedOps();
+    await refreshPendingCount();
   }, [refreshPendingCount]);
 
   // Check on mount + whenever app comes to foreground
@@ -345,7 +374,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, [triggerSync, refreshPendingCount]);
 
   return (
-    <SyncContext.Provider value={{ isOnline, isSyncing, pendingCount, lastSyncedAt, triggerSync }}>
+    <SyncContext.Provider value={{ isOnline, isSyncing, pendingCount, failedCount, lastSyncedAt, triggerSync, retryFailed, dismissFailed }}>
       {children}
     </SyncContext.Provider>
   );

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal,
-  TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView,
+  TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView, Alert,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import { useBaby } from '../lib/babyContext';
 import {
   VaccineReminderSettings,
   getVaccineReminderSettings,
@@ -198,17 +199,15 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
 
   const { pending: pendingCalSync, saving: savingCalSync, promptAddToCalendar, dismiss: dismissCalSync, addTo: addToCalendar } = useCalendarSyncPrompt();
 
-  useEffect(() => { if (userId) loadAll(); }, [userId]);
+  const { activeBaby } = useBaby();
+  useEffect(() => { if (userId) loadAll(); }, [userId, activeBaby?.id]);
 
   async function loadAll() {
     if (!userId) return;
     setLoading(true);
     try {
-      const { data: baby } = await supabase
-        .from('babies').select('id, birth_date')
-        .eq('user_id', userId).limit(1).maybeSingle();
-      const bid = baby?.id ?? null;
-      const bbd = baby?.birth_date ?? null;
+      const bid = activeBaby?.id ?? null;
+      const bbd = activeBaby?.birth_date ?? null;
       setBabyId(bid);
       setBirthDate(bbd);
       if (bid) {
@@ -267,7 +266,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
     if (!vaccineTarget || !babyId || !userId) return;
     const parsed = parseDate(givenDate);
     if (!parsed) {
-      if (Platform.OS === 'web') window.alert('Enter date as MM/DD/YYYY');
+      Alert.alert('Invalid Date', 'Enter date as MM/DD/YYYY');
       return;
     }
     setSavingVaccine(true);
@@ -291,7 +290,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       setVaccineStep('reactions');
       setReactions([]);
     } catch (err: any) {
-      if (Platform.OS === 'web') window.alert('Save failed: ' + (err?.message ?? 'Unknown error'));
+      Alert.alert('Save Failed', err?.message ?? 'Could not save this vaccine record. Please try again.');
     } finally {
       setSavingVaccine(false);
     }
@@ -355,7 +354,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
     if (!babyId || !userId || !apptTitle.trim() || !apptDate.trim()) return;
     const parsed = parseDate(apptDate);
     if (!parsed) {
-      if (Platform.OS === 'web') window.alert('Enter date as MM/DD/YYYY');
+      Alert.alert('Invalid Date', 'Enter date as MM/DD/YYYY');
       return;
     }
     setSavingAppt(true);
@@ -381,21 +380,36 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
       }
       await loadAll();
       setApptOpen(false);
+    } catch (err: any) {
+      Alert.alert('Save Failed', err?.message ?? 'Could not save this appointment. Please try again.');
     } finally {
       setSavingAppt(false);
     }
   }
 
   async function toggleComplete(a: Appointment) {
-    await safeUpdate('pediatric_appointments', a.id, { completed: !a.completed });
-    setAppointments(prev => prev.map(x => x.id === a.id ? { ...x, completed: !x.completed } : x));
+    try {
+      await safeUpdate('pediatric_appointments', a.id, { completed: !a.completed });
+      setAppointments(prev => prev.map(x => x.id === a.id ? { ...x, completed: !x.completed } : x));
+    } catch (err: any) {
+      Alert.alert('Update Failed', err?.message ?? 'Could not update this appointment. Please try again.');
+    }
   }
 
   async function deleteAppt(id: string) {
-    const ok = Platform.OS === 'web' ? window.confirm('Delete this appointment?') : true;
-    if (!ok) return;
-    await safeDelete('pediatric_appointments', id);
-    setAppointments(prev => prev.filter(a => a.id !== id));
+    Alert.alert('Delete appointment?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            await safeDelete('pediatric_appointments', id);
+            setAppointments(prev => prev.filter(a => a.id !== id));
+          } catch (err: any) {
+            Alert.alert('Delete Failed', err?.message ?? 'Could not delete this appointment. Please try again.');
+          }
+        },
+      },
+    ]);
   }
 
   // ── Derived state ────────────────────────────────────────────────────────────
@@ -436,7 +450,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
     <View style={s.container}>
 
       {/* ── Collapsible header with progress ── */}
-      <TouchableOpacity style={s.collapseHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.75}>
+      <TouchableOpacity style={s.collapseHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.75}
+        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand vaccines and appointments' : 'Collapse vaccines and appointments'}>
         <View style={{ flex: 1 }}>
           <View style={s.headerTopRow}>
             <Text style={s.heading}>💉 Vaccines & Appointments</Text>
@@ -460,7 +475,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
         <>
           <View style={s.tabRow}>
             {(['vaccines', 'appointments'] as const).map(t => (
-              <TouchableOpacity key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]} onPress={() => setTab(t)} activeOpacity={0.8}>
+              <TouchableOpacity key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]} onPress={() => setTab(t)} activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel={t === 'vaccines' ? 'Vaccines' : 'Appointments'}>
                 <Text style={[s.tabText, tab === t && s.tabTextActive]}>
                   {t === 'vaccines' ? 'Vaccines' : 'Appointments'}
                 </Text>
@@ -474,6 +490,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
               style={[s.toggle, reminderSettings.enabled && { backgroundColor: c.primary }]}
               onPress={toggleVaccineReminders}
               activeOpacity={0.8}
+              accessibilityRole="switch" accessibilityLabel="Vaccine reminders" accessibilityState={{ checked: reminderSettings.enabled }}
             >
               <View style={[s.toggleThumb, reminderSettings.enabled && { transform: [{ translateX: 20 }] }]} />
             </TouchableOpacity>
@@ -578,7 +595,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
             </>
           ) : (
             <>
-              <TouchableOpacity style={s.addBtn} onPress={openAddAppt} activeOpacity={0.85}>
+              <TouchableOpacity style={s.addBtn} onPress={openAddAppt} activeOpacity={0.85}
+                accessibilityRole="button" accessibilityLabel="Add appointment">
                 <Text style={s.addBtnText}>+ Add Appointment</Text>
               </TouchableOpacity>
 
@@ -589,17 +607,20 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                   const isPast = new Date(a.scheduled_date) < new Date() && !a.completed;
                   return (
                     <View key={a.id} style={[s.apptCard, a.completed && s.apptCardDone]}>
-                      <TouchableOpacity style={s.checkbox} onPress={() => toggleComplete(a)} activeOpacity={0.7}>
+                      <TouchableOpacity style={s.checkbox} onPress={() => toggleComplete(a)} activeOpacity={0.7}
+                        accessibilityRole="checkbox" accessibilityLabel={`Mark ${a.title} ${a.completed ? 'incomplete' : 'complete'}`} accessibilityState={{ checked: a.completed }}>
                         <Text style={s.checkboxIcon}>{a.completed ? '✅' : '⬜'}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={s.apptBody} onPress={() => openEditAppt(a)} activeOpacity={0.75}>
+                      <TouchableOpacity style={s.apptBody} onPress={() => openEditAppt(a)} activeOpacity={0.75}
+                        accessibilityRole="button" accessibilityLabel={`Edit ${a.title}`}>
                         <Text style={[s.apptTitle, a.completed && s.apptTitleDone]}>{a.title}</Text>
                         <Text style={[s.apptMeta, isPast && !a.completed && s.apptMetaOverdue]}>
                           📅 {formatDate(a.scheduled_date)}{a.doctor_name ? `  ·  👨‍⚕️ ${a.doctor_name}` : ''}
                         </Text>
                         {a.notes ? <Text style={s.apptNotes} numberOfLines={2}>{a.notes}</Text> : null}
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteAppt(a.id)} style={s.deleteBtn} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => deleteAppt(a.id)} style={s.deleteBtn} activeOpacity={0.7}
+                        accessibilityRole="button" accessibilityLabel={`Delete ${a.title}`}>
                         <Text style={s.deleteIcon}>🗑</Text>
                       </TouchableOpacity>
                     </View>
@@ -612,7 +633,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
           {/* ── Vaccine modal ── */}
           <Modal visible={vaccineTarget !== null} animationType="slide" transparent onRequestClose={() => setVaccineTarget(null)}>
             <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setVaccineTarget(null)} />
+              <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setVaccineTarget(null)}
+                accessibilityRole="button" accessibilityLabel="Close" />
               <View style={s.sheet}>
                 <View style={s.handle} />
                 <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -707,6 +729,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                       <TouchableOpacity
                         style={[s.saveBtn, savingVaccine && s.saveBtnDisabled]}
                         onPress={saveVaccineLog} disabled={savingVaccine} activeOpacity={0.85}
+                        accessibilityRole="button" accessibilityLabel="Save"
                       >
                         {savingVaccine
                           ? <ActivityIndicator color="#fff" />
@@ -718,11 +741,13 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                           style={s.clearBtn}
                           onPress={() => { if (vaccineTarget) { clearVaccineRecord(vaccineTarget.key); setVaccineTarget(null); } }}
                           activeOpacity={0.7}
+                          accessibilityRole="button" accessibilityLabel="Clear vaccine record"
                         >
                           <Text style={s.clearBtnText}>Remove record</Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity style={s.cancelBtn} onPress={() => setVaccineTarget(null)} activeOpacity={0.7}>
+                      <TouchableOpacity style={s.cancelBtn} onPress={() => setVaccineTarget(null)} activeOpacity={0.7}
+                        accessibilityRole="button" accessibilityLabel="Cancel">
                         <Text style={s.cancelText}>Cancel</Text>
                       </TouchableOpacity>
                     </>
@@ -769,7 +794,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                       )}
 
                       <View style={s.reactionBtns}>
-                        <TouchableOpacity style={s.skipBtn} onPress={() => setVaccineTarget(null)} activeOpacity={0.8}>
+                        <TouchableOpacity style={s.skipBtn} onPress={() => setVaccineTarget(null)} activeOpacity={0.8}
+                          accessibilityRole="button" accessibilityLabel="Skip">
                           <Text style={s.skipBtnText}>Skip</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -794,7 +820,8 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
           {/* ── Appointment modal ── */}
           <Modal visible={apptOpen} animationType="slide" transparent onRequestClose={() => setApptOpen(false)}>
             <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setApptOpen(false)} />
+              <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setApptOpen(false)}
+                accessibilityRole="button" accessibilityLabel="Close" />
               <View style={s.sheet}>
                 <View style={s.handle} />
                 <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -830,10 +857,12 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                   <TouchableOpacity
                     style={[s.saveBtn, (savingAppt || !apptTitle.trim() || !apptDate.trim()) && s.saveBtnDisabled]}
                     onPress={saveAppt} disabled={savingAppt || !apptTitle.trim() || !apptDate.trim()} activeOpacity={0.85}
+                    accessibilityRole="button" accessibilityLabel="Save appointment"
                   >
                     {savingAppt ? <ActivityIndicator color="#fff" /> : <Text style={s.saveBtnText}>Save Appointment</Text>}
                   </TouchableOpacity>
-                  <TouchableOpacity style={s.cancelBtn} onPress={() => setApptOpen(false)} activeOpacity={0.7}>
+                  <TouchableOpacity style={s.cancelBtn} onPress={() => setApptOpen(false)} activeOpacity={0.7}
+                    accessibilityRole="button" accessibilityLabel="Cancel">
                     <Text style={s.cancelText}>Cancel</Text>
                   </TouchableOpacity>
                 </ScrollView>

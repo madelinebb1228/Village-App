@@ -52,7 +52,8 @@ export default function PostLogCelebration({
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}>
-      <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={onDismiss}>
+      <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={onDismiss}
+        accessibilityRole="button" accessibilityLabel="Dismiss">
         <View style={[s.card, isMilestone && s.milestoneCard]}>
           <Patchy mood={mood} size={110} />
           <Text style={s.title}>{title}</Text>

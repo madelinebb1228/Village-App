@@ -9,12 +9,27 @@ import {
   ActivityIndicator,
   TextInput,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
+import { RESOURCES } from './ResourcesTab';
+
+type SearchResource = typeof RESOURCES[number];
+
+interface SearchPatch {
+  id: string;
+  name: string;
+  type: string;
+  city: string | null;
+  state_name: string | null;
+  description: string | null;
+  schedule: string | null;
+  link: string | null;
+}
 
 interface SearchProfile {
   id: string;
@@ -53,9 +68,12 @@ export default function SearchSheet({ visible, onClose }: Props) {
   const s = useMemo(() => makeStyles(c), [c]);
 
   const [query, setQuery] = useState('');
-  const [tab, setTab] = useState<'people' | 'posts'>('people');
+  const [tab, setTab] = useState<'people' | 'posts' | 'patches' | 'resources'>('people');
   const [people, setPeople] = useState<SearchProfile[]>([]);
   const [posts, setPosts] = useState<SearchPost[]>([]);
+  const [patches, setPatches] = useState<SearchPatch[]>([]);
+  const [resources, setResources] = useState<SearchResource[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -68,6 +86,9 @@ export default function SearchSheet({ visible, onClose }: Props) {
       setQuery('');
       setPeople([]);
       setPosts([]);
+      setPatches([]);
+      setResources([]);
+      setExpandedId(null);
       setProfileUserId(null);
       return;
     }
@@ -89,9 +110,12 @@ export default function SearchSheet({ visible, onClose }: Props) {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    setExpandedId(null);
     if (query.trim().length < 2) {
       setPeople([]);
       setPosts([]);
+      setPatches([]);
+      setResources([]);
       setLoading(false);
       return;
     }
@@ -111,7 +135,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
           .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
           .limit(25);
         setPeople(data ?? []);
-      } else {
+      } else if (tab === 'posts') {
         const { data } = await supabase
           .from('posts')
           .select('id, user_id, author, content, post_type, created_at, image_url')
@@ -119,6 +143,23 @@ export default function SearchSheet({ visible, onClose }: Props) {
           .order('created_at', { ascending: false })
           .limit(25);
         setPosts(data ?? []);
+      } else if (tab === 'patches') {
+        const { data } = await supabase
+          .from('mom_groups')
+          .select('id, name, type, city, state_name, description, schedule, link')
+          .or(`name.ilike.%${q}%,description.ilike.%${q}%`)
+          .order('name')
+          .limit(25);
+        setPatches((data ?? []) as SearchPatch[]);
+      } else {
+        const needle = q.toLowerCase();
+        setResources(
+          RESOURCES.filter(r =>
+            r.title.toLowerCase().includes(needle) ||
+            r.description.toLowerCase().includes(needle) ||
+            r.category.toLowerCase().includes(needle),
+          ),
+        );
       }
     } catch (err: any) {
       console.warn('SearchSheet error:', err.message);
@@ -153,7 +194,11 @@ export default function SearchSheet({ visible, onClose }: Props) {
   }
 
   const trimmedQuery = query.trim();
-  const hasResults = tab === 'people' ? people.length > 0 : posts.length > 0;
+  const hasResults =
+    tab === 'people' ? people.length > 0
+    : tab === 'posts' ? posts.length > 0
+    : tab === 'patches' ? patches.length > 0
+    : resources.length > 0;
 
   return (
     <>
@@ -170,7 +215,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
               <Text style={s.searchIcon}>🔍</Text>
               <TextInput
                 style={s.searchInput}
-                placeholder="Search people or posts..."
+                placeholder="Search people, posts, patches, resources..."
                 placeholderTextColor={c.textMuted}
                 value={query}
                 onChangeText={setQuery}
@@ -191,7 +236,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
           </View>
 
           {/* ── Tab bar ── */}
-          <View style={s.tabBar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarScroll} contentContainerStyle={s.tabBar}>
             <TouchableOpacity
               style={[s.tabBtn, tab === 'people' && s.tabBtnActive]}
               onPress={() => setTab('people')}
@@ -204,7 +249,19 @@ export default function SearchSheet({ visible, onClose }: Props) {
             >
               <Text style={[s.tabText, tab === 'posts' && s.tabTextActive]}>💬 Posts</Text>
             </TouchableOpacity>
-          </View>
+            <TouchableOpacity
+              style={[s.tabBtn, tab === 'patches' && s.tabBtnActive]}
+              onPress={() => setTab('patches')}
+            >
+              <Text style={[s.tabText, tab === 'patches' && s.tabTextActive]}>🩹 Patches</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.tabBtn, tab === 'resources' && s.tabBtnActive]}
+              onPress={() => setTab('resources')}
+            >
+              <Text style={[s.tabText, tab === 'resources' && s.tabTextActive]}>📚 Resources</Text>
+            </TouchableOpacity>
+          </ScrollView>
 
           {/* ── Body ── */}
           {loading ? (
@@ -213,11 +270,17 @@ export default function SearchSheet({ visible, onClose }: Props) {
             </View>
           ) : trimmedQuery.length < 2 ? (
             <View style={s.center}>
-              <Text style={s.hintEmoji}>{tab === 'people' ? '👋' : '📝'}</Text>
+              <Text style={s.hintEmoji}>
+                {tab === 'people' ? '👋' : tab === 'posts' ? '📝' : tab === 'patches' ? '🩹' : '📚'}
+              </Text>
               <Text style={s.hintText}>
                 {tab === 'people'
                   ? 'Search by username or name to find people in your community'
-                  : 'Search words or phrases to find posts'}
+                  : tab === 'posts'
+                  ? 'Search words or phrases to find posts'
+                  : tab === 'patches'
+                  ? 'Search by name or description to find parent groups ("patches")'
+                  : 'Search topics like "choking" or "sleep" to find safety guides and resources'}
               </Text>
             </View>
           ) : tab === 'people' ? (
@@ -277,7 +340,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                 })
               )}
             </ScrollView>
-          ) : (
+          ) : tab === 'posts' ? (
             <ScrollView
               contentContainerStyle={s.listContent}
               keyboardShouldPersistTaps="handled"
@@ -321,6 +384,85 @@ export default function SearchSheet({ visible, onClose }: Props) {
                     ) : null}
                   </TouchableOpacity>
                 ))
+              )}
+            </ScrollView>
+          ) : tab === 'patches' ? (
+            <ScrollView
+              contentContainerStyle={s.listContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {!hasResults ? (
+                <Text style={s.emptyText}>No patches found for "{trimmedQuery}"</Text>
+              ) : (
+                patches.map(patch => {
+                  const expanded = expandedId === patch.id;
+                  const location = [patch.city, patch.state_name].filter(Boolean).join(', ');
+                  return (
+                    <TouchableOpacity
+                      key={patch.id}
+                      style={s.postCard}
+                      onPress={() => setExpandedId(expanded ? null : patch.id)}
+                      activeOpacity={0.78}
+                    >
+                      <Text style={s.postAuthor}>{patch.name}</Text>
+                      {location ? <Text style={s.postTime}>{location}</Text> : null}
+                      {patch.description ? (
+                        <Text style={s.postContent} numberOfLines={expanded ? undefined : 2}>
+                          {patch.description}
+                        </Text>
+                      ) : null}
+                      {expanded && (
+                        <>
+                          {patch.schedule ? (
+                            <Text style={s.postHasPhoto}>🗓 {patch.schedule}</Text>
+                          ) : null}
+                          {patch.link ? (
+                            <TouchableOpacity onPress={() => Linking.openURL(patch.link!)}>
+                              <Text style={[s.postHasPhoto, { color: c.primary }]}>🔗 Open link</Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          ) : (
+            <ScrollView
+              contentContainerStyle={s.listContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {!hasResults ? (
+                <Text style={s.emptyText}>No resources found for "{trimmedQuery}"</Text>
+              ) : (
+                resources.map(resource => {
+                  const expanded = expandedId === resource.id;
+                  return (
+                    <TouchableOpacity
+                      key={resource.id}
+                      style={s.postCard}
+                      onPress={() => setExpandedId(expanded ? null : resource.id)}
+                      activeOpacity={0.78}
+                    >
+                      <View style={s.postCardHeader}>
+                        <Text style={s.postTypeBadge}>{resource.emoji}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.postAuthor}>{resource.title}</Text>
+                          <Text style={s.postTime}>{resource.category}</Text>
+                        </View>
+                      </View>
+                      <Text style={s.postContent} numberOfLines={expanded ? undefined : 2}>
+                        {resource.description}
+                      </Text>
+                      {expanded ? (
+                        <Text style={s.postHasPhoto}>Open the Resources tab to view this in full</Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </ScrollView>
           )}
@@ -370,17 +512,20 @@ function makeStyles(c: Colors) {
     cancelBtn: { paddingHorizontal: 4 },
     cancelText: { fontSize: 15, color: c.primary, fontWeight: '600' },
 
+    tabBarScroll: {
+      flexGrow: 0,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
+    },
     tabBar: {
       flexDirection: 'row',
       paddingHorizontal: 16,
       paddingVertical: 10,
       gap: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: c.separator,
     },
     tabBtn: {
-      flex: 1,
       paddingVertical: 9,
+      paddingHorizontal: 16,
       borderRadius: 12,
       alignItems: 'center',
       backgroundColor: c.inputBg,

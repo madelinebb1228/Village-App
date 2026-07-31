@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Dimensions, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -625,6 +625,10 @@ export default function PostpartumMentalHealthTracker({
       setStep('results');
     } catch (err: any) {
       console.error('MH save error:', err);
+      Alert.alert(
+        'Save Failed',
+        err?.message ?? 'Could not save your check-in. Please try again.',
+      );
     } finally {
       setSaving(false);
     }
@@ -749,6 +753,7 @@ export default function PostpartumMentalHealthTracker({
               ]}
               onPress={openCheckIn}
               activeOpacity={0.85}
+              accessibilityRole="button" accessibilityLabel={overdue ? 'Check-in overdue, take one now' : due ? 'Check-in due this week' : 'Take another check-in'}
             >
               <Text style={[
                 s.checkInBtnText,
@@ -770,6 +775,7 @@ export default function PostpartumMentalHealthTracker({
                       style={s.historyItemMain}
                       onPress={() => setViewingRecord(rec)}
                       activeOpacity={0.7}
+                      accessibilityRole="button" accessibilityLabel={`Check-in from ${fmtDate(rec.created_at)}, score ${rec.epds_score} of 30`}
                     >
                       <Text style={s.historyDate}>{fmtDate(rec.created_at)}</Text>
                       <Text style={s.historyScore}>{rec.epds_score}/30</Text>
@@ -784,6 +790,7 @@ export default function PostpartumMentalHealthTracker({
                       onPress={() => deleteRecord(rec.id)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       style={s.historyDeleteBtn}
+                      accessibilityRole="button" accessibilityLabel="Delete check-in"
                     >
                       <Text style={s.historyDeleteBtnText}>✕</Text>
                     </TouchableOpacity>
@@ -801,6 +808,7 @@ export default function PostpartumMentalHealthTracker({
               style={[s.checkInBtn, { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
               onPress={openCheckIn}
               activeOpacity={0.85}
+              accessibilityRole="button" accessibilityLabel="Take your first check-in"
             >
               <Text style={[s.checkInBtnText, { color: c.lavender }]}>💜  Take Your First Check-in</Text>
             </TouchableOpacity>
@@ -825,7 +833,8 @@ export default function PostpartumMentalHealthTracker({
       {/* ── Check-in Modal ───────────────────────────────────────────────── */}
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => setShowModal(false)}>
         <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setShowModal(false)} />
+          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setShowModal(false)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={[s.sheet, { paddingBottom: insets.bottom }]}>
             <View style={s.handle} />
 
@@ -897,6 +906,7 @@ export default function PostpartumMentalHealthTracker({
                         setResponses(updated);
                       }}
                       activeOpacity={0.75}
+                      accessibilityRole="button" accessibilityLabel={opt.label}
                     >
                       <Text style={[s.optionText, responses[epdsIndex] === opt.score && s.optionTextSelected]}>
                         {opt.label}
@@ -925,6 +935,7 @@ export default function PostpartumMentalHealthTracker({
                             setPppFlags(flags); setPppAnswered(answered);
                           }}
                           activeOpacity={0.75}
+                          accessibilityRole="button" accessibilityLabel={`Yes: ${symptom}`}
                         >
                           <Text style={[s.yesNoBtnText, pppAnswered[i] && pppFlags[i] && s.yesNoBtnTextActive]}>Yes</Text>
                         </TouchableOpacity>
@@ -936,6 +947,7 @@ export default function PostpartumMentalHealthTracker({
                             setPppFlags(flags); setPppAnswered(answered);
                           }}
                           activeOpacity={0.75}
+                          accessibilityRole="button" accessibilityLabel={`No: ${symptom}`}
                         >
                           <Text style={[s.yesNoBtnText, pppAnswered[i] && !pppFlags[i] && s.yesNoBtnTextActive]}>No</Text>
                         </TouchableOpacity>
@@ -962,7 +974,8 @@ export default function PostpartumMentalHealthTracker({
 
             {/* Nav footer */}
             <View style={s.navRow}>
-              <TouchableOpacity style={s.navBack} onPress={handleBack} activeOpacity={0.75}>
+              <TouchableOpacity style={s.navBack} onPress={handleBack} activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel={step === 'results' ? 'Close' : 'Back'}>
                 <Text style={s.navBackText}>{step === 'results' ? 'Close' : 'Back'}</Text>
               </TouchableOpacity>
 
@@ -975,6 +988,7 @@ export default function PostpartumMentalHealthTracker({
                   onPress={handleNext}
                   disabled={!canAdvance || saving}
                   activeOpacity={0.85}
+                  accessibilityRole="button" accessibilityLabel={step === 'ppp' ? 'See results' : 'Next'}
                 >
                   {saving
                     ? <ActivityIndicator color="#fff" />
@@ -995,7 +1009,8 @@ export default function PostpartumMentalHealthTracker({
       {/* ── Past check-in detail ─────────────────────────────────────────── */}
       <Modal visible={!!viewingRecord} animationType="slide" transparent onRequestClose={() => setViewingRecord(null)}>
         <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setViewingRecord(null)} />
+          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setViewingRecord(null)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={[s.sheet, { paddingBottom: insets.bottom }]}>
             <View style={s.handle} />
             <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
@@ -1016,7 +1031,8 @@ export default function PostpartumMentalHealthTracker({
               )}
             </ScrollView>
             <View style={s.navRow}>
-              <TouchableOpacity style={s.navBack} onPress={() => setViewingRecord(null)} activeOpacity={0.75}>
+              <TouchableOpacity style={s.navBack} onPress={() => setViewingRecord(null)} activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Close">
                 <Text style={s.navBackText}>Close</Text>
               </TouchableOpacity>
             </View>

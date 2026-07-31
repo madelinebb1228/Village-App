@@ -316,7 +316,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
 
   function startGive(med: Medication) {
     const doseInfo = getDoseInfo(med.name, babyWeightLbs);
-    setGiveDose(doseInfo ? `${doseInfo.mlMax} mL` : (med.dose ?? ''));
+    setGiveDose(doseInfo && !doseInfo.needsDoctorConsult ? `${doseInfo.mlMax} mL` : (med.dose ?? ''));
     setGiveNote('');
     setGivingMed(med);
   }
@@ -461,7 +461,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
     <View style={s.wrap}>
 
       {/* ── Collapsed header ── */}
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse medications' : 'Expand medications'}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>💊</Text>
           <View>
@@ -563,7 +564,9 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
             meds.map(med => {
               const status   = getMedStatus(med, logs);
               const doseInfo = getDoseInfo(med.name, babyWeightLbs);
-              const doseLine = doseInfo
+              const doseLine = doseInfo?.needsDoctorConsult
+                ? 'Ask a doctor for dosing'
+                : doseInfo
                 ? `${doseInfo.mlMin}–${doseInfo.mlMax} mL  (${doseInfo.mgMin}–${doseInfo.mgMax} mg)`
                 : med.dose;
 
@@ -575,10 +578,12 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                       <Text style={s.medName} numberOfLines={1}>
                         {med.is_prescription ? '℞ ' : ''}{med.name}
                       </Text>
-                      <TouchableOpacity onPress={() => openEditMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => openEditMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button" accessibilityLabel={`Edit ${med.name}`}>
                         <Text style={s.medEditText}>✎</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => archiveMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => archiveMed(med)} style={s.medRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button" accessibilityLabel={`Remove ${med.name}`}>
                         <Text style={s.medRemoveText}>×</Text>
                       </TouchableOpacity>
                     </View>
@@ -632,12 +637,14 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
           )}
 
           {/* ── Add button ── */}
-          <TouchableOpacity style={s.addBtn} onPress={() => { setAddOpen(true); setAddStep('pick'); }} activeOpacity={0.8}>
+          <TouchableOpacity style={s.addBtn} onPress={() => { setAddOpen(true); setAddStep('pick'); }} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Add medication">
             <Text style={s.addBtnText}>+ Add Medication</Text>
           </TouchableOpacity>
 
           {/* ── History ── */}
-          <TouchableOpacity style={s.historyToggle} onPress={() => setShowHistory(p => !p)} activeOpacity={0.8}>
+          <TouchableOpacity style={s.historyToggle} onPress={() => setShowHistory(p => !p)} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel={showHistory ? 'Hide dose history' : 'Show dose history'}>
             <Text style={s.historyToggleText}>{showHistory ? '▲' : '▼'}  Dose history (48h)</Text>
           </TouchableOpacity>
 
@@ -674,7 +681,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
       {/* ══ Give / Take modal ══════════════════════════════════════════════════ */}
       <Modal visible={!!givingMed} transparent animationType="fade" onRequestClose={() => setGivingMed(null)}>
         <View style={s.modalOverlay}>
-          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setGivingMed(null)} />
+          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setGivingMed(null)}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={s.modalSheet}>
             <View style={s.modalHandle} />
             <Text style={s.modalTitle}>
@@ -683,7 +691,16 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
 
             {givingMed && (() => {
               const doseInfo = getDoseInfo(givingMed.name, babyWeightLbs);
-              return doseInfo ? (
+              if (!doseInfo) return null;
+              if (doseInfo.needsDoctorConsult) {
+                return (
+                  <View style={s.doseCalcCard}>
+                    <Text style={s.doseCalcLabel}>📐 Calculated dose for {babyWeightLbs} lbs</Text>
+                    <Text style={s.doseCalcNote}>⚠️  {doseInfo.note}</Text>
+                  </View>
+                );
+              }
+              return (
                 <View style={s.doseCalcCard}>
                   <Text style={s.doseCalcLabel}>📐 Calculated dose for {babyWeightLbs} lbs</Text>
                   <Text style={s.doseCalcValue}>{doseInfo.mlMin}–{doseInfo.mlMax} mL</Text>
@@ -692,7 +709,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                   </Text>
                   {doseInfo.note ? <Text style={s.doseCalcNote}>⚠️  {doseInfo.note}</Text> : null}
                 </View>
-              ) : null;
+              );
             })()}
 
             <Text style={s.inputLabel}>Dose given</Text>
@@ -715,13 +732,15 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
             />
 
             <View style={s.modalBtnRow}>
-              <TouchableOpacity style={s.modalCancelBtn} onPress={() => setGivingMed(null)}>
+              <TouchableOpacity style={s.modalCancelBtn} onPress={() => setGivingMed(null)}
+                accessibilityRole="button" accessibilityLabel="Cancel">
                 <Text style={s.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.modalConfirmBtn, { backgroundColor: givingMed?.color ?? c.primary }]}
                 onPress={confirmGive}
                 disabled={giving}
+                accessibilityRole="button" accessibilityLabel="Confirm dose given"
                 activeOpacity={0.8}
               >
                 {giving
@@ -737,7 +756,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
       {/* ══ Add medication modal ══════════════════════════════════════════════ */}
       <Modal visible={addOpen} transparent animationType="slide" onRequestClose={closeAdd}>
         <View style={s.modalOverlay}>
-          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeAdd} />
+          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeAdd}
+            accessibilityRole="button" accessibilityLabel="Close" />
           <View style={[s.modalSheet, { maxHeight: '85%' }]}>
             <View style={s.modalHandle} />
 
@@ -774,7 +794,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                   ))}
                 </View>
 
-                <TouchableOpacity style={s.rxToggle} onPress={() => setShowRx(p => !p)} activeOpacity={0.8}>
+                <TouchableOpacity style={s.rxToggle} onPress={() => setShowRx(p => !p)} activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={showRx ? 'Hide prescription medications' : 'Show prescription medications'}>
                   <Text style={s.rxToggleText}>{showRx ? '▲' : '▼'}  Show prescription medications (Rx)</Text>
                 </TouchableOpacity>
 
@@ -810,7 +831,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={s.modalHeader}>
                   {!editingMed && (
-                    <TouchableOpacity onPress={() => setAddStep('pick')} style={s.backBtn}>
+                    <TouchableOpacity onPress={() => setAddStep('pick')} style={s.backBtn}
+                      accessibilityRole="button" accessibilityLabel="Back">
                       <Text style={s.backBtnText}>← Back</Text>
                     </TouchableOpacity>
                   )}
@@ -872,7 +894,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                   <Text style={s.inputLabel}>🔔 Remind me after each dose</Text>
                   <TouchableOpacity
                     style={[s.toggle, cfgReminder && { backgroundColor: c.sage }]}
-                    onPress={() => setCfgReminder(p => !p)} activeOpacity={0.8}>
+                    onPress={() => setCfgReminder(p => !p)} activeOpacity={0.8}
+                    accessibilityRole="switch" accessibilityLabel="Reminder" accessibilityState={{ checked: cfgReminder }}>
                     <View style={[s.toggleThumb, cfgReminder && { transform: [{ translateX: 20 }] }]} />
                   </TouchableOpacity>
                 </View>
@@ -883,17 +906,20 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                     <TouchableOpacity
                       key={hex}
                       style={[s.colorDot, { backgroundColor: hex }, cfgColor === hex && s.colorDotActive]}
-                      onPress={() => setCfgColor(hex)} />
+                      onPress={() => setCfgColor(hex)}
+                      accessibilityRole="button" accessibilityLabel="Color option" />
                   ))}
                 </View>
 
                 <View style={s.modalBtnRow}>
-                  <TouchableOpacity style={s.modalCancelBtn} onPress={closeAdd}>
+                  <TouchableOpacity style={s.modalCancelBtn} onPress={closeAdd}
+                    accessibilityRole="button" accessibilityLabel="Cancel">
                     <Text style={s.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[s.modalConfirmBtn, { backgroundColor: cfgColor, opacity: saving ? 0.6 : 1 }]}
-                    onPress={saveMed} disabled={saving} activeOpacity={0.8}>
+                    onPress={saveMed} disabled={saving} activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel="Save medication">
                     {saving
                       ? <ActivityIndicator color="#fff" size="small" />
                       : <Text style={s.modalConfirmText}>{editingMed ? 'Save Changes' : 'Add Medication'}</Text>

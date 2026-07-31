@@ -182,7 +182,8 @@ export default function PostpartumRecoveryTracker({
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Postpartum Recovery section' : 'Expand Postpartum Recovery section'}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🌸</Text>
           <View>
@@ -242,12 +243,14 @@ export default function PostpartumRecoveryTracker({
                       {[...(todayLog.pf_symptoms ?? []), ...(todayLog.other_symptoms ?? [])].join(' · ')}
                     </Text>
                   )}
-                  <TouchableOpacity style={s.editBtn} onPress={() => startEdit(todayLog)}>
+                  <TouchableOpacity style={s.editBtn} onPress={() => startEdit(todayLog)}
+                    accessibilityRole="button" accessibilityLabel="Edit today's recovery log">
                     <Text style={s.editBtnText}>Edit</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                <TouchableOpacity style={s.logBtn} onPress={() => startEdit()}>
+                <TouchableOpacity style={s.logBtn} onPress={() => startEdit()}
+                  accessibilityRole="button" accessibilityLabel="Log today's recovery">
                   <Text style={s.logBtnText}>🌸  Log Today's Recovery</Text>
                 </TouchableOpacity>
               )}
@@ -302,7 +305,8 @@ export default function PostpartumRecoveryTracker({
                             <Text style={s.histTags}>{[...(log.pf_symptoms ?? []), ...(log.other_symptoms ?? [])].join(' · ')}</Text>
                           )}
                         </View>
-                        <TouchableOpacity onPress={() => deleteEntry(log.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <TouchableOpacity onPress={() => deleteEntry(log.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button" accessibilityLabel="Delete recovery log">
                           <Text style={s.histDelete}>✕</Text>
                         </TouchableOpacity>
                       </View>
@@ -321,6 +325,7 @@ export default function PostpartumRecoveryTracker({
                     key={n}
                     style={[s.painBtn, pain === n && { backgroundColor: PAIN_COLORS[n], borderColor: PAIN_COLORS[n] }]}
                     onPress={() => setPain(n)}
+                    accessibilityRole="button" accessibilityLabel={`Pain level ${n}`}
                   >
                     <Text style={[s.painBtnText, pain === n && { color: '#fff', fontWeight: '800' }]}>{n}</Text>
                   </TouchableOpacity>
@@ -331,7 +336,8 @@ export default function PostpartumRecoveryTracker({
               <Text style={s.formLabel}>Lochia / bleeding</Text>
               <View style={s.chipRow}>
                 {LOCHIA_OPTS.map(l => (
-                  <TouchableOpacity key={l} style={[s.chip, lochia === l && s.chipActive]} onPress={() => setLochia(l)}>
+                  <TouchableOpacity key={l} style={[s.chip, lochia === l && s.chipActive]} onPress={() => setLochia(l)}
+                    accessibilityRole="button" accessibilityLabel={l}>
                     <Text style={[s.chipText, lochia === l && s.chipTextActive]}>{l}</Text>
                   </TouchableOpacity>
                 ))}
@@ -341,7 +347,8 @@ export default function PostpartumRecoveryTracker({
               <Text style={s.formLabel}>Incision / perineum</Text>
               <View style={s.chipRow}>
                 {INCISION_OPTS.map(i => (
-                  <TouchableOpacity key={i.value} style={[s.chip, incision === i.value && s.chipActive]} onPress={() => setIncision(i.value)}>
+                  <TouchableOpacity key={i.value} style={[s.chip, incision === i.value && s.chipActive]} onPress={() => setIncision(i.value)}
+                    accessibilityRole="button" accessibilityLabel={i.label}>
                     <Text style={[s.chipText, incision === i.value && s.chipTextActive]}>{i.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -351,7 +358,8 @@ export default function PostpartumRecoveryTracker({
               <Text style={s.formLabel}>Pelvic floor <Text style={s.optional}>(pick any)</Text></Text>
               <View style={s.chipRow}>
                 {PF_SYMPTOMS.map(sym => (
-                  <TouchableOpacity key={sym} style={[s.chip, pfSyms.includes(sym) && s.chipActive]} onPress={() => setPfSyms(toggle(pfSyms, sym))}>
+                  <TouchableOpacity key={sym} style={[s.chip, pfSyms.includes(sym) && s.chipActive]} onPress={() => setPfSyms(toggle(pfSyms, sym))}
+                    accessibilityRole="button" accessibilityLabel={sym}>
                     <Text style={[s.chipText, pfSyms.includes(sym) && s.chipTextActive]}>{sym}</Text>
                   </TouchableOpacity>
                 ))}
@@ -363,7 +371,8 @@ export default function PostpartumRecoveryTracker({
                 {[0,1,2,3,4,5].map(n => (
                   <TouchableOpacity key={n}
                     style={[s.smallChip, breastPain === n && { backgroundColor: '#FBCFE8', borderColor: '#DB2777' }]}
-                    onPress={() => setBreastPain(n)}>
+                    onPress={() => setBreastPain(n)}
+                    accessibilityRole="button" accessibilityLabel={`Breast pain level ${n}`}>
                     <Text style={[s.smallChipText, breastPain === n && { color: '#DB2777', fontWeight: '700' }]}>{n}</Text>
                   </TouchableOpacity>
                 ))}
@@ -373,7 +382,8 @@ export default function PostpartumRecoveryTracker({
               <Text style={s.formLabel}>Other symptoms <Text style={s.optional}>(pick any)</Text></Text>
               <View style={s.chipRow}>
                 {OTHER_SYMPTOMS.map(sym => (
-                  <TouchableOpacity key={sym} style={[s.chip, otherSyms.includes(sym) && s.chipActive]} onPress={() => setOtherSyms(toggle(otherSyms, sym))}>
+                  <TouchableOpacity key={sym} style={[s.chip, otherSyms.includes(sym) && s.chipActive]} onPress={() => setOtherSyms(toggle(otherSyms, sym))}
+                    accessibilityRole="button" accessibilityLabel={sym}>
                     <Text style={[s.chipText, otherSyms.includes(sym) && s.chipTextActive]}>{sym}</Text>
                   </TouchableOpacity>
                 ))}
@@ -386,10 +396,12 @@ export default function PostpartumRecoveryTracker({
                 multiline maxLength={300} textAlignVertical="top" />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => setEditing(false)}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => setEditing(false)}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel="Save">
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save</Text>}
                 </TouchableOpacity>
               </View>

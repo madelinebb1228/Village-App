@@ -77,6 +77,7 @@ export default function YouTab() {
                 backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
               }}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={`Jump to ${sec.label.replace(/^[^\w]+/, '')}`}
             >
               <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }}>{sec.label}</Text>
             </TouchableOpacity>

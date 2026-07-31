@@ -27,7 +27,8 @@ export default function ConfirmModal({ visible, title, message, buttons, onReque
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onRequestClose}>
       <View style={s.overlay}>
-        <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onRequestClose} />
+        <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onRequestClose}
+          accessibilityRole="button" accessibilityLabel="Close" />
         <View style={s.card}>
           <Text style={s.title}>{title}</Text>
           {message ? <Text style={s.message}>{message}</Text> : null}
@@ -43,6 +44,7 @@ export default function ConfirmModal({ visible, title, message, buttons, onReque
                 onPress={b.onPress}
                 disabled={b.loading}
                 activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel={b.label}
               >
                 {b.loading ? (
                   <ActivityIndicator size="small" color={b.variant === 'primary' || b.variant === 'destructive' ? '#fff' : c.textPrimary} />

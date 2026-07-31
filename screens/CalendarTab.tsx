@@ -53,7 +53,8 @@ export default function CalendarTab() {
             <Text style={s.premiumBody}>
               Share schedules, appointments, and reminders with your co-parent or support circle — everyone stays on the same page.
             </Text>
-            <TouchableOpacity style={s.premiumBtn} onPress={openPaywall} activeOpacity={0.85}>
+            <TouchableOpacity style={s.premiumBtn} onPress={openPaywall} activeOpacity={0.85}
+              accessibilityRole="button" accessibilityLabel="Unlock calendar">
               <Text style={s.premiumBtnText}>Unlock Calendar</Text>
             </TouchableOpacity>
           </View>

@@ -22,6 +22,7 @@ import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
 import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
+import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
@@ -138,6 +139,7 @@ export default function Profile() {
   const [baby, setBaby] = useState<Baby | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -167,6 +169,7 @@ export default function Profile() {
   const [saveError, setSaveError] = useState('');
 
   const loadAll = useCallback(async () => {
+    setLoadError(false);
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -223,6 +226,7 @@ export default function Profile() {
       }
     } catch (err: any) {
       console.warn('Profile loadAll error:', err.message);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -456,6 +460,7 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={s.safeArea}>
+      {loadError && <LoadErrorBanner message="Couldn't load your profile." onRetry={loadAll} />}
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
@@ -467,10 +472,12 @@ export default function Profile() {
           <Text style={s.heading}>Profile</Text>
           {editing ? (
             <View style={s.topBarActions}>
-              <TouchableOpacity onPress={cancelEdit} style={s.topBarCancelBtn}>
+              <TouchableOpacity onPress={cancelEdit} style={s.topBarCancelBtn}
+                accessibilityRole="button" accessibilityLabel="Cancel edit">
                 <Text style={s.topBarCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={saveProfile} style={s.topBarSaveBtn} disabled={saving}>
+              <TouchableOpacity onPress={saveProfile} style={s.topBarSaveBtn} disabled={saving}
+                accessibilityRole="button" accessibilityLabel="Save profile">
                 {saving
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Text style={s.topBarSaveText}>Save</Text>
@@ -479,10 +486,12 @@ export default function Profile() {
             </View>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <TouchableOpacity onPress={startEdit} style={s.editProfileBtn}>
+              <TouchableOpacity onPress={startEdit} style={s.editProfileBtn}
+                accessibilityRole="button" accessibilityLabel="Edit profile">
                 <Text style={s.editProfileBtnText}>Edit Profile</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn} activeOpacity={0.75}>
+              <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn} activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel="Settings">
                 <Text style={{ fontSize: 20 }}>⚙️</Text>
               </TouchableOpacity>
             </View>
@@ -500,7 +509,8 @@ export default function Profile() {
               <View style={[s.headerBannerPlaceholder, isAdmin && s.headerBannerPlaceholderAdmin]} />
             )}
             {editing && (
-              <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}>
+              <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel={headerDisplayUri ? 'Change header photo' : 'Add header photo'}>
                 <Text style={s.headerBannerEditText}>📷  {headerDisplayUri ? 'Change header' : 'Add header photo'}</Text>
               </TouchableOpacity>
             )}
@@ -512,6 +522,8 @@ export default function Profile() {
               style={[s.avatarWrap, isAdmin && s.avatarWrapAdmin]}
               onPress={editing ? pickAvatar : undefined}
               activeOpacity={editing ? 0.75 : 1}
+              accessibilityRole={editing ? 'button' : undefined}
+              accessibilityLabel={editing ? 'Change profile photo' : undefined}
             >
               {avatarSource ? (
                 <Image source={avatarSource} style={s.avatarImage} />
@@ -539,6 +551,7 @@ export default function Profile() {
                 placeholder="Your name"
                 placeholderTextColor="#C4BAB2"
                 autoCapitalize="words"
+                accessibilityLabel="Your name"
               />
 
               <View style={s.usernameRow}>
@@ -555,6 +568,7 @@ export default function Profile() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   maxLength={20}
+                  accessibilityLabel="Username"
                 />
               </View>
               {usernameError ? <Text style={s.usernameError}>{usernameError}</Text> : null}
@@ -567,6 +581,7 @@ export default function Profile() {
                 placeholderTextColor="#C4BAB2"
                 multiline
                 maxLength={160}
+                accessibilityLabel="Bio"
               />
               <Text style={s.fieldLabel}>I am a...</Text>
               <View style={s.roleRow}>
@@ -575,6 +590,7 @@ export default function Profile() {
                     key={role}
                     style={[s.roleChip, editParentRole === role && s.roleChipActive]}
                     onPress={() => setEditParentRole(prev => prev === role ? '' : role)}
+                    accessibilityRole="button" accessibilityLabel={role}
                   >
                     <Text style={[s.roleChipText, editParentRole === role && s.roleChipTextActive]}>{role}</Text>
                   </TouchableOpacity>
@@ -589,6 +605,7 @@ export default function Profile() {
                     key={term}
                     style={[s.roleChip, editPreferredTerm === term && s.roleChipActive]}
                     onPress={() => setEditPreferredTerm(prev => prev === term ? '' : term)}
+                    accessibilityRole="button" accessibilityLabel={term}
                   >
                     <Text style={[s.roleChipText, editPreferredTerm === term && s.roleChipTextActive]}>{term}</Text>
                   </TouchableOpacity>
@@ -606,6 +623,7 @@ export default function Profile() {
                   onValueChange={setEditShowVillages}
                   trackColor={{ false: c.cardSage, true: c.sage }}
                   thumbColor={editShowVillages ? '#fff' : '#fff'}
+                  accessibilityLabel="Show my patches on my profile"
                 />
               </View>
 
@@ -620,6 +638,7 @@ export default function Profile() {
                   onValueChange={setEditBabyInfoPrivate}
                   trackColor={{ false: c.cardSage, true: c.sage }}
                   thumbColor="#fff"
+                  accessibilityLabel="Keep baby info private"
                 />
               </View>
 
@@ -699,12 +718,14 @@ export default function Profile() {
                             <TouchableOpacity
                               onPress={() => handleFollowRequest(req.id, req.requester_id, true)}
                               style={{ backgroundColor: c.primary, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5 }}
+                              accessibilityRole="button" accessibilityLabel={`Accept follow request from ${name}`}
                             >
                               <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Accept</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => handleFollowRequest(req.id, req.requester_id, false)}
                               style={{ backgroundColor: c.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1.5, borderColor: c.separator }}
+                              accessibilityRole="button" accessibilityLabel={`Decline follow request from ${name}`}
                             >
                               <Text style={{ fontSize: 12, fontWeight: '700', color: c.textMuted }}>Decline</Text>
                             </TouchableOpacity>
@@ -763,6 +784,7 @@ export default function Profile() {
             ]}
             onPress={() => setShowProfileSheet(true)}
             activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel="Open baby profile"
           >
             <View style={s.babyCardLeft}>
               {baby.photo_url ? (
@@ -790,7 +812,8 @@ export default function Profile() {
             <Text style={s.babyChevron}>›</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={s.babyCardEmpty} onPress={() => setShowProfileSheet(true)} activeOpacity={0.85}>
+          <TouchableOpacity style={s.babyCardEmpty} onPress={() => setShowProfileSheet(true)} activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel="Add baby profile">
             <Text style={s.babyCardEmptyText}>+ Add baby profile</Text>
           </TouchableOpacity>
         )}
@@ -802,6 +825,7 @@ export default function Profile() {
             style={[s.tabToggleBtn, profileTab === 'posts' && s.tabToggleBtnActive]}
             onPress={() => setProfileTab('posts')}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Posts tab"
           >
             <Text style={[s.tabToggleText, profileTab === 'posts' && s.tabToggleTextActive]}>
               💬 Posts
@@ -811,6 +835,7 @@ export default function Profile() {
             style={[s.tabToggleBtn, profileTab === 'saved' && s.tabToggleBtnActive]}
             onPress={() => setProfileTab('saved')}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Saved tab"
           >
             <Text style={[s.tabToggleText, profileTab === 'saved' && s.tabToggleTextActive]}>
               🔖 Saved
@@ -821,6 +846,7 @@ export default function Profile() {
               style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
               onPress={() => setProfileTab('journal')}
               activeOpacity={0.8}
+              accessibilityRole="button" accessibilityLabel="Journal tab"
             >
               <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
                 📖 Journal
@@ -865,10 +891,12 @@ export default function Profile() {
                       </Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button" accessibilityLabel={isPinned ? 'Unpin post' : 'Pin post'}>
                         <Text style={s.postDeleteIcon}>{isPinned ? '📌' : '📍'}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}>
+                      <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}
+                        accessibilityRole="button" accessibilityLabel="Delete post">
                         <Text style={s.postDeleteIcon}>🗑</Text>
                       </TouchableOpacity>
                     </View>

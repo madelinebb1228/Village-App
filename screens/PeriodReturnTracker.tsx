@@ -106,7 +106,8 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Period Return section' : 'Expand Period Return section'}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🩸</Text>
           <View>
@@ -171,17 +172,20 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
                 {FLOW_OPTS.find(f => f.value === l.flow_level)?.label ?? l.flow_level}
               </Text>
               {l.symptoms?.length > 0 && <Text style={s.logSyms} numberOfLines={1}>{l.symptoms.join(', ')}</Text>}
-              <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button" accessibilityLabel="Edit period log">
                 <Text style={s.logAction}>✎</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button" accessibilityLabel="Delete period log">
                 <Text style={[s.logAction, { color: c.textMuted }]}>✕</Text>
               </TouchableOpacity>
             </View>
           ))}
 
           {!adding ? (
-            <TouchableOpacity style={s.logBtn} onPress={() => openEditor(todayLog)}>
+            <TouchableOpacity style={s.logBtn} onPress={() => openEditor(todayLog)}
+              accessibilityRole="button" accessibilityLabel={todayLog ? 'Update today' : 'Log today'}>
               <Text style={s.logBtnText}>{todayLog ? '✏️ Update Today' : '+ Log Today'}</Text>
             </TouchableOpacity>
           ) : (
@@ -191,7 +195,8 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
                 {FLOW_OPTS.map(f => (
                   <TouchableOpacity key={f.value}
                     style={[s.flowBtn, flow === f.value && { backgroundColor: f.color + '22', borderColor: f.color }]}
-                    onPress={() => setFlow(f.value)}>
+                    onPress={() => setFlow(f.value)}
+                    accessibilityRole="button" accessibilityLabel={f.label}>
                     <Text style={[s.flowBtnText, flow === f.value && { color: f.color, fontWeight: '700' }]}>{f.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -202,7 +207,8 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
                 {SYMPTOMS.map(sym => (
                   <TouchableOpacity key={sym}
                     style={[s.chip, symptoms.includes(sym) && { backgroundColor: '#FEE2E2', borderColor: '#DC2626' }]}
-                    onPress={() => toggleSym(sym)}>
+                    onPress={() => toggleSym(sym)}
+                    accessibilityRole="button" accessibilityLabel={sym}>
                     <Text style={[s.chipText, symptoms.includes(sym) && { color: '#DC2626', fontWeight: '700' }]}>{sym}</Text>
                   </TouchableOpacity>
                 ))}
@@ -214,10 +220,12 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
                 multiline maxLength={300} textAlignVertical="top" />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel={editingId ? 'Save changes' : 'Save'}>
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingId ? 'Save Changes' : 'Save'}</Text>}
                 </TouchableOpacity>
               </View>

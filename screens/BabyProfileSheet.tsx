@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import LoadErrorBanner from '../components/LoadErrorBanner';
+import { useBaby } from '../lib/babyContext';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
@@ -153,6 +155,7 @@ export default function BabyProfileSheet({
   const [baby, setBaby] = useState<BabyFull | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -182,24 +185,27 @@ export default function BabyProfileSheet({
   const [milestoneDate, setMilestoneDate] = useState('');
   const [milestoneNotes, setMilestoneNotes] = useState('');
 
+  const { activeBabyId, refreshBabies } = useBaby();
+
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setUserId(user.id);
+      if (!activeBabyId) { setBaby(null); setMilestones([]); return; }
 
       const [babyRes, milestonesRes] = await Promise.all([
         supabase
           .from('babies')
           .select('id,name,birth_date,is_expecting,gender,birth_weight,birth_length,current_weight,current_height,photo_url,pediatrician_name,pediatrician_phone,weight_updated_at,height_updated_at')
-          .eq('user_id', user.id)
-          .limit(1)
+          .eq('id', activeBabyId)
           .maybeSingle(),
         supabase
           .from('milestones')
           .select('id,title,milestone_date,notes')
-          .eq('user_id', user.id)
+          .eq('baby_id', activeBabyId)
           .order('milestone_date', { ascending: false }),
       ]);
 
@@ -207,10 +213,11 @@ export default function BabyProfileSheet({
       if (milestonesRes.data) setMilestones(milestonesRes.data as Milestone[]);
     } catch (err: any) {
       console.warn('BabyProfileSheet loadData error:', err.message);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeBabyId]);
 
   useEffect(() => {
     if (visible) {
@@ -309,6 +316,7 @@ export default function BabyProfileSheet({
 
       if (error) throw error;
       await loadData();
+      await refreshBabies();
       setEditing(false);
     } catch (err: any) {
       Alert.alert('Save failed', err.message);
@@ -397,6 +405,7 @@ export default function BabyProfileSheet({
             <Text style={s.topBarBtnText}>{editing ? 'Cancel' : '✕'}</Text>
           </TouchableOpacity>
           <Text style={s.topBarTitle}>Baby Profile</Text>
+          {loadError ? <LoadErrorBanner message="Couldn't load baby profile." onRetry={loadData} /> : null}
           {!loading && baby ? (
             <TouchableOpacity
               style={s.topBarBtn}

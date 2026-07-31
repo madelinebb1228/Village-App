@@ -575,6 +575,7 @@ export default function SleepTracker({
                 style={[s.qualityBtn, quality === opt.value && s.qualityBtnActive]}
                 onPress={() => setQuality(q => q === opt.value ? null : opt.value)}
                 activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel={opt.label}
               >
                 <Text style={{ fontSize: 20 }}>{opt.emoji}</Text>
                 <Text style={[s.qualityBtnText, quality === opt.value && s.qualityBtnTextActive]}>
@@ -590,6 +591,7 @@ export default function SleepTracker({
             value={notes}
             onChangeText={setNotes}
             multiline
+            accessibilityLabel="Notes"
           />
         </>
       )}
@@ -603,6 +605,7 @@ export default function SleepTracker({
               style={[s.typeBtn, sleepType === type && s.typeBtnActive]}
               onPress={() => setSleepType(type)}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={type === 'nap' ? 'Nap' : 'Night sleep'}
             >
               <Text style={[s.typeBtnText, sleepType === type && s.typeBtnTextActive]}>
                 {type === 'nap'
@@ -620,6 +623,7 @@ export default function SleepTracker({
           <TouchableOpacity
             style={[s.btn, { backgroundColor: c.cardSage, borderColor: c.sage }]}
             onPress={startAwake} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Baby is awake"
           >
             <Text style={[s.btnText, { color: c.sage }]}>
               <Image source={require('../assets/sun-icon.png')} style={s.sunIconLg} />{'  Baby is Awake'}
@@ -628,6 +632,7 @@ export default function SleepTracker({
           <TouchableOpacity
             style={[s.btn, { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
             onPress={startSleep} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Baby is sleeping"
           >
             <Text style={[s.btnText, { color: c.lavender }]}>
               <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={s.moonIconLg} />{'  Baby is Sleeping'}
@@ -640,6 +645,7 @@ export default function SleepTracker({
         <TouchableOpacity
           style={[s.btn, { backgroundColor: c.cardLavender, borderColor: c.lavender }]}
           onPress={startSleep} activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Baby is sleeping"
         >
           <Text style={[s.btnText, { color: c.lavender }]}>
             <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={s.moonIconLg} />{'  Baby is Sleeping'}
@@ -651,6 +657,7 @@ export default function SleepTracker({
         <TouchableOpacity
           style={[s.btn, { backgroundColor: c.cardHoney, borderColor: c.honey }]}
           onPress={handleWakeUp} activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Baby woke up"
         >
           <Text style={[s.btnText, { color: c.honey }]}>
             <Image source={require('../assets/sun-icon.png')} style={s.sunIconLg} />{'  Baby Woke Up'}
@@ -663,13 +670,15 @@ export default function SleepTracker({
           <TouchableOpacity
             style={[s.btn, { backgroundColor: c.cardSage, borderColor: c.sage }, saving && { opacity: 0.6 }]}
             onPress={() => saveAndStartAwake(false)} disabled={saving} activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Save and start wake timer"
           >
             {saving
               ? <ActivityIndicator color={c.sage} />
               : <Text style={[s.btnText, { color: c.sage }]}>Save & Start Wake Timer</Text>
             }
           </TouchableOpacity>
-          <TouchableOpacity style={s.skipBtn} onPress={() => saveAndStartAwake(true)} disabled={saving} activeOpacity={0.7}>
+          <TouchableOpacity style={s.skipBtn} onPress={() => saveAndStartAwake(true)} disabled={saving} activeOpacity={0.7}
+            accessibilityRole="button" accessibilityLabel="Skip">
             <Text style={s.skipBtnText}>Skip →</Text>
           </TouchableOpacity>
         </View>
@@ -719,6 +728,7 @@ export default function SleepTracker({
                   style={[s.manualDateBtn, manualYesterday === opt.val && s.manualDateBtnActive]}
                   onPress={() => setManualYesterday(opt.val)}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={opt.label}
                 >
                   <Text style={[s.manualDateText, manualYesterday === opt.val && s.manualDateTextActive]}>
                     {opt.label}
@@ -737,6 +747,7 @@ export default function SleepTracker({
                   value={manualStart}
                   onChangeText={setManualStart}
                   returnKeyType="next"
+                  accessibilityLabel="Start time"
                 />
                 <Text style={s.manualTimeLabel}>Start</Text>
               </View>
@@ -749,6 +760,7 @@ export default function SleepTracker({
                   value={manualEnd}
                   onChangeText={setManualEnd}
                   returnKeyType="done"
+                  accessibilityLabel="End time"
                 />
                 <Text style={s.manualTimeLabel}>End</Text>
               </View>
@@ -762,6 +774,7 @@ export default function SleepTracker({
                   style={[s.typeBtn, manualType === type && s.typeBtnActive]}
                   onPress={() => setManualType(type)}
                   activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel={type === 'nap' ? 'Nap' : 'Night sleep'}
                 >
                   <Text style={[s.typeBtnText, manualType === type && s.typeBtnTextActive]}>
                     {type === 'nap'
@@ -780,6 +793,7 @@ export default function SleepTracker({
                   style={[s.qualityBtn, manualQuality === opt.value && s.qualityBtnActive]}
                   onPress={() => setManualQuality(q => q === opt.value ? null : opt.value)}
                   activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel={opt.label}
                 >
                   <Text style={{ fontSize: 20 }}>{opt.emoji}</Text>
                   <Text style={[s.qualityBtnText, manualQuality === opt.value && s.qualityBtnTextActive]}>
@@ -796,18 +810,21 @@ export default function SleepTracker({
               value={manualNotes}
               onChangeText={setManualNotes}
               multiline
+              accessibilityLabel="Notes"
             />
 
             <View style={s.btnRow}>
               <TouchableOpacity
                 style={[s.btn, { flex: 1, backgroundColor: c.inputBg, borderColor: c.separator }]}
                 onPress={() => setMode('idle')} activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel="Cancel"
               >
                 <Text style={[s.btnText, { color: c.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.btn, { flex: 2, backgroundColor: c.cardLavender, borderColor: c.lavender }, manualSaving && { opacity: 0.6 }]}
                 onPress={saveManualEntry} disabled={manualSaving} activeOpacity={0.8}
+                accessibilityRole="button" accessibilityLabel="Save"
               >
                 {manualSaving
                   ? <ActivityIndicator color={c.lavender} />
@@ -817,7 +834,8 @@ export default function SleepTracker({
             </View>
           </View>
         ) : (
-          <TouchableOpacity style={s.logPastBtn} onPress={() => setMode('manual')} activeOpacity={0.7}>
+          <TouchableOpacity style={s.logPastBtn} onPress={() => setMode('manual')} activeOpacity={0.7}
+            accessibilityRole="button" accessibilityLabel="Log past sleep">
             <Text style={s.logPastBtnText}>+ Log past sleep</Text>
           </TouchableOpacity>
         )

@@ -58,7 +58,8 @@ export default function ReportModal({ visible, title, onClose, onSubmit }: Props
       <SafeAreaView style={s.container}>
         <View style={s.header}>
           <Text style={s.title}>{title}</Text>
-          <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button" accessibilityLabel="Close">
             <Text style={s.close}>✕</Text>
           </TouchableOpacity>
         </View>
@@ -70,7 +71,8 @@ export default function ReportModal({ visible, title, onClose, onSubmit }: Props
             <Text style={s.doneBody}>
               Thank you for helping keep the community safe. We'll review this soon.
             </Text>
-            <TouchableOpacity onPress={handleClose} style={s.doneBtn}>
+            <TouchableOpacity onPress={handleClose} style={s.doneBtn}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={s.doneBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -82,6 +84,7 @@ export default function ReportModal({ visible, title, onClose, onSubmit }: Props
                 key={r}
                 onPress={() => setReason(r)}
                 style={[s.reasonBtn, reason === r && s.reasonBtnActive]}
+                accessibilityRole="button" accessibilityLabel={r}
               >
                 <Text style={[s.reasonText, reason === r && s.reasonTextActive]}>{r}</Text>
               </TouchableOpacity>
@@ -90,6 +93,7 @@ export default function ReportModal({ visible, title, onClose, onSubmit }: Props
               onPress={handleSubmit}
               style={[s.submitBtn, (!reason || submitting) && s.submitBtnDisabled]}
               disabled={!reason || submitting}
+              accessibilityRole="button" accessibilityLabel="Submit report"
             >
               {submitting
                 ? <ActivityIndicator color="#fff" />

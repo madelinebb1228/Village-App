@@ -30,6 +30,7 @@ import NotificationsScreen from './NotificationsScreen';
 import EventsScreen from './EventsScreen';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import LoadErrorBanner from '../components/LoadErrorBanner';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
 import StreakCard from '../components/StreakCard';
 import StoryViewer from '../components/StoryViewer';
@@ -77,6 +78,7 @@ export default function HomeTab() {
   const [loading, setLoading] = useState(true);
 
   const [posts, setPosts] = useState<Post[]>([]);
+  const [postsLoadError, setPostsLoadError] = useState(false);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [postContent, setPostContent] = useState('');
   const [postType, setPostType] = useState<Post['post_type']>('text');
@@ -272,6 +274,8 @@ export default function HomeTab() {
   }
 
   async function fetchPosts() {
+    setPostsLoadError(false);
+    try {
     const { data: { user } } = await supabase.auth.getUser();
 
     // ── Phase 1: pool + user context in parallel ───────────────────────────────
@@ -362,6 +366,10 @@ export default function HomeTab() {
       fetchReactions(finalPosts);
       fetchPollData(finalPosts);
       fetchRepostData(finalPosts);
+    }
+    } catch (err: any) {
+      console.warn('HomeTab fetchPosts error:', err.message);
+      setPostsLoadError(true);
     }
   }
 
@@ -1395,6 +1403,7 @@ export default function HomeTab() {
               onPress={() => setShowNotifications(true)}
               activeOpacity={0.75}
               style={styles.notifBtn}
+              accessibilityRole="button" accessibilityLabel="Notifications"
             >
               <View style={styles.notifBtnClip}>
                 <Image source={require('../assets/notification-bell.png')} style={styles.notifBtnImage} resizeMode="cover" />
@@ -1416,6 +1425,7 @@ export default function HomeTab() {
               onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
               activeOpacity={0.75}
               style={styles.searchBtn}
+              accessibilityRole="button" accessibilityLabel="Messages"
             >
               <Text style={styles.searchBtnIcon}>💬</Text>
               {unreadCount > 0 && (
@@ -1435,6 +1445,7 @@ export default function HomeTab() {
               style={styles.notifBtn}
               onPress={() => setShowEvents(true)}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel="Events"
             >
               <View style={styles.notifBtnClip}>
                 <Image source={require('../assets/events-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
@@ -1444,6 +1455,7 @@ export default function HomeTab() {
               style={styles.notifBtn}
               onPress={() => setShowSearch(true)}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel="Search"
             >
               <View style={styles.notifBtnClip}>
                 <Image source={require('../assets/search-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
@@ -1479,6 +1491,7 @@ export default function HomeTab() {
             ]}
             onPress={() => setShowProfileSheet(true)}
             activeOpacity={0.8}
+            accessibilityRole="button" accessibilityLabel="Open baby profile"
           >
             <View style={[
               styles.babyAvatar,
@@ -1549,6 +1562,7 @@ export default function HomeTab() {
             style={styles.upcomingCard}
             onPress={() => navigation.navigate('Calendar')}
             activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel="Open calendar"
           >
             <Text style={styles.sectionTitle}>Upcoming</Text>
             {upcomingEvents.map(e => (
@@ -1613,6 +1627,7 @@ export default function HomeTab() {
                   style={styles.followedQCard}
                   onPress={() => setQaDetailId(q.id)}
                   activeOpacity={0.8}
+                  accessibilityRole="button" accessibilityLabel={`Open question: ${q.content}`}
                 >
                   <Text style={styles.followedQContent} numberOfLines={3}>{q.content}</Text>
                   <View style={styles.followedQMeta}>
@@ -1639,6 +1654,7 @@ export default function HomeTab() {
                   style={styles.trendingCard}
                   onPress={() => openComments(post.id)}
                   activeOpacity={0.85}
+                  accessibilityRole="button" accessibilityLabel={`Open post by ${post.author}`}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <UserAvatar userId={post.user_id} name={post.author} size={24} />
@@ -1673,6 +1689,10 @@ export default function HomeTab() {
               style={styles.feedToggleBtn}
               onPress={() => setFeedMode(mode)}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={mode === 'for-you' ? 'For You feed'
+                  : mode === 'following' ? 'Following feed'
+                  : mode === 'friends' ? 'Friends feed'
+                  : 'Patches feed'}
             >
               <Text style={[styles.feedToggleText, feedMode === mode && styles.feedToggleTextActive]}>
                 {mode === 'for-you' ? 'For You'
@@ -1693,6 +1713,7 @@ export default function HomeTab() {
                 key={tag}
                 onPress={() => setActiveTag(activeTag === tag ? null : tag)}
                 style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}
+                accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}
               >
                 <Text style={[styles.tagChipText, activeTag === tag && styles.tagChipTextActive]}>{tag}</Text>
               </TouchableOpacity>
@@ -1705,6 +1726,7 @@ export default function HomeTab() {
           <TouchableOpacity
             onPress={() => setActiveHashtag(null)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#E8F4FB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
+            accessibilityRole="button" accessibilityLabel={`Clear hashtag filter #${activeHashtag}`}
           >
             <Text style={{ color: '#57B2E8', fontWeight: '700', fontSize: 14 }}>#{activeHashtag}</Text>
             <Text style={{ color: '#57B2E8', fontSize: 13 }}>✕</Text>
@@ -1759,6 +1781,7 @@ export default function HomeTab() {
                       borderColor: active ? c.primary : c.separator,
                       backgroundColor: active ? c.cardLavender : c.background,
                     }}
+                    accessibilityRole="button" accessibilityLabel={`Filter by ${label}`}
                   >
                     <Text style={{ fontSize: 12 }}>{emoji}</Text>
                     <Text style={{ fontSize: 12, fontWeight: active ? '700' : '500', color: active ? c.primary : c.textMuted }}>{label}</Text>
@@ -1843,6 +1866,7 @@ export default function HomeTab() {
                         <TouchableOpacity
                           onPress={() => handlePatchComplete(task.id)}
                           style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: pc.border }}
+                          accessibilityRole="button" accessibilityLabel="Mark patch request done"
                         >
                           <Text style={{ fontSize: 12, fontWeight: '700', color: pc.border }}>Mark Done</Text>
                         </TouchableOpacity>
@@ -1850,6 +1874,7 @@ export default function HomeTab() {
                         <TouchableOpacity
                           onPress={() => handlePatchWithdraw(task.id)}
                           style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey }}
+                          accessibilityRole="button" accessibilityLabel="Withdraw from helping"
                         >
                           <Text style={{ fontSize: 13, fontWeight: '700', color: c.honey }}>💛 Helping</Text>
                         </TouchableOpacity>
@@ -1857,6 +1882,7 @@ export default function HomeTab() {
                         <TouchableOpacity
                           onPress={() => handlePatchVolunteer(task.id)}
                           style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pc.border }}
+                          accessibilityRole="button" accessibilityLabel="Volunteer to help"
                         >
                           <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>🙋 I Can Help!</Text>
                         </TouchableOpacity>
@@ -1871,6 +1897,9 @@ export default function HomeTab() {
         )}
 
         {/* ── Post feeds (For You / Following / Friends) ───────────────────────── */}
+        {feedMode === 'for-you' && postsLoadError && posts.length === 0 && (
+          <LoadErrorBanner message="Couldn't load your feed." onRetry={fetchPosts} />
+        )}
         {feedMode !== 'patches' && filteredPosts.length === 0 && (
           <View style={styles.emptyFeed}>
             <Text style={styles.emptyFeedText}>
@@ -1915,6 +1944,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     onPress={() => setRevealedSensitiveIds(prev => { const s = new Set(prev); s.add(post.id); return s; })}
                     style={{ alignSelf: 'flex-start', marginTop: 4, backgroundColor: '#92400E', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6 }}
+                    accessibilityRole="button" accessibilityLabel="Show sensitive post"
                   >
                     <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Show post</Text>
                   </TouchableOpacity>
@@ -1927,6 +1957,7 @@ export default function HomeTab() {
                 style={styles.postAuthorRow}
                 onPress={() => setPublicProfileUserId(post.user_id)}
                 activeOpacity={0.7}
+                accessibilityRole="button" accessibilityLabel={`View ${post.author}'s profile`}
               >
                 <UserAvatar userId={post.user_id} name={post.author} size={36} />
                 <View>
@@ -1950,6 +1981,7 @@ export default function HomeTab() {
                     onPress={() => handleFollowToggle(post.user_id)}
                     style={[styles.followBtn, followingUserIds.has(post.user_id) && styles.followBtnActive]}
                     activeOpacity={0.75}
+                    accessibilityRole="button" accessibilityLabel={followingUserIds.has(post.user_id) ? `Unfollow ${post.author}` : `Follow ${post.author}`}
                   >
                     <Text style={[styles.followBtnText, followingUserIds.has(post.user_id) && styles.followBtnTextActive]}>
                       {followingUserIds.has(post.user_id) ? '✓ Following' : '+ Follow'}
@@ -1957,7 +1989,8 @@ export default function HomeTab() {
                   </TouchableOpacity>
                 )}
                 {post.user_id === currentUserId && (
-                  <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}>
+                  <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}
+                    accessibilityRole="button" accessibilityLabel="Delete post">
                     <Text style={styles.postDeleteText}>🗑</Text>
                   </TouchableOpacity>
                 )}
@@ -1984,7 +2017,8 @@ export default function HomeTab() {
             {post.tags && post.tags.length > 0 && (
               <View style={styles.postTagsRow}>
                 {post.tags.map(tag => (
-                  <TouchableOpacity key={tag} onPress={() => setActiveTag(tag)} style={styles.postTagChip}>
+                  <TouchableOpacity key={tag} onPress={() => setActiveTag(tag)} style={styles.postTagChip}
+                    accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}>
                     <Text style={styles.postTagChipText}>{tag}</Text>
                   </TouchableOpacity>
                 ))}
@@ -2011,6 +2045,7 @@ export default function HomeTab() {
                           borderColor: isMyVote ? c.primary : c.separator,
                           overflow: 'hidden',
                         }}
+                        accessibilityRole="button" accessibilityLabel={`Vote for ${opt.text}`}
                       >
                         {hasVoted && (
                           <View style={{
@@ -2048,7 +2083,8 @@ export default function HomeTab() {
                     alignSelf: 'flex-start',
                   }}>
                     {['❤️','😂','😢','💪','🙌','👶'].map(emoji => (
-                      <TouchableOpacity key={emoji} onPress={() => setReaction(post.id, emoji)} style={{ padding: 4 }}>
+                      <TouchableOpacity key={emoji} onPress={() => setReaction(post.id, emoji)} style={{ padding: 4 }}
+                        accessibilityRole="button" accessibilityLabel={`React with ${emoji}`}>
                         <Text style={{
                           fontSize: myReactions.get(post.id) === emoji ? 26 : 22,
                           opacity: myReactions.get(post.id) && myReactions.get(post.id) !== emoji ? 0.5 : 1,
@@ -2060,6 +2096,7 @@ export default function HomeTab() {
                 <TouchableOpacity
                   style={styles.postAction}
                   onPress={() => setReactionPickerPostId(prev => prev === post.id ? null : post.id)}
+                  accessibilityRole="button" accessibilityLabel="React to post"
                 >
                   {(() => {
                     const myR = myReactions.get(post.id);
@@ -2074,25 +2111,29 @@ export default function HomeTab() {
                   })()}
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity style={styles.postAction} onPress={() => openComments(post.id)}>
+              <TouchableOpacity style={styles.postAction} onPress={() => openComments(post.id)}
+                accessibilityRole="button" accessibilityLabel="Reply to post">
                 <Text style={styles.postActionText}>💬 Reply</Text>
               </TouchableOpacity>
               {currentUserId && post.user_id !== currentUserId && (
                 <TouchableOpacity
                   style={styles.postAction}
                   onPress={() => handleRepost(post)}
+                  accessibilityRole="button" accessibilityLabel="Repost"
                 >
                   <Text style={[styles.postActionText, myRepostIds.has(post.id) && { color: c.primary, fontWeight: '700' }]}>
                     ↻ Repost{repostCounts.get(post.id) ? ` ${repostCounts.get(post.id)}` : ''}
                   </Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}>
+              <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}
+                accessibilityRole="button" accessibilityLabel="Share post">
                 <Text style={styles.postActionText}>↗ Share</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.postAction, { marginLeft: 'auto' as any }]}
                 onPress={() => toggleSave(post.id)}
+                accessibilityRole="button" accessibilityLabel={savedPostIds.has(post.id) ? 'Unsave post' : 'Save post'}
               >
                 <Text style={styles.postActionText}>{savedPostIds.has(post.id) ? '🔖' : '🏷️'}</Text>
               </TouchableOpacity>
@@ -2103,6 +2144,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     style={styles.postAction}
                     onPress={() => { setReportPostId(post.id); setReportReason(''); setReportDone(false); }}
+                    accessibilityRole="button" accessibilityLabel="Report post"
                   >
                     <Text style={styles.postActionText}>🚩</Text>
                   </TouchableOpacity>
@@ -2163,7 +2205,8 @@ export default function HomeTab() {
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Post</Text>
-            <TouchableOpacity onPress={() => { setCommentPostId(null); setSelectedPost(null); }}>
+            <TouchableOpacity onPress={() => { setCommentPostId(null); setSelectedPost(null); }}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -2177,6 +2220,7 @@ export default function HomeTab() {
                     style={styles.postAuthorRow}
                     onPress={() => { setCommentPostId(null); setSelectedPost(null); setPublicProfileUserId(selectedPost.user_id); }}
                     activeOpacity={0.7}
+                    accessibilityRole="button" accessibilityLabel={`View ${selectedPost.author}'s profile`}
                   >
                     <UserAvatar userId={selectedPost.user_id} name={selectedPost.author} size={36} />
                     <View>
@@ -2189,6 +2233,7 @@ export default function HomeTab() {
                       onPress={() => handleFollowToggle(selectedPost.user_id)}
                       style={[styles.followBtn, followingUserIds.has(selectedPost.user_id) && styles.followBtnActive]}
                       activeOpacity={0.75}
+                      accessibilityRole="button" accessibilityLabel={followingUserIds.has(selectedPost.user_id) ? `Unfollow ${selectedPost.author}` : `Follow ${selectedPost.author}`}
                     >
                       <Text style={[styles.followBtnText, followingUserIds.has(selectedPost.user_id) && styles.followBtnTextActive]}>
                         {followingUserIds.has(selectedPost.user_id) ? '✓ Following' : '+ Follow'}
@@ -2206,7 +2251,8 @@ export default function HomeTab() {
                 {selectedPost.tags && selectedPost.tags.length > 0 && (
                   <View style={styles.postTagsRow}>
                     {selectedPost.tags.map(tag => (
-                      <TouchableOpacity key={tag} onPress={() => { setCommentPostId(null); setSelectedPost(null); setActiveTag(tag); }} style={styles.postTagChip}>
+                      <TouchableOpacity key={tag} onPress={() => { setCommentPostId(null); setSelectedPost(null); setActiveTag(tag); }} style={styles.postTagChip}
+                        accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}>
                         <Text style={styles.postTagChipText}>{tag}</Text>
                       </TouchableOpacity>
                     ))}
@@ -2224,7 +2270,8 @@ export default function HomeTab() {
                         alignSelf: 'flex-start',
                       }}>
                         {['❤️','😂','😢','💪','🙌','👶'].map(emoji => (
-                          <TouchableOpacity key={emoji} onPress={() => setReaction(selectedPost.id, emoji)} style={{ padding: 4 }}>
+                          <TouchableOpacity key={emoji} onPress={() => setReaction(selectedPost.id, emoji)} style={{ padding: 4 }}
+                            accessibilityRole="button" accessibilityLabel={`React with ${emoji}`}>
                             <Text style={{
                               fontSize: myReactions.get(selectedPost.id) === emoji ? 26 : 22,
                               opacity: myReactions.get(selectedPost.id) && myReactions.get(selectedPost.id) !== emoji ? 0.5 : 1,
@@ -2236,6 +2283,7 @@ export default function HomeTab() {
                     <TouchableOpacity
                       style={styles.postAction}
                       onPress={() => setReactionPickerPostId(prev => prev === selectedPost.id ? null : selectedPost.id)}
+                      accessibilityRole="button" accessibilityLabel="React to post"
                     >
                       {(() => {
                         const myR = myReactions.get(selectedPost.id);
@@ -2251,18 +2299,21 @@ export default function HomeTab() {
                     </TouchableOpacity>
                   </View>
                   {currentUserId && selectedPost.user_id !== currentUserId && (
-                    <TouchableOpacity style={styles.postAction} onPress={() => handleRepost(selectedPost)}>
+                    <TouchableOpacity style={styles.postAction} onPress={() => handleRepost(selectedPost)}
+                      accessibilityRole="button" accessibilityLabel="Repost">
                       <Text style={[styles.postActionText, myRepostIds.has(selectedPost.id) && { color: c.primary, fontWeight: '700' }]}>
                         ↻ Repost{repostCounts.get(selectedPost.id) ? ` ${repostCounts.get(selectedPost.id)}` : ''}
                       </Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity style={styles.postAction} onPress={() => handleShare(selectedPost)}>
+                  <TouchableOpacity style={styles.postAction} onPress={() => handleShare(selectedPost)}
+                    accessibilityRole="button" accessibilityLabel="Share post">
                     <Text style={styles.postActionText}>↗ Share</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.postAction, { marginLeft: 'auto' as any }]}
                     onPress={() => toggleSave(selectedPost.id)}
+                    accessibilityRole="button" accessibilityLabel={savedPostIds.has(selectedPost.id) ? 'Unsave post' : 'Save post'}
                   >
                     <Text style={styles.postActionText}>{savedPostIds.has(selectedPost.id) ? '🔖' : '🏷️'}</Text>
                   </TouchableOpacity>
@@ -2286,14 +2337,16 @@ export default function HomeTab() {
                       {renderTextWithMentions(cm.content, styles.commentContent, c.primary)}
                       <View style={styles.commentMeta}>
                         <Text style={styles.commentTime}>{getTimeAgo(cm.created_at)}</Text>
-                        <TouchableOpacity onPress={() => { setReplyingTo(cm); setCommentText(''); }}>
+                        <TouchableOpacity onPress={() => { setReplyingTo(cm); setCommentText(''); }}
+                          accessibilityRole="button" accessibilityLabel={`Reply to ${cm.author}`}>
                           <Text style={styles.replyBtn}>Reply</Text>
                         </TouchableOpacity>
                         {currentUserId && cm.user_id !== currentUserId && (
                           reportedCommentIds.has(cm.id) ? (
                             <Text style={{ fontSize: 11, color: c.textMuted, fontStyle: 'italic' }}>Reported</Text>
                           ) : (
-                            <TouchableOpacity onPress={() => { setReportCommentId(cm.id); setReportCommentReason(''); setReportCommentDone(false); }}>
+                            <TouchableOpacity onPress={() => { setReportCommentId(cm.id); setReportCommentReason(''); setReportCommentDone(false); }}
+                              accessibilityRole="button" accessibilityLabel="Report comment">
                               <Text style={{ fontSize: 12, color: c.textMuted }}>🚩</Text>
                             </TouchableOpacity>
                           )
@@ -2324,7 +2377,8 @@ export default function HomeTab() {
             {replyingTo && (
               <View style={styles.replyingToBanner}>
                 <Text style={styles.replyingToText}>Replying to <Text style={{ fontWeight: '700' }}>@{replyingTo.author}</Text></Text>
-                <TouchableOpacity onPress={() => { setReplyingTo(null); setCommentText(''); }}>
+                <TouchableOpacity onPress={() => { setReplyingTo(null); setCommentText(''); }}
+                  accessibilityRole="button" accessibilityLabel="Cancel reply">
                   <Text style={styles.replyingToCancel}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -2338,12 +2392,14 @@ export default function HomeTab() {
                   value={commentText}
                   onChangeText={setCommentText}
                   multiline
+                  accessibilityLabel={replyingTo ? `Reply to ${replyingTo.author}` : 'Add a comment'}
                 />
               </View>
               <TouchableOpacity
                 style={[styles.commentSubmit, !commentText.trim() && styles.submitButtonDisabled]}
                 onPress={submitComment}
                 disabled={!commentText.trim()}
+                accessibilityRole="button" accessibilityLabel="Post comment"
               >
                 <Text style={styles.commentSubmitText}>Post</Text>
               </TouchableOpacity>
@@ -2361,7 +2417,8 @@ export default function HomeTab() {
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Report Post</Text>
-            <TouchableOpacity onPress={() => { setReportPostId(null); setReportDone(false); }}>
+            <TouchableOpacity onPress={() => { setReportPostId(null); setReportDone(false); }}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -2373,6 +2430,7 @@ export default function HomeTab() {
               <TouchableOpacity
                 style={styles.reportCloseBtn}
                 onPress={() => { setReportPostId(null); setReportDone(false); }}
+                accessibilityRole="button" accessibilityLabel="Close"
               >
                 <Text style={styles.reportCloseBtnText}>Close</Text>
               </TouchableOpacity>
@@ -2385,6 +2443,7 @@ export default function HomeTab() {
                   key={reason}
                   style={[styles.reportReasonBtn, reportReason === reason && styles.reportReasonBtnActive]}
                   onPress={() => setReportReason(reason)}
+                  accessibilityRole="button" accessibilityLabel={reason}
                 >
                   <Text style={[styles.reportReasonText, reportReason === reason && styles.reportReasonTextActive]}>
                     {reason}
@@ -2395,6 +2454,7 @@ export default function HomeTab() {
                 style={[styles.reportSubmitBtn, (!reportReason || reportSubmitting) && styles.submitButtonDisabled]}
                 onPress={submitReport}
                 disabled={!reportReason || reportSubmitting}
+                accessibilityRole="button" accessibilityLabel="Submit report"
               >
                 {reportSubmitting
                   ? <ActivityIndicator color="#fff" />
@@ -2416,7 +2476,8 @@ export default function HomeTab() {
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Report Comment</Text>
-            <TouchableOpacity onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}>
+            <TouchableOpacity onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -2428,6 +2489,7 @@ export default function HomeTab() {
               <TouchableOpacity
                 style={styles.reportCloseBtn}
                 onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}
+                accessibilityRole="button" accessibilityLabel="Close"
               >
                 <Text style={styles.reportCloseBtnText}>Close</Text>
               </TouchableOpacity>
@@ -2440,6 +2502,7 @@ export default function HomeTab() {
                   key={reason}
                   style={[styles.reportReasonBtn, reportCommentReason === reason && styles.reportReasonBtnActive]}
                   onPress={() => setReportCommentReason(reason)}
+                  accessibilityRole="button" accessibilityLabel={reason}
                 >
                   <Text style={[styles.reportReasonText, reportCommentReason === reason && styles.reportReasonTextActive]}>
                     {reason}
@@ -2450,6 +2513,7 @@ export default function HomeTab() {
                 style={[styles.reportSubmitBtn, (!reportCommentReason || reportCommentSubmitting) && styles.submitButtonDisabled]}
                 onPress={submitCommentReport}
                 disabled={!reportCommentReason || reportCommentSubmitting}
+                accessibilityRole="button" accessibilityLabel="Submit report"
               >
                 {reportCommentSubmitting
                   ? <ActivityIndicator color="#fff" />
@@ -2466,6 +2530,7 @@ export default function HomeTab() {
         style={styles.fab}
         onPress={() => setShowCreatePost(true)}
         activeOpacity={0.85}
+        accessibilityRole="button" accessibilityLabel="Create new post"
       >
         <Text style={styles.fabIcon}>＋</Text>
       </TouchableOpacity>
@@ -2494,7 +2559,8 @@ export default function HomeTab() {
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setShowCreatePost(false); setPendingPostImageUri(null); setDismissedHealthBanner(false); }}>
+            <TouchableOpacity onPress={() => { setShowCreatePost(false); setPendingPostImageUri(null); setDismissedHealthBanner(false); }}
+              accessibilityRole="button" accessibilityLabel="Cancel new post">
               <Text style={styles.modalClose}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>New Post</Text>
@@ -2508,6 +2574,7 @@ export default function HomeTab() {
                   ]}
                   onPress={handleCreatePost}
                   disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
+                  accessibilityRole="button" accessibilityLabel="Submit post"
                 >
                   {imageUploading
                     ? <ActivityIndicator size="small" color="#fff" />
@@ -2529,6 +2596,7 @@ export default function HomeTab() {
                     key={t}
                     style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
                     onPress={() => setPostType(t)}
+                    accessibilityRole="button" accessibilityLabel={`${t} post type`}
                   >
                     <Text style={[styles.postTypeText, postType === t && styles.postTypeTextActive]}>
                       {t === 'text' ? '💬 Update' : t === 'milestone' ? '🎉 Milestone' : t === 'question' ? '❓ Question' : '📊 Poll'}
@@ -2551,6 +2619,7 @@ export default function HomeTab() {
                 numberOfLines={postType === 'poll' ? 3 : 6}
                 autoFocus
                 textAlignVertical="top"
+                accessibilityLabel="Post content"
               />
 
               {showMentalHealthBanner && !dismissedHealthBanner && (
@@ -2562,7 +2631,8 @@ export default function HomeTab() {
                     <Text style={{ fontSize: 14, fontWeight: '700', color: '#92400E', flex: 1, marginRight: 8 }}>
                       You're not alone 💛
                     </Text>
-                    <TouchableOpacity onPress={() => setDismissedHealthBanner(true)}>
+                    <TouchableOpacity onPress={() => setDismissedHealthBanner(true)}
+                      accessibilityRole="button" accessibilityLabel="Dismiss support banner">
                       <Text style={{ fontSize: 16, color: '#92400E', opacity: 0.6 }}>✕</Text>
                     </TouchableOpacity>
                   </View>
@@ -2573,12 +2643,14 @@ export default function HomeTab() {
                     <TouchableOpacity
                       onPress={() => Linking.openURL('https://www.postpartum.net')}
                       style={{ backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                      accessibilityRole="link" accessibilityLabel="Open Postpartum Support website"
                     >
                       <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Postpartum Support</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => Linking.openURL('tel:988')}
                       style={{ backgroundColor: '#92400E', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                      accessibilityRole="button" accessibilityLabel="Call or text 988"
                     >
                       <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Call/Text 988</Text>
                     </TouchableOpacity>
@@ -2595,9 +2667,11 @@ export default function HomeTab() {
                         placeholder={`Option ${i + 1}${i < 2 ? ' (required)' : ''}`}
                         value={opt}
                         onChangeText={text => setPollOptions(prev => prev.map((o, j) => j === i ? text : o))}
+                        accessibilityLabel={`Poll option ${i + 1}`}
                       />
                       {i >= 2 && (
-                        <TouchableOpacity onPress={() => setPollOptions(prev => prev.filter((_, j) => j !== i))}>
+                        <TouchableOpacity onPress={() => setPollOptions(prev => prev.filter((_, j) => j !== i))}
+                          accessibilityRole="button" accessibilityLabel={`Remove option ${i + 1}`}>
                           <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
                         </TouchableOpacity>
                       )}
@@ -2607,6 +2681,7 @@ export default function HomeTab() {
                     <TouchableOpacity
                       onPress={() => setPollOptions(prev => [...prev, ''])}
                       style={{ paddingVertical: 8 }}
+                      accessibilityRole="button" accessibilityLabel="Add poll option"
                     >
                       <Text style={{ fontSize: 14, color: c.primary, fontWeight: '600' }}>+ Add option</Text>
                     </TouchableOpacity>
@@ -2627,6 +2702,7 @@ export default function HomeTab() {
                         key={tag}
                         onPress={() => setSelectedTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
                         style={[styles.tagChip, active && styles.tagChipActive]}
+                        accessibilityRole="button" accessibilityLabel={`${active ? 'Remove' : 'Add'} ${tag} tag`}
                       >
                         <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>{tag}</Text>
                       </TouchableOpacity>
@@ -2649,6 +2725,7 @@ export default function HomeTab() {
                     justifyContent: 'center', paddingHorizontal: 3,
                     alignItems: isSensitive ? 'flex-end' : 'flex-start',
                   }}
+                  accessibilityRole="switch" accessibilityLabel="Mark as sensitive" accessibilityState={{ checked: isSensitive }}
                 >
                   <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' }} />
                 </TouchableOpacity>
@@ -2667,6 +2744,7 @@ export default function HomeTab() {
                           borderColor: sensitiveLabel === label ? c.primary : c.separator,
                           backgroundColor: sensitiveLabel === label ? c.cardLavender : c.card,
                         }}
+                        accessibilityRole="button" accessibilityLabel={label}
                       >
                         <Text style={{ fontSize: 12, fontWeight: '600', color: sensitiveLabel === label ? c.primary : c.textMuted }}>
                           {label}
@@ -2687,6 +2765,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     style={styles.removePostImageBtn}
                     onPress={() => setPendingPostImageUri(null)}
+                    accessibilityRole="button" accessibilityLabel="Remove photo"
                   >
                     <Text style={styles.removePostImageText}>✕</Text>
                   </TouchableOpacity>
@@ -2699,6 +2778,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     style={styles.removePostImageBtn}
                     onPress={() => setPendingPostVideoUri(null)}
+                    accessibilityRole="button" accessibilityLabel="Remove video"
                   >
                     <Text style={styles.removePostImageText}>✕</Text>
                   </TouchableOpacity>
@@ -2706,10 +2786,12 @@ export default function HomeTab() {
               )}
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}>
+                <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}
+                  accessibilityRole="button" accessibilityLabel="Add photo">
                   <Text style={styles.addPhotoBtnText}>📷  Photo</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.addPhotoBtn, { backgroundColor: '#E8E4F7' }]} onPress={pickPostVideo}>
+                <TouchableOpacity style={[styles.addPhotoBtn, { backgroundColor: '#E8E4F7' }]} onPress={pickPostVideo}
+                  accessibilityRole="button" accessibilityLabel="Add video">
                   <Text style={styles.addPhotoBtnText}>🎬  Video</Text>
                 </TouchableOpacity>
               </View>
@@ -2725,6 +2807,7 @@ export default function HomeTab() {
                 ]}
                 onPress={handleCreatePost}
                 disabled={(!postContent.trim() && !pendingPostImageUri && !pendingPostVideoUri) || imageUploading}
+                accessibilityRole="button" accessibilityLabel="Submit post"
               >
                 {imageUploading
                   ? <ActivityIndicator color="#fff" />
@@ -2753,7 +2836,8 @@ export default function HomeTab() {
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowAddStory(false)}>
+            <TouchableOpacity onPress={() => setShowAddStory(false)}
+              accessibilityRole="button" accessibilityLabel="Cancel new story">
               <Text style={styles.modalClose}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>New Story</Text>
@@ -2763,6 +2847,7 @@ export default function HomeTab() {
                   && styles.submitButtonDisabled]}
               onPress={handleSubmitStory}
               disabled={(storyMode === 'photo' && !storyImageUri) || (storyMode === 'video' && !storyVideoUri) || (storyMode === 'text' && !storyText.trim()) || storySubmitting}
+              accessibilityRole="button" accessibilityLabel="Share story"
             >
               {storySubmitting
                 ? <ActivityIndicator size="small" color="#fff" />
@@ -2778,6 +2863,7 @@ export default function HomeTab() {
                 key={mode}
                 style={[styles.postTypeButton, storyMode === mode && styles.postTypeButtonActive, { flex: 1 }]}
                 onPress={() => setStoryMode(mode)}
+                accessibilityRole="button" accessibilityLabel={`${mode} story`}
               >
                 <Text style={[styles.postTypeText, storyMode === mode && styles.postTypeTextActive, { textAlign: 'center' }]}>
                   {mode === 'photo' ? '📷 Photo' : mode === 'video' ? '🎬 Video' : '✏️ Text'}
@@ -2793,12 +2879,14 @@ export default function HomeTab() {
                   {storyImageUri ? (
                     <View style={styles.postImagePreviewWrap}>
                       <Image source={{ uri: storyImageUri }} style={[styles.postImagePreview, { height: 360 }]} resizeMode="cover" />
-                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryImageUri(null)}>
+                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryImageUri(null)}
+                        accessibilityRole="button" accessibilityLabel="Remove photo">
                         <Text style={styles.removePostImageText}>✕</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48 }]} onPress={pickStoryImage}>
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48 }]} onPress={pickStoryImage}
+                      accessibilityRole="button" accessibilityLabel="Pick a photo for story">
                       <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>📷</Text>
                       <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a photo</Text>
                     </TouchableOpacity>
@@ -2809,12 +2897,14 @@ export default function HomeTab() {
                   {storyVideoUri ? (
                     <View style={styles.postImagePreviewWrap}>
                       <VideoPostPlayer uri={storyVideoUri} />
-                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryVideoUri(null)}>
+                      <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryVideoUri(null)}
+                        accessibilityRole="button" accessibilityLabel="Remove video">
                         <Text style={styles.removePostImageText}>✕</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, backgroundColor: '#E8E4F7' }]} onPress={pickStoryVideo}>
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, backgroundColor: '#E8E4F7' }]} onPress={pickStoryVideo}
+                      accessibilityRole="button" accessibilityLabel="Pick a video for story">
                       <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>🎬</Text>
                       <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a video</Text>
                       <Text style={{ fontSize: 12, color: c.textMuted, textAlign: 'center', marginTop: 6 }}>Max 30 seconds</Text>
@@ -2836,6 +2926,7 @@ export default function HomeTab() {
                     multiline
                     autoFocus
                     textAlignVertical="top"
+                    accessibilityLabel="Story text"
                   />
 
                   {/* Color palette */}
@@ -2852,6 +2943,7 @@ export default function HomeTab() {
                           { backgroundColor: col },
                           storyBgColor === col && styles.colorSwatchSelected,
                         ]}
+                        accessibilityRole="button" accessibilityLabel="Background color option"
                       />
                     ))}
                   </View>

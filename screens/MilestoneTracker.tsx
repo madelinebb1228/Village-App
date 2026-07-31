@@ -447,6 +447,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
         key={m.key}
         style={[s.card, { backgroundColor: col.bg, borderColor: col.border }]}
         onPress={() => openEditor(m)} activeOpacity={0.82}
+        accessibilityRole="button" accessibilityLabel={`${m.label} milestone${captured ? ', captured' : ''}`}
       >
         {entry?.photo_url ? (
           entryIsVideo ? (
@@ -486,6 +487,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
         key={entry.milestone_key}
         style={[s.card, { backgroundColor: col.bg, borderColor: col.border }]}
         onPress={() => openEditor(m)} activeOpacity={0.82}
+        accessibilityRole="button" accessibilityLabel={`${label} milestone, captured`}
       >
         {entry.photo_url ? (
           entryIsVideo ? (
@@ -535,6 +537,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
           style={[s.toggle, reminderSettings.enabled && { backgroundColor: c.primary }]}
           onPress={toggleMilestoneReminders}
           activeOpacity={0.8}
+          accessibilityRole="switch" accessibilityLabel="Remind me when milestones are coming up" accessibilityState={{ checked: reminderSettings.enabled }}
         >
           <View style={[s.toggleThumb, reminderSettings.enabled && { transform: [{ translateX: 20 }] }]} />
         </TouchableOpacity>
@@ -623,7 +626,8 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
           {modalStep === 'edit' && editing && (
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
               <View style={s.modalHeader}>
-                <TouchableOpacity onPress={closeEditor} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={closeEditor} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.modalCancel}>Cancel</Text>
                 </TouchableOpacity>
                 <Text style={s.modalTitle} numberOfLines={1}>
@@ -634,6 +638,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
                 <TouchableOpacity
                   onPress={handleSave} disabled={saving}
                   style={[s.modalSaveBtn, saving && s.modalSaveBtnDisabled]}
+                  accessibilityRole="button" accessibilityLabel="Save"
                 >
                   {saving
                     ? <ActivityIndicator size="small" color="#fff" />
@@ -651,6 +656,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
                       placeholder="⭐"
                       placeholderTextColor={c.textMuted}
                       maxLength={2}
+                      accessibilityLabel="Emoji for this moment"
                     />
                     <TextInput
                       style={[s.customLabelInput, { flex: 1 }]}
@@ -658,6 +664,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
                       onChangeText={setCustomLabel}
                       placeholder="Name this moment…"
                       placeholderTextColor={c.textMuted}
+                      accessibilityLabel="Name this moment"
                     />
                   </View>
                 )}
@@ -689,6 +696,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
                         style={[s.mediaChangeBtn, { borderColor: c.blush }]}
                         onPress={() => { setMediaUri(null); setMediaUrl(null); setIsVideo(false); }}
                         activeOpacity={0.8}
+                        accessibilityRole="button" accessibilityLabel="Remove video"
                       >
                         <Text style={[s.mediaChangeBtnText, { color: c.blush }]}>✕  Remove</Text>
                       </TouchableOpacity>
@@ -707,6 +715,7 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
                       style={[s.mediaChangeBtn, { borderColor: c.blush, marginTop: 8 }]}
                       onPress={() => { setMediaUri(null); setMediaUrl(null); }}
                       activeOpacity={0.8}
+                      accessibilityRole="button" accessibilityLabel="Remove photo"
                     >
                       <Text style={[s.mediaChangeBtnText, { color: c.blush }]}>✕  Remove photo</Text>
                     </TouchableOpacity>

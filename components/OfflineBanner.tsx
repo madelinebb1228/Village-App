@@ -4,7 +4,7 @@ import { useSyncStatus } from '../lib/syncService';
 import { useColors } from '../lib/theme';
 
 export default function OfflineBanner() {
-  const { isOnline, isSyncing, pendingCount, lastSyncedAt, triggerSync } = useSyncStatus();
+  const { isOnline, isSyncing, pendingCount, failedCount, lastSyncedAt, triggerSync, retryFailed, dismissFailed } = useSyncStatus();
   const c = useColors();
 
   // Show a brief "All synced" flash after coming back online
@@ -25,7 +25,26 @@ export default function OfflineBanner() {
   }, [isOnline, pendingCount, fadeAnim]);
 
   // Nothing to show
-  if (isOnline && !isSyncing && !showSynced) return null;
+  if (isOnline && !isSyncing && !showSynced && failedCount === 0) return null;
+
+  // Items that gave up retrying — surface them instead of hiding pendingCount's drop
+  if (isOnline && !isSyncing && failedCount > 0) {
+    return (
+      <View style={[styles.banner, { backgroundColor: '#DC2626' }]}>
+        <Text style={styles.text}>
+          ⚠ {failedCount} change{failedCount === 1 ? '' : 's'} failed to sync
+        </Text>
+        <TouchableOpacity onPress={retryFailed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel="Retry">
+          <Text style={[styles.text, { fontWeight: '700', marginLeft: 12 }]}>Retry ↻</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={dismissFailed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button" accessibilityLabel="Dismiss">
+          <Text style={[styles.text, { fontWeight: '700', marginLeft: 12 }]}>Dismiss</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   // "All synced" flash
   if (showSynced) {
@@ -51,7 +70,8 @@ export default function OfflineBanner() {
       <Text style={styles.text}>
         ✈ Offline{pendingCount > 0 ? ` · ${pendingCount} change${pendingCount === 1 ? '' : 's'} saved locally` : ''}
       </Text>
-      <TouchableOpacity onPress={triggerSync} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity onPress={triggerSync} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button" accessibilityLabel="Retry sync">
         <Text style={[styles.text, { fontWeight: '700', marginLeft: 12 }]}>Retry ↻</Text>
       </TouchableOpacity>
     </View>

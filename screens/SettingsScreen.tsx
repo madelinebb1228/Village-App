@@ -8,6 +8,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
 import { useOneHanded } from '../lib/OneHandedContext';
+import { useSubscription } from '../lib/subscriptionContext';
+import { generateAndShareReport } from '../lib/exportReport';
+import ManageBabiesSheet from '../components/ManageBabiesSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +70,8 @@ function SettingsRow({
         paddingHorizontal: 20, paddingVertical: 14,
         borderBottomWidth: 1, borderBottomColor: c.separator,
       }}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={sublabel ? `${label}. ${sublabel}` : label}
     >
       <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{icon}</Text>
       <View style={{ flex: 1 }}>
@@ -138,7 +143,7 @@ function AccountInfoView({ onBack }: { onBack: () => void }) {
         paddingHorizontal: 20, paddingVertical: 14,
         borderBottomWidth: 1, borderBottomColor: c.separator,
       }}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Settings">
           <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Account Information</Text>
@@ -190,6 +195,7 @@ function AccountInfoView({ onBack }: { onBack: () => void }) {
                     paddingHorizontal: 20, paddingVertical: 14,
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   }}
+                  accessibilityRole="button" accessibilityLabel="Change password"
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 15, fontWeight: '600', color: c.textPrimary }}>Change Password</Text>
@@ -262,7 +268,7 @@ function BlockedAccountsView({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Settings">
           <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Blocked Accounts</Text>
@@ -304,6 +310,7 @@ function BlockedAccountsView({ onBack }: { onBack: () => void }) {
                   onPress={() => handleUnblock(user.id, name)}
                   disabled={unblocking === user.id}
                   style={{ backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1.5, borderColor: c.separator }}
+                  accessibilityRole="button" accessibilityLabel={`Unblock ${name}`}
                 >
                   {unblocking === user.id
                     ? <ActivityIndicator size="small" color={c.primary} />
@@ -353,7 +360,7 @@ function MutedAccountsView({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Settings">
           <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Muted Accounts</Text>
@@ -394,6 +401,7 @@ function MutedAccountsView({ onBack }: { onBack: () => void }) {
                   onPress={() => handleUnmute(user.id)}
                   disabled={unmuting === user.id}
                   style={{ backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1.5, borderColor: c.separator }}
+                  accessibilityRole="button" accessibilityLabel={`Unmute ${name}`}
                 >
                   {unmuting === user.id
                     ? <ActivityIndicator size="small" color={c.primary} />
@@ -452,7 +460,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Settings">
           <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Word Filter</Text>
@@ -475,6 +483,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
           onSubmitEditing={addWord}
           autoCapitalize="none"
           returnKeyType="done"
+          accessibilityLabel="Word or phrase to filter"
         />
         <TouchableOpacity
           onPress={addWord}
@@ -484,6 +493,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
             justifyContent: 'center', alignItems: 'center',
             opacity: !newWord.trim() ? 0.5 : 1,
           }}
+          accessibilityRole="button" accessibilityLabel="Add filtered word"
         >
           {adding
             ? <ActivityIndicator size="small" color="#fff" />
@@ -513,6 +523,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
                 onPress={() => removeWord(word)}
                 disabled={removing === word}
                 style={{ backgroundColor: c.cardBlush, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                accessibilityRole="button" accessibilityLabel={`Remove ${word} from filter`}
               >
                 {removing === word
                   ? <ActivityIndicator size="small" color="#DC2626" />
@@ -532,6 +543,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
 export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const c = useColors();
   const { isOneHanded, toggleOneHanded } = useOneHanded();
+  const { isSubscribed, openPaywall } = useSubscription();
   const [view, setView] = useState<View>('main');
   const [notifs, setNotifs] = useState<NotifPrefs>(DEFAULT_NOTIFS);
   const [showVillages, setShowVillages] = useState(true);
@@ -539,6 +551,35 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [loadingPrefs, setLoadingPrefs] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
+  const [showManageBabies, setShowManageBabies] = useState(false);
+
+  async function handleExportReport() {
+    setExportingReport(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not signed in');
+      const { data: baby, error } = await supabase
+        .from('babies')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!baby) {
+        Alert.alert('No Baby Profile', 'Add a baby profile before exporting a summary.');
+        return;
+      }
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 90);
+      await generateAndShareReport((baby as any).id, (baby as any).name ?? 'Baby', { startDate, endDate });
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message ?? 'Could not generate the summary. Please try again.');
+    } finally {
+      setExportingReport(false);
+    }
+  }
 
   const loadPrefs = useCallback(async () => {
     setLoadingPrefs(true);
@@ -653,7 +694,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
         borderBottomWidth: 1, borderBottomColor: c.separator,
         backgroundColor: c.card,
       }}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Back">
           <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 20, fontWeight: '800', color: c.textPrimary }}>Settings & Privacy</Text>
@@ -671,10 +712,29 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
             onPress={() => setView('account')}
           />
           <SettingsRow
+            icon="👶"
+            label="Manage Babies"
+            sublabel="Add another child or invite a co-parent/caregiver"
+            onPress={() => setShowManageBabies(true)}
+          />
+          <SettingsRow
             icon="⭐"
             label="Parent Patch Premium"
-            sublabel="Unlock exclusive features and support the app"
-            onPress={() => Alert.alert('Parent Patch Premium', 'Premium subscriptions are coming soon! Stay tuned for exclusive features.')}
+            sublabel={isSubscribed ? "You're subscribed — thank you!" : 'Unlock exclusive features and support the app'}
+            onPress={openPaywall}
+          />
+        </View>
+
+        {/* ── Data ────────────────────────────────────────────────── */}
+        <SectionHeader label="Data" />
+        <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
+          <SettingsRow
+            icon="📄"
+            label="Export Tracker Summary"
+            sublabel="Last 90 days as a PDF — handy for pediatrician visits"
+            onPress={exportingReport ? undefined : handleExportReport}
+            chevron={!exportingReport}
+            right={exportingReport ? <ActivityIndicator color={c.primary} /> : undefined}
           />
         </View>
 
@@ -695,6 +755,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                 }}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
+                accessibilityLabel="Show my patches on profile"
               />
             }
           />
@@ -719,6 +780,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                   backgroundColor: messagesFrom === 'everyone' ? c.cardSage : c.cardBlush,
                   borderRadius: 12, paddingHorizontal: 12, paddingVertical: 5,
                 }}
+                accessibilityRole="button" accessibilityLabel={`Who can message me: ${messagesFrom === 'everyone' ? 'Everyone' : 'Nobody'}`}
               >
                 <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>
                   {messagesFrom === 'everyone' ? 'Everyone' : 'Nobody'}
@@ -740,6 +802,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                 }}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
+                accessibilityLabel="Private account"
               />
             }
           />
@@ -777,6 +840,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                 onValueChange={v => saveNotifs({ ...notifs, enabled: v })}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
+                accessibilityLabel="Push notifications"
               />
             }
           />
@@ -793,6 +857,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                     onValueChange={v => saveNotifs({ ...notifs, likes: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
+                    accessibilityLabel="Likes and comments notifications"
                   />
                 }
               />
@@ -807,6 +872,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                     onValueChange={v => saveNotifs({ ...notifs, followers: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
+                    accessibilityLabel="New followers notifications"
                   />
                 }
               />
@@ -821,6 +887,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                     onValueChange={v => saveNotifs({ ...notifs, messages: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
+                    accessibilityLabel="New messages notifications"
                   />
                 }
               />
@@ -835,6 +902,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                     onValueChange={v => saveNotifs({ ...notifs, milestones: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
+                    accessibilityLabel="Milestone celebrations notifications"
                   />
                 }
               />
@@ -856,6 +924,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                 onValueChange={toggleOneHanded}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
+                accessibilityLabel="One-handed mode"
               />
             }
           />
@@ -897,6 +966,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
               paddingHorizontal: 20, paddingVertical: 14,
               borderBottomWidth: 1, borderBottomColor: c.separator,
             }}
+            accessibilityRole="button" accessibilityLabel="Sign out"
           >
             <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }}>🚪</Text>
             <Text style={{ fontSize: 15, fontWeight: '600', color: c.textPrimary, flex: 1 }}>Sign Out</Text>
@@ -912,6 +982,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
         </View>
 
       </ScrollView>
+      <ManageBabiesSheet visible={showManageBabies} onClose={() => setShowManageBabies(false)} />
     </SafeAreaView>
   );
 }

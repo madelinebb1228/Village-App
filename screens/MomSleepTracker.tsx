@@ -260,7 +260,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}>
+      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Sleep section' : 'Expand Sleep section'}>
         <View style={s.headerLeft}>
           <Text style={s.headerEmoji}>🌙</Text>
           <View>
@@ -343,10 +344,12 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
               <Text style={s.entryDur}>{fmtDuration(l.duration_minutes ?? 0)}</Text>
               {l.quality && <Text style={s.entryQuality}>{QUALITY_OPTS.find(q => q.value === l.quality)?.label}</Text>}
               {(l.interruptions ?? 0) > 0 && <Text style={s.entryInterrupt}>{l.interruptions}x interrupted</Text>}
-              <TouchableOpacity onPress={() => openEditEntry(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => openEditEntry(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button" accessibilityLabel="Edit sleep entry">
                 <Text style={s.entryAction}>✎</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => deleteEntry(l.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button" accessibilityLabel="Delete sleep entry">
                 <Text style={[s.entryAction, { color: c.textMuted }]}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -357,7 +360,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
             <View style={s.timerCard}>
               <Text style={s.timerType}>{timerType === 'night' ? '🌙 Night Sleep' : '☀️ Nap'}</Text>
               <Text style={s.timerDisplay}>{fmtElapsed(elapsed)}</Text>
-              <TouchableOpacity style={s.wakeBtn} onPress={stopTimer}>
+              <TouchableOpacity style={s.wakeBtn} onPress={stopTimer}
+                accessibilityRole="button" accessibilityLabel="I'm awake">
                 <Text style={s.wakeBtnText}>I'm Awake</Text>
               </TouchableOpacity>
             </View>
@@ -371,7 +375,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
               <Text style={s.formLabel}>Quality</Text>
               <View style={s.typeRow}>
                 {QUALITY_OPTS.map(q => (
-                  <TouchableOpacity key={q.value} style={[s.typeBtn, quality === q.value && s.typeBtnActive]} onPress={() => setQuality(q.value)}>
+                  <TouchableOpacity key={q.value} style={[s.typeBtn, quality === q.value && s.typeBtnActive]} onPress={() => setQuality(q.value)}
+                    accessibilityRole="button" accessibilityLabel={q.label}>
                     <Text style={[s.typeBtnText, quality === q.value && s.typeBtnTextActive]}>{q.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -380,7 +385,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
               <Text style={s.formLabel}>Times woken up</Text>
               <View style={s.typeRow}>
                 {['0','1','2','3','4+'].map(n => (
-                  <TouchableOpacity key={n} style={[s.smallChip, interrupts === n && s.smallChipActive]} onPress={() => setInterrupts(n)}>
+                  <TouchableOpacity key={n} style={[s.smallChip, interrupts === n && s.smallChipActive]} onPress={() => setInterrupts(n)}
+                    accessibilityRole="button" accessibilityLabel={`${n} interruptions`}>
                     <Text style={[s.smallChipText, interrupts === n && { color: c.primary, fontWeight: '700' }]}>{n}</Text>
                   </TouchableOpacity>
                 ))}
@@ -391,10 +397,12 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
                 value={notes} onChangeText={setNotes} multiline maxLength={300} />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={discardTimer}>
+                <TouchableOpacity style={s.cancelBtn} onPress={discardTimer}
+                  accessibilityRole="button" accessibilityLabel="Discard">
                   <Text style={s.cancelBtnText}>Discard</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={finishTimerSave} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={finishTimerSave} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel="Save">
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save</Text>}
                 </TouchableOpacity>
               </View>
@@ -404,14 +412,17 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
           {!adding && !timerRunning && !finishing && (
             <>
               <View style={s.startRow}>
-                <TouchableOpacity style={s.startBtn} onPress={() => startTimer('night')}>
+                <TouchableOpacity style={s.startBtn} onPress={() => startTimer('night')}
+                  accessibilityRole="button" accessibilityLabel="Start night sleep">
                   <Text style={s.startBtnText}>🌙 Start Night Sleep</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.startBtn} onPress={() => startTimer('nap')}>
+                <TouchableOpacity style={s.startBtn} onPress={() => startTimer('nap')}
+                  accessibilityRole="button" accessibilityLabel="Start nap">
                   <Text style={s.startBtnText}>☀️ Start Nap</Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={openNewEntry}>
+              <TouchableOpacity onPress={openNewEntry}
+                accessibilityRole="button" accessibilityLabel="Log sleep manually">
                 <Text style={s.manualLink}>+ Log sleep manually</Text>
               </TouchableOpacity>
             </>
@@ -427,6 +438,7 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
                     key={t}
                     style={[s.typeBtn, sleepType === t && s.typeBtnActive]}
                     onPress={() => setSleepType(t)}
+                    accessibilityRole="button" accessibilityLabel={t}
                   >
                     <Text style={[s.typeBtnText, sleepType === t && s.typeBtnTextActive]}>
                       {t === 'night' ? '🌙 Night Sleep' : '☀️ Nap'}
@@ -450,7 +462,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
               <Text style={s.formLabel}>Quality</Text>
               <View style={s.typeRow}>
                 {QUALITY_OPTS.map(q => (
-                  <TouchableOpacity key={q.value} style={[s.typeBtn, quality === q.value && s.typeBtnActive]} onPress={() => setQuality(q.value)}>
+                  <TouchableOpacity key={q.value} style={[s.typeBtn, quality === q.value && s.typeBtnActive]} onPress={() => setQuality(q.value)}
+                    accessibilityRole="button" accessibilityLabel={q.label}>
                     <Text style={[s.typeBtnText, quality === q.value && s.typeBtnTextActive]}>{q.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -460,7 +473,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
               <Text style={s.formLabel}>Times woken up</Text>
               <View style={s.typeRow}>
                 {['0','1','2','3','4+'].map(n => (
-                  <TouchableOpacity key={n} style={[s.smallChip, interrupts === n && s.smallChipActive]} onPress={() => setInterrupts(n)}>
+                  <TouchableOpacity key={n} style={[s.smallChip, interrupts === n && s.smallChipActive]} onPress={() => setInterrupts(n)}
+                    accessibilityRole="button" accessibilityLabel={`${n} interruptions`}>
                     <Text style={[s.smallChipText, interrupts === n && { color: c.primary, fontWeight: '700' }]}>{n}</Text>
                   </TouchableOpacity>
                 ))}
@@ -471,10 +485,12 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
                 value={notes} onChangeText={setNotes} multiline maxLength={300} />
 
               <View style={s.btnRow}>
-                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => { setAdding(false); setEditingId(null); }}
+                  accessibilityRole="button" accessibilityLabel="Cancel">
                   <Text style={s.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}>
+                <TouchableOpacity style={s.saveBtn} onPress={save} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel={editingId ? 'Save changes' : 'Save'}>
                   {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{editingId ? 'Save Changes' : 'Save'}</Text>}
                 </TouchableOpacity>
               </View>

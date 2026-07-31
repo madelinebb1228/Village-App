@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase'
 import { Colors, useColors } from '../lib/theme'
+import LoadErrorBanner from '../components/LoadErrorBanner'
 import {
   INTERESTS, KIDS_AGES, LOOKING_FOR, PARENTING_STYLES,
   MatchResult, MatchingProfile,
@@ -198,6 +199,7 @@ export default function FindYourPatchSheet({
   const [myProfile, setMyProfile] = useState<MatchingProfile | null>(null)
   const [matches, setMatches] = useState<MatchResult[]>([])
   const [loadingMatches, setLoadingMatches] = useState(false)
+  const [matchesError, setMatchesError] = useState(false)
   const [connectedName, setConnectedName] = useState<string | null>(null)
 
   // Setup form state
@@ -253,12 +255,14 @@ export default function FindYourPatchSheet({
 
   async function loadAndShowMatches(prof: MatchingProfile) {
     setLoadingMatches(true)
+    setMatchesError(false)
     setView('matches')
     try {
       const results = await findMatches(prof)
       setMatches(results)
     } catch (err) {
       console.error('[FindYourPatch] findMatches error', err)
+      setMatchesError(true)
     } finally {
       setLoadingMatches(false)
     }
@@ -467,6 +471,13 @@ export default function FindYourPatchSheet({
               <View style={s.center}>
                 <ActivityIndicator size="large" color={c.primary} />
                 <Text style={s.loadingText}>Finding your people…</Text>
+              </View>
+            ) : matchesError ? (
+              <View style={s.center}>
+                <LoadErrorBanner
+                  message="Couldn't load matches."
+                  onRetry={() => { if (myProfile) loadAndShowMatches(myProfile); }}
+                />
               </View>
             ) : matches.length === 0 ? (
               <View style={s.emptyState}>

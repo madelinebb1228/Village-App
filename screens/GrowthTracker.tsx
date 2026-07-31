@@ -313,6 +313,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
       <TouchableOpacity
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.cardSage, borderRadius: 14, borderWidth: 2, borderColor: c.sage, paddingHorizontal: 16, paddingVertical: 13, marginBottom: collapsed ? 0 : 14 }}
         onPress={() => setCollapsed(v => !v)} activeOpacity={0.75}
+        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Growth Tracker' : 'Collapse Growth Tracker'}
       >
         <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>📈 Growth Tracker</Text>
         <Text style={{ fontSize: 20, color: c.sage, fontWeight: '700' }}>{collapsed ? '›' : '⌄'}</Text>
@@ -324,6 +325,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
           <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
             {TABS.map(t => (
               <TouchableOpacity key={t.key} onPress={() => setTab(t.key)}
+                accessibilityRole="button" accessibilityLabel={t.label}
                 style={{ flex: 1, paddingVertical: 8, borderRadius: 20, alignItems: 'center', backgroundColor: tab === t.key ? c.primary : c.card, borderWidth: 1.5, borderColor: tab === t.key ? c.primary : c.separator }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: tab === t.key ? '#fff' : c.textSecondary }}>{t.label}</Text>
               </TouchableOpacity>
@@ -475,7 +477,8 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
 
           {/* Add button */}
           <TouchableOpacity onPress={openNewLog}
-            style={{ backgroundColor: c.primary, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }} activeOpacity={0.85}>
+            style={{ backgroundColor: c.primary, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }} activeOpacity={0.85}
+            accessibilityRole="button" accessibilityLabel="Log measurement">
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>+ Log Measurement</Text>
           </TouchableOpacity>
         </>
@@ -496,6 +499,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
                 </Text>
                 {editingLog && (
                   <TouchableOpacity onPress={deleteLog} disabled={deleting} activeOpacity={0.8}
+                    accessibilityRole="button" accessibilityLabel="Delete measurement"
                     style={{ backgroundColor: '#fee2e2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
                     {deleting
                       ? <ActivityIndicator size="small" color="#dc2626" />
@@ -543,6 +547,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {DIAPER_SIZES.map(sz => (
                     <TouchableOpacity key={sz} onPress={() => setDiaperSize(p => p === sz ? '' : sz)}
+                      accessibilityRole="button" accessibilityLabel={`Diaper size ${sz}`}
                       style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: diaperSize === sz ? c.primary : c.card, borderWidth: 1.5, borderColor: diaperSize === sz ? c.primary : c.separator }}>
                       <Text style={{ fontWeight: '700', color: diaperSize === sz ? '#fff' : c.textSecondary }}>{sz}</Text>
                     </TouchableOpacity>
@@ -554,6 +559,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {CLOTHING_SIZES.map(sz => (
                     <TouchableOpacity key={sz} onPress={() => setClothingSize(p => p === sz ? '' : sz)}
+                      accessibilityRole="button" accessibilityLabel={`Clothing size ${sz}`}
                       style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: clothingSize === sz ? c.primary : c.card, borderWidth: 1.5, borderColor: clothingSize === sz ? c.primary : c.separator }}>
                       <Text style={{ fontWeight: '700', fontSize: 13, color: clothingSize === sz ? '#fff' : c.textSecondary }}>{sz}</Text>
                     </TouchableOpacity>
@@ -570,10 +576,12 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                 <TouchableOpacity onPress={closeModal}
+                  accessibilityRole="button" accessibilityLabel="Cancel"
                   style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: c.separator, padding: 14, alignItems: 'center' }}>
                   <Text style={{ fontWeight: '700', color: c.textSecondary }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={saveLog} disabled={saving}
+                  accessibilityRole="button" accessibilityLabel="Save"
                   style={{ flex: 2, borderRadius: 12, backgroundColor: c.primary, padding: 14, alignItems: 'center', opacity: saving ? 0.6 : 1 }}>
                   {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: '700', color: '#fff' }}>{editingLog ? 'Save Changes' : 'Save'}</Text>}
                 </TouchableOpacity>

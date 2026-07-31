@@ -107,6 +107,7 @@ export default function InsightsSection({
               style={[s.periodBtn, period === p && s.periodBtnActive]}
               onPress={() => setPeriod(p)}
               activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={`${p} day period`}
             >
               <Text style={[s.periodText, period === p && s.periodTextActive]}>{p}d</Text>
             </TouchableOpacity>
@@ -170,6 +171,7 @@ export default function InsightsSection({
                     onPress={() => dismiss(insight.id)}
                     hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                     activeOpacity={0.6}
+                    accessibilityRole="button" accessibilityLabel={`Dismiss ${insight.title}`}
                   >
                     <Text style={s.dismissText}>✕</Text>
                   </TouchableOpacity>
