@@ -236,46 +236,73 @@ function MainTabs() {
   );
 }
 
+// The onboarding-complete flag is cached locally per-user (keyed by user id) so a
+// second account signing in on the same device doesn't inherit the first account's
+// flag and skip onboarding entirely.
+function onboardingCompleteKey(userId: string) {
+  return `onboarding_complete:${userId}`;
+}
+
+async function resolveOnboardingDone(session: Session | null): Promise<boolean> {
+  if (!session?.user) return false;
+  const flag = await AsyncStorage.getItem(onboardingCompleteKey(session.user.id));
+  if (flag === 'true') return true;
+  const { data } = await supabase
+    .from('profiles')
+    .select('onboarding_complete')
+    .eq('id', session.user.id)
+    .maybeSingle();
+  if (data?.onboarding_complete) {
+    await AsyncStorage.setItem(onboardingCompleteKey(session.user.id), 'true');
+    return true;
+  }
+  return false;
+}
+
 export default function App() {
   const [session, setSession] = React.useState<Session | null>(null);
   const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(null);
+  const resolvedUserId = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    Promise.all([
-      supabase.auth.getSession(),
-      AsyncStorage.getItem('onboarding_complete'),
-    ]).then(async ([{ data: { session } }, flag]) => {
-      setSession(session);
-      if (flag === 'true') {
-        setOnboardingDone(true);
-      } else if (session?.user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('onboarding_complete')
-          .eq('id', session.user.id)
-          .maybeSingle();
-        if (data?.onboarding_complete) {
-          await AsyncStorage.setItem('onboarding_complete', 'true');
-          setOnboardingDone(true);
-        } else {
-          setOnboardingDone(false);
-        }
-      } else {
-        setOnboardingDone(false);
+    let cancelled = false;
+
+    async function applySession(newSession: Session | null) {
+      setSession(newSession);
+      const uid = newSession?.user?.id ?? null;
+      if (!uid) {
+        resolvedUserId.current = null;
+        if (!cancelled) setOnboardingDone(false);
+        return;
       }
-    });
+      // Same user as last resolved (e.g. a token-refresh auth event) — skip the re-check.
+      if (uid === resolvedUserId.current) return;
+      resolvedUserId.current = uid;
+      const done = await resolveOnboardingDone(newSession);
+      if (!cancelled) setOnboardingDone(done);
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => applySession(session));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      applySession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const markOnboardingComplete = React.useCallback(async () => {
-    await AsyncStorage.setItem('onboarding_complete', 'true');
+    if (session?.user) {
+      await AsyncStorage.setItem(onboardingCompleteKey(session.user.id), 'true');
+    }
     setOnboardingDone(true);
-  }, []);
+  }, [session]);
+
+  const [tourRequestId, setTourRequestId] = React.useState(0);
+  const requestTour = React.useCallback(() => setTourRequestId(id => id + 1), []);
 
   if (onboardingDone === null) {
     return (
@@ -287,7 +314,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-    <AppContext.Provider value={{ markOnboardingComplete }}>
+    <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour }}>
       <OneHandedProvider>
       <SyncProvider>
       <SubscriptionProvider>

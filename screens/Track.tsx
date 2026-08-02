@@ -1937,16 +1937,16 @@ export default function Track({ route }: any) {
         </View>
         </>)}
 
-        {/* ── Village Premium upsell (bottom of page, non-subscribers only) ── */}
+        {/* ── Patch Premium upsell (bottom of page, non-subscribers only) ── */}
         {!isSubscribed && (
           <View style={styles.premiumCard}>
             <Text style={styles.premiumEmoji}>✨</Text>
-            <Text style={styles.premiumTitle}>Village Premium</Text>
+            <Text style={styles.premiumTitle}>Patch Premium</Text>
             <Text style={styles.premiumBody}>
               Unlock all trackers, your journal & calendar, unlimited patches, community sharing, and more — for $5.99/mo.
             </Text>
             <TouchableOpacity style={styles.premiumBtn} onPress={openPaywall} activeOpacity={0.85}
-              accessibilityRole="button" accessibilityLabel="Learn more and upgrade to Village Premium">
+              accessibilityRole="button" accessibilityLabel="Learn more and upgrade to Patch Premium">
               <Text style={styles.premiumBtnText}>Learn More & Upgrade</Text>
             </TouchableOpacity>
           </View>

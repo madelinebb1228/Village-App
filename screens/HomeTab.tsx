@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,10 @@ import MentionTextInput from '../components/MentionTextInput';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { AppContext } from '../lib/AppContext';
+import CoachMarkTour, { CoachMarkStep } from '../components/CoachMarkTour';
 import UserAvatar from '../components/UserAvatar';
 import BabyProfileSheet from './BabyProfileSheet';
 import PublicProfileSheet from './PublicProfileSheet';
@@ -150,6 +153,19 @@ export default function HomeTab() {
     id: string; title: string; starts_at: string; all_day: boolean; calendar_type: 'personal' | 'shared';
   }>>([]);
   const [qaDetailId, setQaDetailId] = useState<string | null>(null);
+
+  // App tour (coach marks)
+  const { tourRequestId } = useContext(AppContext);
+  const [tourVisible, setTourVisible] = useState(false);
+  const lastHandledTourRequestId = useRef(0);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const mainScrollYRef = useRef(0);
+  const iconRowRef = useRef<View>(null);
+  const storiesRef = useRef<View>(null);
+  const babyCardRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
+  const statRowRef = useRef<View>(null);
+  const tipRef = useRef<View>(null);
+  const fabRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
 
   // Stories
   const [storyViewGroups, setStoryViewGroups] = useState<StoryGroup[]>([]);
@@ -1365,6 +1381,49 @@ export default function HomeTab() {
     { label: 'Pumped\nToday',  value: `${mlToOz(stats.pumpedMl)} oz`, accent: c.statPumped.accent,  bg: c.statPumped.bg },
   ];
 
+  const tourSteps = useMemo<CoachMarkStep[]>(() => {
+    const arr: CoachMarkStep[] = [
+      { ref: iconRowRef, title: 'Stay connected', body: 'Notifications, messages, your calendar, and search — all one tap away up here.' },
+      { ref: storiesRef, title: 'Share the little moments', body: 'Post a quick photo or video story so your community can follow along in real time.' },
+    ];
+    if (baby) {
+      arr.push({ ref: babyCardRef, title: "Your baby's profile", body: 'Tap here any time to view or update their details, growth, and milestones.' });
+    }
+    arr.push(
+      { ref: statRowRef, title: 'Today at a glance', body: 'Feeds, diapers, and pumped milk for today — updates the moment you log something.' },
+      { ref: tipRef, title: 'Tip of the Day', body: 'A fresh, pediatrician-informed tip every day. Tap it to read more.' },
+      { ref: fabRef, title: 'Share with your community', body: 'Tap the + button to post an update, photo, milestone, or question to your community.' },
+    );
+    return arr;
+  }, [baby]);
+
+  const tourSeenKey = useCallback((uid: string) => `app_tour_seen:${uid}`, []);
+
+  const handleTourDismiss = useCallback(() => {
+    setTourVisible(false);
+    if (currentUserId) AsyncStorage.setItem(tourSeenKey(currentUserId), 'true').catch(() => {});
+  }, [currentUserId, tourSeenKey]);
+
+  // Replay requested from Settings ("Take a Tour").
+  useEffect(() => {
+    if (tourRequestId > 0 && tourRequestId !== lastHandledTourRequestId.current) {
+      lastHandledTourRequestId.current = tourRequestId;
+      setTourVisible(true);
+    }
+  }, [tourRequestId]);
+
+  // Auto-show once, the first time this user reaches Home with data loaded (e.g. right after onboarding).
+  useEffect(() => {
+    if (!currentUserId || loading) return;
+    let cancelled = false;
+    AsyncStorage.getItem(tourSeenKey(currentUserId)).then(seen => {
+      if (!cancelled && seen !== 'true') {
+        setTimeout(() => { if (!cancelled) setTourVisible(true); }, 600);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [currentUserId, loading, tourSeenKey]);
+
   const coloredReminders = (() => {
     const allKeys: ReminderUrgency[] = ['info', 'warning', 'alert', 'milestone', 'streak'];
     const result: ReminderUrgency[] = [];
@@ -1385,9 +1444,12 @@ export default function HomeTab() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
+        ref={mainScrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={e => { mainScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
       >
         <View style={styles.headingRow}>
           <Text style={styles.heading}>
@@ -1398,7 +1460,7 @@ export default function HomeTab() {
               ? <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={styles.headingIcon} />
               : '🌸'}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View ref={iconRowRef} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity
               onPress={() => setShowNotifications(true)}
               activeOpacity={0.75}
@@ -1465,12 +1527,14 @@ export default function HomeTab() {
         </View>
 
         {/* Stories */}
-        <StoriesBar
-          currentUserId={currentUserId}
-          onAddStory={() => { setStoryMode('photo'); setStoryImageUri(null); setStoryVideoUri(null); setStoryText(''); setShowAddStory(true); }}
-          onViewStories={(groups, idx) => { setStoryViewGroups(groups); setStoryViewGroupIndex(idx); setShowStoryViewer(true); }}
-          refreshKey={storyRefreshKey}
-        />
+        <View ref={storiesRef}>
+          <StoriesBar
+            currentUserId={currentUserId}
+            onAddStory={() => { setStoryMode('photo'); setStoryImageUri(null); setStoryVideoUri(null); setStoryText(''); setShowAddStory(true); }}
+            onViewStories={(groups, idx) => { setStoryViewGroups(groups); setStoryViewGroupIndex(idx); setShowStoryViewer(true); }}
+            refreshKey={storyRefreshKey}
+          />
+        </View>
 
         {/* Patchy streak card */}
         <StreakCard userId={currentUserId} refreshKey={streakRefreshKey} />
@@ -1478,6 +1542,7 @@ export default function HomeTab() {
         {/* Baby profile card */}
         {baby && (
           <TouchableOpacity
+            ref={babyCardRef}
             style={[
               styles.babyCard,
               {
@@ -1518,7 +1583,7 @@ export default function HomeTab() {
         )}
 
         {/* Stat cards */}
-        <View style={styles.statRow}>
+        <View ref={statRowRef} style={styles.statRow}>
           {statCards.map(card => (
             <View
               key={card.label}
@@ -1612,9 +1677,11 @@ export default function HomeTab() {
         </PaywallGate>
 
         {/* Tip of the day */}
-        <TipOfTheDayCard
-          onPress={(resourceId) => navigation.navigate('Resources', { initialResourceId: resourceId })}
-        />
+        <View ref={tipRef}>
+          <TipOfTheDayCard
+            onPress={(resourceId) => navigation.navigate('Resources', { initialResourceId: resourceId })}
+          />
+        </View>
 
         {/* Followed Q+A questions */}
         {followedQuestions.length > 0 && (
@@ -2527,6 +2594,7 @@ export default function HomeTab() {
 
       {/* Floating action button */}
       <TouchableOpacity
+        ref={fabRef}
         style={styles.fab}
         onPress={() => setShowCreatePost(true)}
         activeOpacity={0.85}
@@ -2534,6 +2602,15 @@ export default function HomeTab() {
       >
         <Text style={styles.fabIcon}>＋</Text>
       </TouchableOpacity>
+
+      <CoachMarkTour
+        steps={tourSteps}
+        visible={tourVisible}
+        onDismiss={handleTourDismiss}
+        c={c}
+        scrollRef={mainScrollRef}
+        scrollOffsetRef={mainScrollYRef}
+      />
 
       {/* Q+A detail modal */}
       <Modal

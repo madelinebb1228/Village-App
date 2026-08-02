@@ -12,7 +12,7 @@ const FEATURES = [
   { emoji: '💉', label: 'Vaccine & appointment tracker' },
   { emoji: '📓', label: 'Baby Journal' },
   { emoji: '🧴', label: 'Smart supply insights & low-stock alerts' },
-  { emoji: '🏘️', label: 'Unlimited village memberships' },
+  { emoji: '🏘️', label: 'Unlimited patch memberships' },
   { emoji: '🌈', label: 'Mood, nutrition & wellness tracking' },
   { emoji: '💊', label: 'Meds, period & movement tracking' },
   { emoji: '✏️', label: 'Post shopping lists, recipes & video guides' },
@@ -62,7 +62,7 @@ export default function PaywallModal({ visible, onClose, onSubscribe, onRestore 
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          <Text style={s.badge}>🌿 Village Premium</Text>
+          <Text style={s.badge}>🌿 Patch Premium</Text>
           <Text style={s.headline}>Everything you need{'\n'}to thrive as a parent</Text>
           <Text style={s.price}>$5.99 <Text style={s.pricePer}>/ month</Text></Text>
           <Text style={s.cancelNote}>Cancel anytime · Billed monthly</Text>

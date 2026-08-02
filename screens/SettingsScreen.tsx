@@ -540,7 +540,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
 
 // ─── Main Settings screen ─────────────────────────────────────────────────────
 
-export default function SettingsScreen({ onBack }: { onBack: () => void }) {
+export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => void; onTakeTour?: () => void }) {
   const c = useColors();
   const { isOneHanded, toggleOneHanded } = useOneHanded();
   const { isSubscribed, openPaywall } = useSubscription();
@@ -933,6 +933,14 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
         {/* ── Support ─────────────────────────────────────────────── */}
         <SectionHeader label="Support" />
         <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
+          {onTakeTour && (
+            <SettingsRow
+              icon="🧭"
+              label="Take a Tour"
+              sublabel="A quick walkthrough of the Home screen"
+              onPress={onTakeTour}
+            />
+          )}
           <SettingsRow
             icon="❓"
             label="Help & FAQ"

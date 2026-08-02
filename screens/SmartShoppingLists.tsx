@@ -630,7 +630,7 @@ function AmazonSearchModal({
 
         {AMAZON_AFFILIATE_TAG ? (
           <Text style={s.disclosureText}>
-            Shopping links earn village-app a small commission from Amazon at no extra cost to you.
+            Shopping links earn Parent Patch a small commission from Amazon at no extra cost to you.
           </Text>
         ) : null}
 
@@ -1348,7 +1348,7 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
             title: l.title,
             category: l.category,
             description: l.description ?? '',
-            authorName: l.author_name ?? 'village team',
+            authorName: l.author_name ?? 'Parent Patch team',
             isSeeded: true,
             seedKey: l.seed_key,
             items: itemsByList[l.id] ?? [],
@@ -1385,7 +1385,7 @@ export default function SmartShoppingLists({ onBack }: { onBack: () => void }) {
             title,
             category: adminEditList.category,
             description: desc || null,
-            author_name: 'village team',
+            author_name: 'Parent Patch team',
             is_seeded: true,
             seed_key: adminEditList.id,
           })

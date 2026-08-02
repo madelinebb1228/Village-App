@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,9 +14,10 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { AppContext } from '../lib/AppContext';
 import { VILLAGE_MAP } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
@@ -130,6 +131,8 @@ async function uploadAvatar(uri: string, userId: string): Promise<string | null>
 
 export default function Profile() {
   const c = useColors();
+  const navigation = useNavigation<any>();
+  const { requestTour } = useContext(AppContext);
   const s = useMemo(() => makeStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
 
@@ -972,7 +975,14 @@ export default function Profile() {
       />
 
       <Modal visible={showSettings} animationType="slide" presentationStyle="fullScreen">
-        <SettingsScreen onBack={() => { setShowSettings(false); loadAll(); }} />
+        <SettingsScreen
+          onBack={() => { setShowSettings(false); loadAll(); }}
+          onTakeTour={() => {
+            requestTour();
+            setShowSettings(false);
+            navigation.navigate('Home');
+          }}
+        />
       </Modal>
 
       {blockedContent && currentUserId && (
