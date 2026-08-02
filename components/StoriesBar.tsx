@@ -24,12 +24,13 @@ export interface StoryGroup {
 
 interface Props {
   currentUserId: string | null;
+  myName?: string | null;
   onAddStory: () => void;
   onViewStories: (groups: StoryGroup[], startGroupIndex: number) => void;
   refreshKey?: number;
 }
 
-export default function StoriesBar({ currentUserId, onAddStory, onViewStories, refreshKey }: Props) {
+export default function StoriesBar({ currentUserId, myName, onAddStory, onViewStories, refreshKey }: Props) {
   const c = useColors();
   const [myGroup, setMyGroup] = useState<StoryGroup | null>(null);
   const [otherGroups, setOtherGroups] = useState<StoryGroup[]>([]);
@@ -88,7 +89,7 @@ export default function StoriesBar({ currentUserId, onAddStory, onViewStories, r
         >
           <View style={[s.ring, myGroup ? s.ringOwn : s.ringAdd]}>
             <View style={s.inner}>
-              <UserAvatar userId={currentUserId ?? ''} name="Me" size={58} />
+              <UserAvatar userId={currentUserId ?? ''} name={myName || 'You'} size={58} />
             </View>
             {!myGroup && (
               <View style={s.plusBadge}>

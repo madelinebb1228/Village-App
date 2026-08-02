@@ -46,7 +46,7 @@ import {
   getReminderColors,
 } from '../types/feed';
 import {
-  todayRange, greetingFor, mlToOz, babyAgeLabel, getTimeAgo,
+  todayRange, greetingFor, mlToOz, babyAgeLabel, getBabyAge, getTimeAgo,
   showSourcePicker, uploadPostImage, uploadPostVideo,
   extractMentions, sendMentionNotifications, renderTextWithMentions,
 } from '../lib/feedUtils.tsx';
@@ -1114,19 +1114,13 @@ export default function HomeTab() {
           if (baby && isActive) setBaby(baby);
 
           if (baby?.birth_date) {
-            const ageDays = Math.floor((now - new Date(baby.birth_date).getTime()) / 86400000);
-            const ageWeeks = Math.floor(ageDays / 7);
-            const birthDate = new Date(baby.birth_date);
-            const today = new Date();
-            const sameDay = today.getDate() === birthDate.getDate();
-            const monthsOld = (today.getFullYear() - birthDate.getFullYear()) * 12
-              + (today.getMonth() - birthDate.getMonth());
+            const { ageDays, ageWeeks, monthsOld, isBirthdayToday } = getBabyAge(baby.birth_date);
             const name = baby.name || 'Baby';
             const WEEK_MILESTONES  = [4, 8, 12];
             const MONTH_MILESTONES = [4, 5, 6, 9, 12, 15, 18, 24];
 
             const isWeekMilestone  = ageDays % 7 === 0 && WEEK_MILESTONES.includes(ageWeeks);
-            const isMonthMilestone = sameDay && MONTH_MILESTONES.includes(monthsOld);
+            const isMonthMilestone = isBirthdayToday && MONTH_MILESTONES.includes(monthsOld);
 
             if (isMonthMilestone) {
               items.push({ id: 'milestone', emoji: '🎉', text: `${name} is ${monthsOld} months old today!`, urgency: 'milestone' });
@@ -1530,6 +1524,7 @@ export default function HomeTab() {
         <View ref={storiesRef}>
           <StoriesBar
             currentUserId={currentUserId}
+            myName={displayName}
             onAddStory={() => { setStoryMode('photo'); setStoryImageUri(null); setStoryVideoUri(null); setStoryText(''); setShowAddStory(true); }}
             onViewStories={(groups, idx) => { setStoryViewGroups(groups); setStoryViewGroupIndex(idx); setShowStoryViewer(true); }}
             refreshKey={storyRefreshKey}

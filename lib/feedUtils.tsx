@@ -26,13 +26,30 @@ export function mlToOz(ml: number): string {
   return (ml / 29.5735).toFixed(1);
 }
 
-export function babyAgeLabel(dob: string): string {
+export type BabyAge = { ageDays: number; ageWeeks: number; monthsOld: number; isBirthdayToday: boolean };
+
+export function getBabyAge(dob: string): BabyAge {
   const now = Date.now();
   const ageDays = Math.floor((now - new Date(dob).getTime()) / 86400000);
   const ageWeeks = Math.floor(ageDays / 7);
-  const d = new Date(dob);
+
+  // Parse the date-only string as a local calendar date, not UTC — `new Date("YYYY-MM-DD")`
+  // parses as UTC midnight, and `.getMonth()`/`.getDate()` read back in the browser's local
+  // timezone. In any timezone behind UTC (all of the Americas), a DOB on the 1st of a month
+  // reads back as the last day of the *previous* month, silently adding a month to the age.
+  const [y, m, day] = dob.split('T')[0].split('-').map(Number);
+  const d = new Date(y, (m || 1) - 1, day || 1);
   const today = new Date();
-  const monthsOld = (today.getFullYear() - d.getFullYear()) * 12 + (today.getMonth() - d.getMonth());
+  const isBirthdayToday = today.getDate() === d.getDate();
+  let monthsOld = (today.getFullYear() - d.getFullYear()) * 12 + (today.getMonth() - d.getMonth());
+  if (today.getDate() < d.getDate()) monthsOld -= 1; // hasn't reached the DOB's day-of-month yet this month
+  monthsOld = Math.max(0, monthsOld);
+
+  return { ageDays, ageWeeks, monthsOld, isBirthdayToday };
+}
+
+export function babyAgeLabel(dob: string): string {
+  const { ageWeeks, monthsOld } = getBabyAge(dob);
   return monthsOld >= 3
     ? `${monthsOld} month${monthsOld !== 1 ? 's' : ''} old`
     : `${ageWeeks} week${ageWeeks !== 1 ? 's' : ''} old`;

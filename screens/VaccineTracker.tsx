@@ -15,6 +15,7 @@ import {
 } from '../lib/vaccineNotifications';
 import { useCalendarSyncPrompt } from '../lib/calendarSync';
 import ConfirmModal from '../components/ConfirmModal';
+import { getBabyAge } from '../lib/feedUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,9 +124,7 @@ function encodeReactions(reactions: string[], text: string): string {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getAgeMonths(birthDate: string): number {
-  const now = new Date();
-  const dob = new Date(birthDate);
-  return (now.getFullYear() - dob.getFullYear()) * 12 + (now.getMonth() - dob.getMonth());
+  return getBabyAge(birthDate).monthsOld;
 }
 
 function formatDate(iso: string): string {
