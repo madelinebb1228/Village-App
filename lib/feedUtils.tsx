@@ -2,8 +2,36 @@ import React from 'react';
 import { Alert, Text } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
+import { AuthorProfile } from '../types/feed';
 
 // ─── Date / formatting helpers ────────────────────────────────────────────────
+
+// Prefers the poster's *current* username/display name (attached via attachAuthorProfiles
+// below) over the `author` snapshot string stored on the post/comment at creation time,
+// which goes stale the moment they change their username or display name. Falls back to
+// the snapshot when no live profile was attached (or the profile is gone), so this is safe
+// to use as a drop-in replacement for `post.author` / `comment.author` everywhere.
+export function resolveAuthorName(entity: { author: string; profiles?: AuthorProfile }): string {
+  return entity.profiles?.username || entity.profiles?.display_name || entity.author;
+}
+
+// Batch-resolves each row's current `profiles` (username/display_name) by user_id and
+// attaches it as `.profiles`, for use with resolveAuthorName().
+//
+// Note: this can't be done as a single Supabase `.select('*, profiles!user_id(...)')`
+// query — PostgREST embedding requires an actual foreign-key relationship, and
+// posts.user_id / comments.user_id aren't set up with one to `profiles` (unlike e.g.
+// patch_tasks.creator_id). So instead we batch-fetch the distinct posters' profiles in
+// one extra query and merge them in client-side.
+export async function attachAuthorProfiles<T extends { user_id: string; profiles?: AuthorProfile }>(
+  rows: T[]
+): Promise<T[]> {
+  const ids = Array.from(new Set(rows.map(r => r.user_id).filter(Boolean)));
+  if (ids.length === 0) return rows;
+  const { data } = await supabase.from('profiles').select('id, username, display_name').in('id', ids);
+  const map = new Map((data ?? []).map((p: any) => [p.id, { username: p.username, display_name: p.display_name }]));
+  return rows.map(r => ({ ...r, profiles: map.get(r.user_id) ?? r.profiles ?? null }));
+}
 
 export function todayRange() {
   const start = new Date();

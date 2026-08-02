@@ -2,10 +2,17 @@ import { Colors } from '../lib/theme';
 
 // ─── Post / comment types ─────────────────────────────────────────────────────
 
+// A post/comment's `author` field is a snapshot of the poster's name taken at creation
+// time, so it goes stale if they later change their username/display name. `profiles`
+// is an optional live join (see resolveAuthorName in lib/feedUtils) used to prefer the
+// poster's current name over that stale snapshot wherever one is available.
+export type AuthorProfile = { username: string | null; display_name: string | null } | null;
+
 export interface Post {
   id: string;
   user_id: string;
   author: string;
+  profiles?: AuthorProfile;
   content: string;
   post_type: 'text' | 'milestone' | 'question' | 'poll';
   likes: number;
@@ -22,6 +29,7 @@ export interface Comment {
   id: string;
   user_id: string;
   author: string;
+  profiles?: AuthorProfile;
   content: string;
   created_at: string;
   parent_id?: string | null;

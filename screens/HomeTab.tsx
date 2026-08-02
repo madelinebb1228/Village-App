@@ -46,7 +46,7 @@ import {
   getReminderColors,
 } from '../types/feed';
 import {
-  todayRange, greetingFor, mlToOz, babyAgeLabel, getBabyAge, getTimeAgo,
+  todayRange, greetingFor, mlToOz, babyAgeLabel, getBabyAge, getTimeAgo, resolveAuthorName, attachAuthorProfiles,
   showSourcePicker, uploadPostImage, uploadPostVideo,
   extractMentions, sendMentionNotifications, renderTextWithMentions,
 } from '../lib/feedUtils.tsx';
@@ -308,7 +308,7 @@ export default function HomeTab() {
         : Promise.resolve({ data: [] }),
     ]);
 
-    const pool: Post[] = (poolRes.data as Post[]) ?? [];
+    const pool: Post[] = await attachAuthorProfiles((poolRes.data as Post[]) ?? []);
     if (pool.length === 0) { setPosts([]); return; }
 
     const userVillageIds = new Set<string>((villagesRes.data ?? []).map((r: any) => r.village_id));
@@ -726,14 +726,14 @@ export default function HomeTab() {
     setCommentPostId(postId);
     if (!found) {
       const { data: postData } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
-      if (postData) setSelectedPost(postData as Post);
+      if (postData) setSelectedPost((await attachAuthorProfiles([postData as Post]))[0]);
     }
     const { data } = await supabase
       .from('comments')
       .select('*')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
-    if (data) setComments(buildCommentTree(data));
+    if (data) setComments(buildCommentTree(await attachAuthorProfiles(data)));
   }
 
   function buildCommentTree(flat: Comment[]): Comment[] {
@@ -778,7 +778,7 @@ export default function HomeTab() {
         .select('*')
         .eq('post_id', commentPostId)
         .order('created_at', { ascending: true });
-      if (data) setComments(buildCommentTree(data));
+      if (data) setComments(buildCommentTree(await attachAuthorProfiles(data)));
     }
   }
 
@@ -1710,17 +1710,17 @@ export default function HomeTab() {
               <Text style={styles.forYouTitle}>Trending</Text>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-              {trendingPosts.map(post => (
+              {trendingPosts.map(post => { const authorName = resolveAuthorName(post); return (
                 <TouchableOpacity
                   key={post.id}
                   style={styles.trendingCard}
                   onPress={() => openComments(post.id)}
                   activeOpacity={0.85}
-                  accessibilityRole="button" accessibilityLabel={`Open post by ${post.author}`}
+                  accessibilityRole="button" accessibilityLabel={`Open post by ${authorName}`}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <UserAvatar userId={post.user_id} name={post.author} size={24} />
-                    <Text style={styles.trendingCardAuthor} numberOfLines={1}>{post.author}</Text>
+                    <UserAvatar userId={post.user_id} name={authorName} size={24} />
+                    <Text style={styles.trendingCardAuthor} numberOfLines={1}>{authorName}</Text>
                     {post.post_type !== 'text' && (
                       <Text style={{ fontSize: 13 }}>
                         {post.post_type === 'milestone' ? '🎉' : post.post_type === 'poll' ? '📊' : '❓'}
@@ -1738,7 +1738,7 @@ export default function HomeTab() {
                     <Text style={styles.trendingCardTime}>{getTimeAgo(post.created_at)}</Text>
                   </View>
                 </TouchableOpacity>
-              ))}
+              );})}
             </ScrollView>
           </View>
         )}
@@ -1988,8 +1988,8 @@ export default function HomeTab() {
             {post.is_sensitive && !revealedSensitiveIds.has(post.id) ? (
               <View style={{ padding: 16, gap: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <UserAvatar userId={post.user_id} name={post.author} size={28} />
-                  <Text style={styles.postAuthorName}>{post.author}</Text>
+                  <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={28} />
+                  <Text style={styles.postAuthorName}>{resolveAuthorName(post)}</Text>
                   <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
                 </View>
                 <View style={{ backgroundColor: c.cardHoney, borderRadius: 12, padding: 14, gap: 6, borderWidth: 1, borderColor: c.honey }}>
@@ -2019,11 +2019,11 @@ export default function HomeTab() {
                 style={styles.postAuthorRow}
                 onPress={() => setPublicProfileUserId(post.user_id)}
                 activeOpacity={0.7}
-                accessibilityRole="button" accessibilityLabel={`View ${post.author}'s profile`}
+                accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
               >
-                <UserAvatar userId={post.user_id} name={post.author} size={36} />
+                <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={36} />
                 <View>
-                  <Text style={styles.postAuthorName}>{post.author}</Text>
+                  <Text style={styles.postAuthorName}>{resolveAuthorName(post)}</Text>
                   <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
                 </View>
               </TouchableOpacity>
@@ -2043,7 +2043,7 @@ export default function HomeTab() {
                     onPress={() => handleFollowToggle(post.user_id)}
                     style={[styles.followBtn, followingUserIds.has(post.user_id) && styles.followBtnActive]}
                     activeOpacity={0.75}
-                    accessibilityRole="button" accessibilityLabel={followingUserIds.has(post.user_id) ? `Unfollow ${post.author}` : `Follow ${post.author}`}
+                    accessibilityRole="button" accessibilityLabel={followingUserIds.has(post.user_id) ? `Unfollow ${resolveAuthorName(post)}` : `Follow ${resolveAuthorName(post)}`}
                   >
                     <Text style={[styles.followBtnText, followingUserIds.has(post.user_id) && styles.followBtnTextActive]}>
                       {followingUserIds.has(post.user_id) ? '✓ Following' : '+ Follow'}
@@ -2282,11 +2282,11 @@ export default function HomeTab() {
                     style={styles.postAuthorRow}
                     onPress={() => { setCommentPostId(null); setSelectedPost(null); setPublicProfileUserId(selectedPost.user_id); }}
                     activeOpacity={0.7}
-                    accessibilityRole="button" accessibilityLabel={`View ${selectedPost.author}'s profile`}
+                    accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(selectedPost)}'s profile`}
                   >
-                    <UserAvatar userId={selectedPost.user_id} name={selectedPost.author} size={36} />
+                    <UserAvatar userId={selectedPost.user_id} name={resolveAuthorName(selectedPost)} size={36} />
                     <View>
-                      <Text style={styles.postAuthorName}>{selectedPost.author}</Text>
+                      <Text style={styles.postAuthorName}>{resolveAuthorName(selectedPost)}</Text>
                       <Text style={styles.postTimestamp}>{getTimeAgo(selectedPost.created_at)}</Text>
                     </View>
                   </TouchableOpacity>
@@ -2295,7 +2295,7 @@ export default function HomeTab() {
                       onPress={() => handleFollowToggle(selectedPost.user_id)}
                       style={[styles.followBtn, followingUserIds.has(selectedPost.user_id) && styles.followBtnActive]}
                       activeOpacity={0.75}
-                      accessibilityRole="button" accessibilityLabel={followingUserIds.has(selectedPost.user_id) ? `Unfollow ${selectedPost.author}` : `Follow ${selectedPost.author}`}
+                      accessibilityRole="button" accessibilityLabel={followingUserIds.has(selectedPost.user_id) ? `Unfollow ${resolveAuthorName(selectedPost)}` : `Follow ${resolveAuthorName(selectedPost)}`}
                     >
                       <Text style={[styles.followBtnText, followingUserIds.has(selectedPost.user_id) && styles.followBtnTextActive]}>
                         {followingUserIds.has(selectedPost.user_id) ? '✓ Following' : '+ Follow'}
@@ -2393,14 +2393,14 @@ export default function HomeTab() {
               comments.map(cm => (
                 <View key={cm.id}>
                   <View style={styles.commentItem}>
-                    <UserAvatar userId={cm.user_id} name={cm.author} size={32} />
+                    <UserAvatar userId={cm.user_id} name={resolveAuthorName(cm)} size={32} />
                     <View style={styles.commentBody}>
-                      <Text style={styles.commentAuthor}>{cm.author}</Text>
+                      <Text style={styles.commentAuthor}>{resolveAuthorName(cm)}</Text>
                       {renderTextWithMentions(cm.content, styles.commentContent, c.primary)}
                       <View style={styles.commentMeta}>
                         <Text style={styles.commentTime}>{getTimeAgo(cm.created_at)}</Text>
                         <TouchableOpacity onPress={() => { setReplyingTo(cm); setCommentText(''); }}
-                          accessibilityRole="button" accessibilityLabel={`Reply to ${cm.author}`}>
+                          accessibilityRole="button" accessibilityLabel={`Reply to ${resolveAuthorName(cm)}`}>
                           <Text style={styles.replyBtn}>Reply</Text>
                         </TouchableOpacity>
                         {currentUserId && cm.user_id !== currentUserId && (
@@ -2420,9 +2420,9 @@ export default function HomeTab() {
                     <View style={styles.repliesContainer}>
                       {cm.replies.map(reply => (
                         <View key={reply.id} style={styles.commentItem}>
-                          <UserAvatar userId={reply.user_id} name={reply.author} size={26} />
+                          <UserAvatar userId={reply.user_id} name={resolveAuthorName(reply)} size={26} />
                           <View style={styles.commentBody}>
-                            <Text style={styles.commentAuthor}>{reply.author}</Text>
+                            <Text style={styles.commentAuthor}>{resolveAuthorName(reply)}</Text>
                             {renderTextWithMentions(reply.content, styles.commentContent, c.primary)}
                             <Text style={styles.commentTime}>{getTimeAgo(reply.created_at)}</Text>
                           </View>
@@ -2438,7 +2438,7 @@ export default function HomeTab() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             {replyingTo && (
               <View style={styles.replyingToBanner}>
-                <Text style={styles.replyingToText}>Replying to <Text style={{ fontWeight: '700' }}>@{replyingTo.author}</Text></Text>
+                <Text style={styles.replyingToText}>Replying to <Text style={{ fontWeight: '700' }}>@{resolveAuthorName(replyingTo)}</Text></Text>
                 <TouchableOpacity onPress={() => { setReplyingTo(null); setCommentText(''); }}
                   accessibilityRole="button" accessibilityLabel="Cancel reply">
                   <Text style={styles.replyingToCancel}>✕</Text>
@@ -2450,11 +2450,11 @@ export default function HomeTab() {
                 <MentionTextInput
                   suggestionsAbove
                   style={styles.commentInput}
-                  placeholder={replyingTo ? `Reply to @${replyingTo.author}...` : 'Add a comment... (type @ to mention)'}
+                  placeholder={replyingTo ? `Reply to @${resolveAuthorName(replyingTo)}...` : 'Add a comment... (type @ to mention)'}
                   value={commentText}
                   onChangeText={setCommentText}
                   multiline
-                  accessibilityLabel={replyingTo ? `Reply to ${replyingTo.author}` : 'Add a comment'}
+                  accessibilityLabel={replyingTo ? `Reply to ${resolveAuthorName(replyingTo)}` : 'Add a comment'}
                 />
               </View>
               <TouchableOpacity
