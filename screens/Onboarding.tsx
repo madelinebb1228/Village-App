@@ -11,9 +11,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../lib/supabase';
 import { AppContext } from '../lib/AppContext';
 import { useColors, Colors } from '../lib/theme';
@@ -65,6 +68,12 @@ async function uploadPhoto(uri: string, userId: string): Promise<string | null> 
   }
 }
 
+// Local breadcrumb until a real analytics SDK is wired up — no PostHog/Segment
+// exists in this codebase yet, so these events currently only reach the dev console.
+function track(event: string, props?: Record<string, any>) {
+  if (__DEV__) console.log('[analytics]', event, props ?? {});
+}
+
 // ─── Option data ──────────────────────────────────────────────────────────────
 
 type Option = { id: string; label: string; emoji: string };
@@ -83,24 +92,21 @@ const ROLE_OPTIONS: Option[] = [
   { id: 'Parent',      label: 'Parent',      emoji: '🧡' },
   { id: 'Grandparent', label: 'Grandparent', emoji: '🧓' },
   { id: 'Caregiver',   label: 'Caregiver',   emoji: '🤲' },
-];
-
-const FEEDING_OPTIONS: Option[] = [
-  { id: 'breast',  label: 'Breastfeeding',  emoji: '🤱' },
-  { id: 'bottle',  label: 'Bottle Feeding', emoji: '🍼' },
-  { id: 'formula', label: 'Formula',        emoji: '🧪' },
-  { id: 'solids',  label: 'Solid Foods',    emoji: '🥣' },
+  { id: 'Nanny',       label: 'Nanny / Professional Caregiver', emoji: '🧑‍🍼' },
 ];
 
 const TOPIC_OPTIONS: Option[] = [
   { id: 'feeding',           label: 'Feeding',             emoji: '🍼' },
   { id: 'sleep',             label: 'Sleep',               emoji: '😴' },
+  { id: 'sleep_training',    label: 'Sleep Training',      emoji: '🌜' },
   { id: 'development',       label: 'Development',         emoji: '🌱' },
+  { id: 'milestones_play',   label: 'Milestones & Play',   emoji: '🧸' },
   { id: 'health',            label: 'Health & Wellness',   emoji: '💊' },
   { id: 'mental_health',     label: 'Mental Health',       emoji: '🧠' },
   { id: 'pumping',           label: 'Pumping',             emoji: '🤱' },
   { id: 'returning_to_work', label: 'Returning to Work',   emoji: '💼' },
   { id: 'postpartum',        label: 'Postpartum Recovery', emoji: '🌸' },
+  { id: 'multiples',         label: 'Twins & Multiples',   emoji: '👯' },
 ];
 
 const VILLAGE_OPTIONS: Option[] = [
@@ -114,6 +120,32 @@ const VILLAGE_OPTIONS: Option[] = [
   { id: 'single_mom',    label: 'Single Parents',         emoji: '⭐' },
 ];
 
+// Every feeding option that can ever be selected, regardless of the baby's current
+// age — used to resolve ids back to labels (e.g. on the Review screen) even when the
+// age-gated getFeedingOptions() below wouldn't currently offer that option.
+const ALL_FEEDING_OPTIONS: Option[] = [
+  { id: 'breast',            label: 'Breastfeeding',        emoji: '🤱' },
+  { id: 'bottle',            label: 'Bottle Feeding',       emoji: '🍼' },
+  { id: 'formula',           label: 'Formula',              emoji: '🧪' },
+  { id: 'combo',             label: 'Combination Feeding',  emoji: '🔄' },
+  { id: 'exclusive_pumping', label: 'Exclusively Pumping',  emoji: '🫙' },
+  { id: 'tube_feeding',      label: 'Tube Feeding',         emoji: '🏥' },
+  { id: 'solids_starting',   label: 'Starting Solids',      emoji: '🥄' },
+  { id: 'solids',            label: 'Solid Foods',          emoji: '🥣' },
+];
+
+function feedingLabel(id: string): string {
+  return ALL_FEEDING_OPTIONS.find(o => o.id === id)?.label ?? id;
+}
+
+// Age-gated: babies under 4 months don't see solid-food options.
+function getFeedingOptions(ageMonths: number): Option[] {
+  const base = ALL_FEEDING_OPTIONS.filter(o => o.id !== 'solids_starting' && o.id !== 'solids');
+  if (ageMonths >= 4) base.push(ALL_FEEDING_OPTIONS.find(o => o.id === 'solids_starting')!);
+  if (ageMonths >= 6) base.push(ALL_FEEDING_OPTIONS.find(o => o.id === 'solids')!);
+  return base;
+}
+
 // Steps 1-4 (stepIndex 1-4 in the component; index 0-3 in this array via stepIndex-1)
 const STEPS: Step[] = [
   {
@@ -126,7 +158,7 @@ const STEPS: Step[] = [
   {
     title: 'How are you\nfeeding?',
     subtitle: 'Select all that apply — you can change this any time.',
-    options: FEEDING_OPTIONS,
+    options: [], // computed dynamically from baby's age, see getFeedingOptions()
     accent: '#B8A9C9',
   },
   {
@@ -143,8 +175,12 @@ const STEPS: Step[] = [
   },
 ];
 
-const TOTAL_STEPS = 5; // 0=Baby, 1=Role, 2=Feeding, 3=Topics, 4=Villages
+// 0=Baby, 1=Role, 2=Feeding, 3=Topics, 4=Patches, 5=Partner Invite, 6=Review
+const TOTAL_STEPS = 7;
 const BABY_STEP_ACCENT = '#B8A9C9';
+const STEP_NAMES = ['Baby Profile', 'Role', 'Feeding', 'Topics', 'Patches', 'Partner Invite', 'Review'];
+const OPTIONAL_STEPS = [2, 3, 4];
+const isOptionalStep = (idx: number) => OPTIONAL_STEPS.includes(idx);
 
 function getRelevantPatches(role: string[], feeding: string[], topics: string[]): Option[] {
   const result: Option[] = [];
@@ -154,19 +190,24 @@ function getRelevantPatches(role: string[], feeding: string[], topics: string[])
   }
 
   if (role.includes('Grandparent')) add('grandparent', 'Grandparent Caregivers', '🌻');
+  if (role.includes('Nanny')) add('professional_caregiver', 'Professional Caregivers', '🧑‍🍼');
 
-  if (feeding.includes('breast')) add('breastfeeding', 'Breastfeeding Support', '🤱');
-  if (feeding.includes('bottle') || feeding.includes('formula')) add('formula_feeding', 'Formula Feeding', '🍼');
-  if (feeding.includes('breast') && (feeding.includes('bottle') || feeding.includes('formula'))) add('combination_feeding', 'Combination Feeding', '🍼');
-  if (feeding.includes('solids')) add('baby_led_weaning', 'Starting Solids / BLW', '🥦');
+  const nursing = feeding.includes('breast') || feeding.includes('combo');
+  const formulaOrBottle = feeding.includes('bottle') || feeding.includes('formula') || feeding.includes('combo');
+  if (nursing) add('breastfeeding', 'Breastfeeding Support', '🤱');
+  if (formulaOrBottle) add('formula_feeding', 'Formula Feeding', '🍼');
+  if (nursing && formulaOrBottle) add('combination_feeding', 'Combination Feeding', '🍼');
+  if (feeding.includes('exclusive_pumping')) add('exclusive_pumping', 'Exclusive Pumping', '🫙');
+  if (feeding.includes('solids') || feeding.includes('solids_starting')) add('baby_led_weaning', 'Starting Solids / BLW', '🥦');
 
   if (topics.includes('feeding')) { add('breastfeeding', 'Breastfeeding Support', '🤱'); add('formula_feeding', 'Formula Feeding', '🍼'); add('exclusive_pumping', 'Exclusive Pumping', '🫙'); }
-  if (topics.includes('sleep'))   { add('night_waking', 'Sleep-Deprived Parents', '😴'); add('sleep_training', 'Sleep Training', '😴'); add('sleep_regression', 'Sleep Regressions', '😩'); }
+  if (topics.includes('sleep') || topics.includes('sleep_training')) { add('night_waking', 'Sleep-Deprived Parents', '😴'); add('sleep_training', 'Sleep Training', '😴'); add('sleep_regression', 'Sleep Regressions', '😩'); }
   if (topics.includes('mental_health') || topics.includes('postpartum')) { add('postpartum', 'Postpartum Support', '💛'); add('ppd_parents', 'Postpartum Depression (PPD)', '💛'); add('parent_mental_health_parents', 'Parental Mental Health', '💛'); }
   if (topics.includes('pumping'))           add('exclusive_pumping', 'Exclusive Pumping', '🫙');
   if (topics.includes('returning_to_work')) add('working_mom', 'Working Parents', '💼');
-  if (topics.includes('development'))       { add('speech_delay', 'Speech Delay', '💬'); add('developmental_delay', 'Developmental Delay', '🌱'); }
+  if (topics.includes('development') || topics.includes('milestones_play')) { add('speech_delay', 'Speech Delay', '💬'); add('developmental_delay', 'Developmental Delay', '🌱'); }
   if (topics.includes('health'))            { add('autism', 'Autism Parents', '🧩'); add('nicu', 'NICU Families', '💪'); }
+  if (topics.includes('multiples'))         add('multiples', 'Twins & Multiples', '👯');
 
   // Always-present base patches
   add('first_time',    'First Time Parents',     '👶');
@@ -260,22 +301,40 @@ function makeCheckCardStyles(c: Colors) {
 
 // ─── Progress dots ────────────────────────────────────────────────────────────
 
-function ProgressDots({ current, total, c }: { current: number; total: number; c: Colors }) {
+function ProgressDots({
+  current,
+  total,
+  onDotPress,
+  c,
+}: {
+  current: number;
+  total: number;
+  onDotPress: (index: number) => void;
+  c: Colors;
+}) {
   const pd = useMemo(() => makeProgressDotStyles(c), [c]);
   return (
     <View style={pd.row}>
       {Array.from({ length: total }, (_, i) => (
-        <View
+        <TouchableOpacity
           key={i}
-          style={[
-            pd.dot,
-            i < current
-              ? pd.dotDone
-              : i === current
-              ? pd.dotActive
-              : pd.dotInactive,
-          ]}
-        />
+          onPress={() => (i < current ? onDotPress(i) : undefined)}
+          disabled={i >= current}
+          hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+          accessibilityLabel={`Go to step ${i + 1} of ${total}`}
+          accessibilityRole="button"
+        >
+          <View
+            style={[
+              pd.dot,
+              i < current
+                ? pd.dotDone
+                : i === current
+                ? pd.dotActive
+                : pd.dotInactive,
+            ]}
+          />
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -291,15 +350,242 @@ function makeProgressDotStyles(c: Colors) {
   });
 }
 
+// ─── Review step ──────────────────────────────────────────────────────────────
+
+type Styles = ReturnType<typeof makeStyles>;
+
+function ReviewStep({
+  babyName,
+  babyDOB,
+  isExpecting,
+  role,
+  feeding,
+  topics,
+  patches,
+  onEdit,
+  styles,
+}: {
+  babyName: string;
+  babyDOB: string;
+  isExpecting: boolean;
+  role: string[];
+  feeding: string[];
+  topics: string[];
+  patches: string[];
+  onEdit: (stepIndex: number) => void;
+  styles: Styles;
+}) {
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(0)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Baby</Text>
+          <Text style={styles.reviewValue}>
+            {babyName || 'Not set'} • {isExpecting ? 'Expecting' : babyDOB ? `Born ${babyDOB}` : '—'}
+          </Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(1)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Your role</Text>
+          <Text style={styles.reviewValue}>{role.length ? role.join(', ') : 'Not set'}</Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(2)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Feeding</Text>
+          <Text style={styles.reviewValue}>
+            {feeding.length ? feeding.map(feedingLabel).join(', ') : 'Skipped'}
+          </Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(3)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Topics</Text>
+          <Text style={styles.reviewValue}>{topics.length ? `${topics.length} selected` : 'Skipped'}</Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(4)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Patches</Text>
+          <Text style={styles.reviewValue}>{patches.length ? `${patches.length} joined` : 'Skipped'}</Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.reviewFooter}>You can change any of this later in Settings.</Text>
+      <View style={styles.scrollPad} />
+    </ScrollView>
+  );
+}
+
+// ─── Partner invite step ──────────────────────────────────────────────────────
+
+function PartnerInviteStep({
+  userId,
+  onNext,
+  onSkip,
+  styles,
+  c,
+}: {
+  userId: string | null;
+  onNext: () => void;
+  onSkip: () => void;
+  styles: Styles;
+  c: Colors;
+}) {
+  const [inviteMethod, setInviteMethod] = useState<'sms' | 'email' | 'copy' | null>(null);
+  const [contact, setContact] = useState('');
+  const [sending, setSending] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const inviteLink = `https://parentpatch.app/join?ref=${userId ?? ''}`;
+  const inviteMessage = `I'm using Parent Patch to track our baby's feeding, sleep, and milestones. Join me! ${inviteLink}`;
+
+  async function handleSend() {
+    if (!inviteMethod) return;
+
+    if (inviteMethod === 'copy') {
+      setSending(true);
+      try {
+        await Clipboard.setStringAsync(inviteLink);
+        track('partner_invite_sent', { method: 'copy' });
+        setCopied(true);
+        setTimeout(onNext, 900);
+      } catch {
+        Alert.alert('Could not copy', 'Please try inviting your co-parent from Profile → Family Sharing instead.');
+        setSending(false);
+      }
+      return;
+    }
+
+    if (!contact.trim()) return;
+    setSending(true);
+    try {
+      if (inviteMethod === 'sms') {
+        await Linking.openURL(`sms:${contact.trim()}?body=${encodeURIComponent(inviteMessage)}`);
+      } else {
+        await Linking.openURL(
+          `mailto:${contact.trim()}?subject=${encodeURIComponent('Join me on Parent Patch')}&body=${encodeURIComponent(inviteMessage)}`
+        );
+      }
+      track('partner_invite_sent', { method: inviteMethod });
+      onNext();
+    } catch {
+      Alert.alert('Could not open', 'Please try inviting your co-parent from Profile → Family Sharing instead.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const canSend = !sending && (inviteMethod === 'copy' || (!!inviteMethod && contact.trim().length > 0));
+
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.inviteMethodRow}>
+        <TouchableOpacity
+          onPress={() => setInviteMethod('sms')}
+          style={[styles.methodChip, inviteMethod === 'sms' && styles.methodChipActive]}
+        >
+          <Text style={[styles.genderChipText, inviteMethod === 'sms' && styles.genderChipTextActive]}>
+            📱 SMS
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setInviteMethod('email')}
+          style={[styles.methodChip, inviteMethod === 'email' && styles.methodChipActive]}
+        >
+          <Text style={[styles.genderChipText, inviteMethod === 'email' && styles.genderChipTextActive]}>
+            ✉️ Email
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setInviteMethod('copy')}
+          style={[styles.methodChip, inviteMethod === 'copy' && styles.methodChipActive]}
+        >
+          <Text style={[styles.genderChipText, inviteMethod === 'copy' && styles.genderChipTextActive]}>
+            🔗 Copy Link
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {inviteMethod === 'sms' || inviteMethod === 'email' ? (
+        <TextInput
+          style={styles.textInput}
+          placeholder={inviteMethod === 'sms' ? 'Phone number' : 'Email address'}
+          placeholderTextColor={c.textMuted}
+          value={contact}
+          onChangeText={setContact}
+          keyboardType={inviteMethod === 'sms' ? 'phone-pad' : 'email-address'}
+          autoCapitalize="none"
+        />
+      ) : inviteMethod === 'copy' ? (
+        <View style={styles.linkBox}>
+          <Text style={styles.linkBoxText} numberOfLines={1}>{inviteLink}</Text>
+        </View>
+      ) : null}
+
+      <TouchableOpacity
+        style={[styles.nextBtn, { backgroundColor: c.primary }, !canSend && styles.nextBtnOff]}
+        onPress={handleSend}
+        disabled={!canSend}
+        activeOpacity={0.85}
+      >
+        {sending && !copied ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.nextBtnText}>
+            {inviteMethod === 'copy' ? (copied ? 'Copied! ✓' : 'Copy Link') : 'Send Invite'}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={onSkip} style={styles.skipLarge}>
+        <Text style={styles.skipLargeText}>Skip — I'll invite them later</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.inviteFooter}>
+        You can always invite your co-parent later from Profile → Family Sharing.
+      </Text>
+      <View style={styles.scrollPad} />
+    </ScrollView>
+  );
+}
+
 // ─── Onboarding screen ────────────────────────────────────────────────────────
+
+function progressKey(userId: string) {
+  return `onboarding_progress:${userId}`;
+}
 
 export default function Onboarding() {
   const { markOnboardingComplete } = useContext(AppContext);
 
   const [stepIndex, setStepIndex] = useState(0);
-  // selections[0]=role, [1]=feeding, [2]=topics, [3]=villages (unchanged from before)
+  // selections[0]=role, [1]=feeding, [2]=topics, [3]=patches
   const [selections, setSelections] = useState<string[][]>([[], [], [], []]);
   const [saving, setSaving] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  // When true, the user jumped here from the Review step to edit an answer —
+  // the next Continue/Skip should return them to Review instead of advancing normally.
+  const [editFromReview, setEditFromReview] = useState(false);
 
   // Baby profile step (step 0) state
   const [babyName, setBabyName] = useState('');
@@ -323,17 +609,93 @@ export default function Onboarding() {
     });
   }, []);
 
-  const isBabyStep = stepIndex === 0;
-  const isLast = stepIndex === TOTAL_STEPS - 1;
-  const step = isBabyStep ? null : STEPS[stepIndex - 1];
-  const accent = isBabyStep ? BABY_STEP_ACCENT : step!.accent;
+  // Restore in-progress onboarding (e.g. app was force-quit mid-flow). Keyed by user id
+  // so a second account signing up on the same device doesn't inherit a stale, half-filled
+  // draft (wrong baby name, wrong step) left behind by a previous account.
+  useEffect(() => {
+    if (!userId) return;
+    AsyncStorage.getItem(progressKey(userId))
+      .then(saved => {
+        if (saved) {
+          try {
+            const data = JSON.parse(saved);
+            if (typeof data.stepIndex === 'number') setStepIndex(data.stepIndex);
+            if (typeof data.babyName === 'string') setBabyName(data.babyName);
+            if (typeof data.babyDOB === 'string') setBabyDOB(data.babyDOB);
+            if (typeof data.babyGender === 'string') setBabyGender(data.babyGender);
+            if (typeof data.isExpecting === 'boolean') setIsExpecting(data.isExpecting);
+            if (typeof data.babyPhotoUri === 'string') setBabyPhotoUri(data.babyPhotoUri);
+            if (typeof data.babyId === 'string') setBabyId(data.babyId);
+            if (Array.isArray(data.selections)) setSelections(data.selections);
+          } catch (err) {
+            console.warn('Could not restore onboarding progress:', err);
+          }
+        }
+      })
+      .finally(() => setHydrated(true));
+  }, [userId]);
 
+  // Persist progress after every change, once initial restore has finished
+  // (so we don't immediately overwrite saved progress with blank initial state).
+  useEffect(() => {
+    if (!hydrated || !userId) return;
+    AsyncStorage.setItem(
+      progressKey(userId),
+      JSON.stringify({ stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections })
+    ).catch(() => {});
+  }, [hydrated, userId, stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections]);
+
+  const babyAgeMonths = useMemo(() => {
+    if (isExpecting || !babyDOB.trim()) return 0;
+    const diff = Date.now() - new Date(parseDateInput(babyDOB)).getTime();
+    if (diff < 0 || isNaN(diff)) return 0;
+    return Math.floor(diff / (1000 * 60 * 60 * 24 * 30.44));
+  }, [babyDOB, isExpecting]);
+
+  // Babies under 4 months shouldn't keep a solids selection if the DOB changes after picking one.
+  useEffect(() => {
+    if (babyAgeMonths >= 4) return;
+    setSelections(prev => {
+      if (!prev[1].some(id => id === 'solids' || id === 'solids_starting')) return prev;
+      const next = [...prev];
+      next[1] = next[1].filter(id => id !== 'solids' && id !== 'solids_starting');
+      return next;
+    });
+  }, [babyAgeMonths]);
+
+  const isBabyStep = stepIndex === 0;
+  const isRoleTopicStep = stepIndex >= 1 && stepIndex <= 4;
+  const isFeedingStep = stepIndex === 2;
+  const isPatchesStep = stepIndex === 4;
+  const isPartnerStep = stepIndex === 5;
+  const isReviewStep = stepIndex === TOTAL_STEPS - 1;
+
+  const step = isRoleTopicStep ? STEPS[stepIndex - 1] : null;
+  const accent = isBabyStep ? BABY_STEP_ACCENT : step ? step.accent : BABY_STEP_ACCENT;
+
+  const feedingOptions = useMemo(() => getFeedingOptions(babyAgeMonths), [babyAgeMonths]);
   const patchOptions = useMemo(
     () => getRelevantPatches(selections[0], selections[1], selections[2]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selections[0], selections[1], selections[2]]
   );
-  const currentOptions = isLast ? patchOptions : (step?.options ?? []);
+  const currentOptions = isPatchesStep ? patchOptions : isFeedingStep ? feedingOptions : (step?.options ?? []);
+
+  const headerTitle = isBabyStep
+    ? 'Tell us about\nyour baby'
+    : isPartnerStep
+    ? 'Share tracking with\nyour co-parent?'
+    : isReviewStep
+    ? 'Looks good?'
+    : step!.title;
+
+  const headerSubtitle = isBabyStep
+    ? 'This helps us personalize your content and track milestones.'
+    : isPartnerStep
+    ? 'Both parents see the same data in real-time. No more "did you feed the baby?" texts.'
+    : isReviewStep
+    ? 'Review your answers — tap any section to edit.'
+    : step!.subtitle;
 
   function toggleOption(id: string) {
     setSelections(prev => {
@@ -371,6 +733,49 @@ export default function Onboarding() {
       return;
     }
     setBabyPhotoUri(result.assets[0].uri);
+  }
+
+  // Advances to the next step, unless the user is editing from the Review
+  // screen — in that case, return them to Review instead of stepping forward.
+  function goNext() {
+    if (editFromReview) {
+      setEditFromReview(false);
+      setStepIndex(TOTAL_STEPS - 1);
+    } else {
+      setStepIndex(i => i + 1);
+    }
+  }
+
+  function advance(eventName: 'onboarding_step_completed' | 'onboarding_step_skipped') {
+    track(eventName, { step: stepIndex, step_name: STEP_NAMES[stepIndex] });
+    goNext();
+  }
+
+  function handleNext() {
+    advance('onboarding_step_completed');
+  }
+
+  function handleSkip() {
+    setSelections(prev => {
+      const next = [...prev];
+      next[stepIndex - 1] = [];
+      return next;
+    });
+    advance('onboarding_step_skipped');
+  }
+
+  function handleBack() {
+    if (stepIndex === 4) {
+      // Leaving Patches backward — clear its selections since the recommended
+      // set is recomputed from Role/Feeding/Topics and may no longer match.
+      setSelections(prev => prev.map((s, i) => i === 3 ? [] : s));
+    }
+    setStepIndex(i => i - 1);
+  }
+
+  function handleEditFromReview(targetStep: number) {
+    setEditFromReview(true);
+    setStepIndex(targetStep);
   }
 
   async function saveBabyAndContinue() {
@@ -422,7 +827,7 @@ export default function Onboarding() {
         setBabyId(insertedBaby.id);
       }
 
-      setStepIndex(1);
+      advance('onboarding_step_completed');
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Could not save baby profile.');
     } finally {
@@ -481,26 +886,27 @@ export default function Onboarding() {
       console.warn('Onboarding DB save error (non-blocking):', err.message);
     }
 
+    track('onboarding_completed', {});
+    if (userId) await AsyncStorage.removeItem(progressKey(userId));
     await markOnboardingComplete();
     setSaving(false);
   }
 
-  const babyStepValid = babyName.trim().length > 0 && (isExpecting || babyDOB.trim().length > 0);
-  const isNextDisabled = saving || (isBabyStep && !babyStepValid);
+  const canContinue = useMemo(() => {
+    if (stepIndex === 0) return babyName.trim().length > 0 && (isExpecting || babyDOB.trim().length > 0);
+    if (stepIndex === 1) return selections[0].length > 0;
+    return true;
+  }, [stepIndex, babyName, babyDOB, isExpecting, selections]);
+
+  const isNextDisabled = saving || !canContinue;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.inner}>
-        <ProgressDots current={stepIndex} total={TOTAL_STEPS} c={c} />
+        <ProgressDots current={stepIndex} total={TOTAL_STEPS} onDotPress={idx => setStepIndex(idx)} c={c} />
 
-        <Text style={styles.title}>
-          {isBabyStep ? 'Tell us about\nyour baby' : step!.title}
-        </Text>
-        <Text style={styles.subtitle}>
-          {isBabyStep
-            ? 'This helps us personalize your content and track milestones.'
-            : step!.subtitle}
-        </Text>
+        <Text style={styles.title}>{headerTitle}</Text>
+        <Text style={styles.subtitle}>{headerSubtitle}</Text>
       </View>
 
       {isBabyStep ? (
@@ -514,6 +920,10 @@ export default function Onboarding() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            <Text style={styles.timeEstimate}>
+              ⏱ Takes about 2 minutes • {TOTAL_STEPS} quick steps
+            </Text>
+
             {/* Photo picker */}
             <View style={styles.photoWrapper}>
               <TouchableOpacity style={styles.photoCircle} onPress={pickPhoto} activeOpacity={0.75}>
@@ -587,12 +997,37 @@ export default function Onboarding() {
             <View style={styles.scrollPad} />
           </ScrollView>
         </KeyboardAvoidingView>
+      ) : isPartnerStep ? (
+        <PartnerInviteStep
+          userId={userId}
+          onNext={() => advance('onboarding_step_completed')}
+          onSkip={() => advance('onboarding_step_skipped')}
+          styles={styles}
+          c={c}
+        />
+      ) : isReviewStep ? (
+        <ReviewStep
+          babyName={babyName}
+          babyDOB={babyDOB}
+          isExpecting={isExpecting}
+          role={selections[0]}
+          feeding={selections[1]}
+          topics={selections[2]}
+          patches={selections[3]}
+          onEdit={handleEditFromReview}
+          styles={styles}
+        />
       ) : (
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {isFeedingStep && babyAgeMonths < 4 && (
+            <Text style={styles.ageNote}>
+              💡 Most pediatricians recommend waiting until 4-6 months to introduce solid foods. Always consult your pediatrician first.
+            </Text>
+          )}
           {currentOptions.map(opt => (
             <CheckCard
               key={opt.id}
@@ -608,35 +1043,37 @@ export default function Onboarding() {
       )}
 
       <View style={styles.footer}>
-        {stepIndex > 0 ? (
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              if (isLast) setSelections(prev => prev.map((s, i) => i === 3 ? [] : s));
-              setStepIndex(i => i - 1);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.backBtnText}>← Back</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.backBtn} />
-        )}
-
-        <TouchableOpacity
-          style={[styles.nextBtn, { backgroundColor: accent }, isNextDisabled && styles.nextBtnOff]}
-          onPress={isBabyStep ? saveBabyAndContinue : isLast ? handleComplete : () => setStepIndex(i => i + 1)}
-          disabled={isNextDisabled}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.nextBtnText}>
-              {isLast ? 'Get Started!' : 'Continue'}
-            </Text>
+        <View style={styles.footerLeft}>
+          {stepIndex > 0 && (
+            <TouchableOpacity onPress={handleBack} activeOpacity={0.7}>
+              <Text style={styles.backBtnText}>← Back</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+          {isOptionalStep(stepIndex) && (
+            <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
+              <Text style={styles.skipText}>Skip for now</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!isPartnerStep && (
+          <TouchableOpacity
+            style={[styles.nextBtn, { backgroundColor: accent }, isNextDisabled && styles.nextBtnOff]}
+            onPress={isBabyStep ? saveBabyAndContinue : isReviewStep ? handleComplete : handleNext}
+            disabled={isNextDisabled}
+            accessibilityLabel={canContinue ? 'Continue to next step' : 'Complete required fields to continue'}
+            accessibilityState={{ disabled: isNextDisabled }}
+            activeOpacity={0.85}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.nextBtnText}>
+                {isReviewStep ? "Finish — Let's Go! 🎉" : 'Continue'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Content moderation overlay */}
@@ -707,15 +1144,23 @@ function makeStyles(c: Colors) {
       borderTopColor: c.separator,
       backgroundColor: c.bg,
     },
-    backBtn: {
-      width: 72,
-      alignItems: 'flex-start',
-      justifyContent: 'center',
+    footerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
     backBtnText: {
       fontSize: 15,
       fontWeight: '600',
       color: c.textMuted,
+    },
+    skipButton: {
+      marginLeft: 16,
+    },
+    skipText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontWeight: '500',
     },
     nextBtn: {
       flex: 1,
@@ -736,6 +1181,15 @@ function makeStyles(c: Colors) {
       fontSize: 16,
       fontWeight: '700',
       letterSpacing: 0.3,
+    },
+
+    // ── Baby step: time estimate
+    timeEstimate: {
+      fontSize: 13,
+      color: c.textMuted,
+      textAlign: 'center',
+      marginBottom: 20,
+      fontWeight: '500',
     },
 
     // ── Baby step: photo
@@ -853,6 +1307,107 @@ function makeStyles(c: Colors) {
     },
     genderChipTextActive: {
       color: '#fff',
+    },
+
+    // ── Feeding step: age note
+    ageNote: {
+      fontSize: 13,
+      color: c.textMuted,
+      backgroundColor: c.cardHoney,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 16,
+      lineHeight: 19,
+    },
+
+    // ── Review step
+    reviewRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      paddingVertical: 16,
+      paddingHorizontal: 18,
+      marginBottom: 10,
+    },
+    reviewRowText: {
+      flex: 1,
+    },
+    reviewLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textMuted,
+      marginBottom: 4,
+    },
+    reviewValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: c.textPrimary,
+    },
+    reviewEdit: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.primary,
+      marginLeft: 12,
+    },
+    reviewFooter: {
+      fontSize: 13,
+      color: c.textMuted,
+      textAlign: 'center',
+      marginTop: 12,
+      marginBottom: 8,
+    },
+
+    // ── Partner invite step
+    inviteMethodRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 20,
+    },
+    methodChip: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 14,
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      alignItems: 'center',
+    },
+    methodChipActive: {
+      backgroundColor: c.primary,
+      borderColor: c.primary,
+    },
+    linkBox: {
+      backgroundColor: c.card,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      marginBottom: 20,
+    },
+    linkBoxText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontWeight: '500',
+    },
+    skipLarge: {
+      alignItems: 'center',
+      paddingVertical: 16,
+      marginTop: 12,
+    },
+    skipLargeText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: c.textMuted,
+    },
+    inviteFooter: {
+      fontSize: 12,
+      color: c.textMuted,
+      textAlign: 'center',
+      marginTop: 16,
     },
 
     // ── Content moderation overlay
