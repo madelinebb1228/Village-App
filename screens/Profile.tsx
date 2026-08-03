@@ -63,6 +63,7 @@ interface Baby {
   id: string;
   name: string;
   birth_date: string | null;
+  due_date: string | null;
   is_expecting: boolean;
   photo_url: string | null;
   gender: string | null;
@@ -183,7 +184,7 @@ export default function Profile() {
 
       const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes, savedRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
-        supabase.from('babies').select('id,name,birth_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
+        supabase.from('babies').select('id,name,birth_date,due_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
         supabase.from('posts').select('id,content,post_type,created_at,likes,image_url').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('user_villages').select('village_id').eq('user_id', user.id),
         supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', user.id),
@@ -805,7 +806,7 @@ export default function Profile() {
                 <Text style={s.babyName}>{baby.name}</Text>
                 <Text style={s.babyAge}>
                   {baby.is_expecting
-                    ? 'Due soon 🤰'
+                    ? (baby.due_date ? `Due ${formatDateShort(baby.due_date)} 🤰` : 'Due soon 🤰')
                     : baby.birth_date
                     ? `${formatDateShort(baby.birth_date)} · ${ageLabel(baby.birth_date)}`
                     : ''}

@@ -140,11 +140,11 @@ const STORAGE_KEY = '@village_allergen_tracker_v2';
 
 function formatDate(iso?: string) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function daysAgo(isoDate: string): number {
-  return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86_400_000);
+  return Math.floor((Date.now() - new Date(isoDate + 'T00:00:00').getTime()) / 86_400_000);
 }
 
 function relativeAge(isoDate: string): string {

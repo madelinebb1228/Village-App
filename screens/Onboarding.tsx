@@ -22,6 +22,8 @@ import { AppContext } from '../lib/AppContext';
 import { useColors, Colors } from '../lib/theme';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
+import { useSubscription, MAX_FREE_TRACKER_PICKS } from '../lib/subscriptionContext';
+import { PREMIUM_TRACKERS } from '../lib/premiumTrackers';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,11 +177,12 @@ const STEPS: Step[] = [
   },
 ];
 
-// 0=Baby, 1=Role, 2=Feeding, 3=Topics, 4=Patches, 5=Partner Invite, 6=Review
-const TOTAL_STEPS = 7;
+// 0=Baby, 1=Role, 2=Feeding, 3=Topics, 4=Patches, 5=Free Trackers, 6=Partner Invite, 7=Review
+const TOTAL_STEPS = 8;
 const BABY_STEP_ACCENT = '#B8A9C9';
-const STEP_NAMES = ['Baby Profile', 'Role', 'Feeding', 'Topics', 'Patches', 'Partner Invite', 'Review'];
-const OPTIONAL_STEPS = [2, 3, 4];
+const TRACKERS_STEP_ACCENT = '#8B7FD6';
+const STEP_NAMES = ['Baby Profile', 'Role', 'Feeding', 'Topics', 'Patches', 'Free Trackers', 'Partner Invite', 'Review'];
+const OPTIONAL_STEPS = [2, 3, 4, 5];
 const isOptionalStep = (idx: number) => OPTIONAL_STEPS.includes(idx);
 
 function getRelevantPatches(role: string[], feeding: string[], topics: string[]): Option[] {
@@ -362,6 +365,7 @@ function ReviewStep({
   feeding,
   topics,
   patches,
+  trackerPicks,
   onEdit,
   styles,
 }: {
@@ -372,6 +376,7 @@ function ReviewStep({
   feeding: string[];
   topics: string[];
   patches: string[];
+  trackerPicks: string[];
   onEdit: (stepIndex: number) => void;
   styles: Styles;
 }) {
@@ -421,6 +426,14 @@ function ReviewStep({
         <View style={styles.reviewRowText}>
           <Text style={styles.reviewLabel}>Patches</Text>
           <Text style={styles.reviewValue}>{patches.length ? `${patches.length} joined` : 'Skipped'}</Text>
+        </View>
+        <Text style={styles.reviewEdit}>Edit ›</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(5)} activeOpacity={0.7}>
+        <View style={styles.reviewRowText}>
+          <Text style={styles.reviewLabel}>Free trackers</Text>
+          <Text style={styles.reviewValue}>{trackerPicks.length ? `${trackerPicks.length} unlocked` : 'None picked'}</Text>
         </View>
         <Text style={styles.reviewEdit}>Edit ›</Text>
       </TouchableOpacity>
@@ -600,6 +613,10 @@ export default function Onboarding() {
     severity: 'high' | 'extreme'; reason: string; contentType: ContentType;
   } | null>(null);
 
+  // Free tracker picks step
+  const { freeTrackerPicks, setFreeTrackerPicks } = useSubscription();
+  const [trackerPicks, setTrackerPicks] = useState<string[]>(freeTrackerPicks);
+
   const c = useColors();
   const styles = useMemo(() => makeStyles(c), [c]);
 
@@ -667,11 +684,12 @@ export default function Onboarding() {
   const isRoleTopicStep = stepIndex >= 1 && stepIndex <= 4;
   const isFeedingStep = stepIndex === 2;
   const isPatchesStep = stepIndex === 4;
-  const isPartnerStep = stepIndex === 5;
+  const isTrackersStep = stepIndex === 5;
+  const isPartnerStep = stepIndex === 6;
   const isReviewStep = stepIndex === TOTAL_STEPS - 1;
 
   const step = isRoleTopicStep ? STEPS[stepIndex - 1] : null;
-  const accent = isBabyStep ? BABY_STEP_ACCENT : step ? step.accent : BABY_STEP_ACCENT;
+  const accent = isBabyStep ? BABY_STEP_ACCENT : isTrackersStep ? TRACKERS_STEP_ACCENT : step ? step.accent : BABY_STEP_ACCENT;
 
   const feedingOptions = useMemo(() => getFeedingOptions(babyAgeMonths), [babyAgeMonths]);
   const patchOptions = useMemo(
@@ -683,6 +701,8 @@ export default function Onboarding() {
 
   const headerTitle = isBabyStep
     ? 'Tell us about\nyour baby'
+    : isTrackersStep
+    ? 'Try some premium\ntrackers free'
     : isPartnerStep
     ? 'Share tracking with\nyour co-parent?'
     : isReviewStep
@@ -691,6 +711,8 @@ export default function Onboarding() {
 
   const headerSubtitle = isBabyStep
     ? 'This helps us personalize your content and track milestones.'
+    : isTrackersStep
+    ? `Pick up to ${MAX_FREE_TRACKER_PICKS} to unlock for free — no subscription needed. You can change these later in Settings.`
     : isPartnerStep
     ? 'Both parents see the same data in real-time. No more "did you feed the baby?" texts.'
     : isReviewStep
@@ -709,6 +731,19 @@ export default function Onboarding() {
         ? current.filter(x => x !== id)
         : [...current, id];
       return prev.map((s, i) => (i === selIdx ? updated : s));
+    });
+  }
+
+  function toggleTracker(key: string) {
+    setTrackerPicks(prev => {
+      const isSelected = prev.includes(key);
+      if (!isSelected && prev.length >= MAX_FREE_TRACKER_PICKS) {
+        Alert.alert('Pick up to ' + MAX_FREE_TRACKER_PICKS, `Deselect one to swap in another — you can always change these later in Settings.`);
+        return prev;
+      }
+      const next = isSelected ? prev.filter(k => k !== key) : [...prev, key];
+      setFreeTrackerPicks(next);
+      return next;
     });
   }
 
@@ -756,11 +791,16 @@ export default function Onboarding() {
   }
 
   function handleSkip() {
-    setSelections(prev => {
-      const next = [...prev];
-      next[stepIndex - 1] = [];
-      return next;
-    });
+    if (isTrackersStep) {
+      setTrackerPicks([]);
+      setFreeTrackerPicks([]);
+    } else {
+      setSelections(prev => {
+        const next = [...prev];
+        next[stepIndex - 1] = [];
+        return next;
+      });
+    }
     advance('onboarding_step_skipped');
   }
 
@@ -798,12 +838,14 @@ export default function Onboarding() {
       }
 
       const parsedDOB = (!isExpecting && babyDOB.trim()) ? parseDateInput(babyDOB) : null;
+      const parsedDueDate = (isExpecting && babyDOB.trim()) ? parseDateInput(babyDOB) : null;
 
       if (babyId) {
         // User went back and is re-confirming — update the existing record
         await supabase.from('babies').update({
           name: babyName.trim(),
           birth_date: parsedDOB,
+          due_date: parsedDueDate,
           is_expecting: isExpecting,
           gender: babyGender || null,
           ...(photoUrl ? { photo_url: photoUrl } : {}),
@@ -815,6 +857,7 @@ export default function Onboarding() {
             user_id: user.id,
             name: babyName.trim(),
             birth_date: parsedDOB,
+            due_date: parsedDueDate,
             is_expecting: isExpecting,
             gender: babyGender || null,
             photo_url: photoUrl,
@@ -997,6 +1040,35 @@ export default function Onboarding() {
             <View style={styles.scrollPad} />
           </ScrollView>
         </KeyboardAvoidingView>
+      ) : isTrackersStep ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.trackerPickCount}>
+            {trackerPicks.length} / {MAX_FREE_TRACKER_PICKS} selected
+          </Text>
+          {PREMIUM_TRACKERS.map(t => (
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.trackerCard, trackerPicks.includes(t.key) && { borderColor: accent, backgroundColor: accent + '14' }]}
+              onPress={() => toggleTracker(t.key)}
+              activeOpacity={0.75}
+              accessibilityRole="button" accessibilityLabel={t.label}
+            >
+              <Text style={styles.trackerCardEmoji}>{t.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.trackerCardLabel, trackerPicks.includes(t.key) && { color: c.textPrimary }]}>{t.label}</Text>
+                <Text style={styles.trackerCardDesc}>{t.description}</Text>
+              </View>
+              <View style={[styles.trackerCardCheck, trackerPicks.includes(t.key) && { backgroundColor: accent, borderColor: accent }]}>
+                {trackerPicks.includes(t.key) && <Text style={styles.trackerCardCheckmark}>✓</Text>}
+              </View>
+            </TouchableOpacity>
+          ))}
+          <View style={styles.scrollPad} />
+        </ScrollView>
       ) : isPartnerStep ? (
         <PartnerInviteStep
           userId={userId}
@@ -1014,6 +1086,7 @@ export default function Onboarding() {
           feeding={selections[1]}
           topics={selections[2]}
           patches={selections[3]}
+          trackerPicks={trackerPicks}
           onEdit={handleEditFromReview}
           styles={styles}
         />
@@ -1321,6 +1394,55 @@ function makeStyles(c: Colors) {
     },
 
     // ── Review step
+    // ── Free trackers step
+    trackerPickCount: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textMuted,
+      marginBottom: 12,
+    },
+    trackerCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      marginBottom: 10,
+    },
+    trackerCardEmoji: {
+      fontSize: 22,
+      marginRight: 14,
+    },
+    trackerCardLabel: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: c.textMuted,
+      marginBottom: 2,
+    },
+    trackerCardDesc: {
+      fontSize: 12,
+      color: c.textMuted,
+    },
+    trackerCardCheck: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: c.inputBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 10,
+    },
+    trackerCardCheckmark: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '800',
+      lineHeight: 16,
+    },
+
     reviewRow: {
       flexDirection: 'row',
       alignItems: 'center',

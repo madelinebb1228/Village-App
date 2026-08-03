@@ -11,9 +11,9 @@ type Props = {
 };
 
 export default function PaywallGate({ feature, isTracker = false, children }: Props) {
-  const { isSubscribed, freeTrackerPick } = useSubscription();
+  const { isSubscribed, freeTrackerPicks } = useSubscription();
 
-  const isUnlocked = isSubscribed || (isTracker && freeTrackerPick === feature);
+  const isUnlocked = isSubscribed || (isTracker && freeTrackerPicks.includes(feature));
 
   if (!isUnlocked) return null;
   return <>{children}</>;

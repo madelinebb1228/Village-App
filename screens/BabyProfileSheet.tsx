@@ -28,6 +28,7 @@ interface BabyFull {
   id: string;
   name: string;
   birth_date: string | null;
+  due_date: string | null;
   is_expecting: boolean;
   gender: string | null;
   birth_weight: number | null;
@@ -164,6 +165,7 @@ export default function BabyProfileSheet({
   const [editName, setEditName] = useState('');
   const [editGender, setEditGender] = useState('');
   const [editBirthDate, setEditBirthDate] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
   const [editIsExpecting, setEditIsExpecting] = useState(false);
   const [editWeight, setEditWeight] = useState('');
   const [editHeight, setEditHeight] = useState('');
@@ -199,7 +201,7 @@ export default function BabyProfileSheet({
       const [babyRes, milestonesRes] = await Promise.all([
         supabase
           .from('babies')
-          .select('id,name,birth_date,is_expecting,gender,birth_weight,birth_length,current_weight,current_height,photo_url,pediatrician_name,pediatrician_phone,weight_updated_at,height_updated_at')
+          .select('id,name,birth_date,due_date,is_expecting,gender,birth_weight,birth_length,current_weight,current_height,photo_url,pediatrician_name,pediatrician_phone,weight_updated_at,height_updated_at')
           .eq('id', activeBabyId)
           .maybeSingle(),
         supabase
@@ -242,6 +244,12 @@ export default function BabyProfileSheet({
       setEditBirthDate(`${m}/${d}/${y}`);
     } else {
       setEditBirthDate('');
+    }
+    if (baby.due_date) {
+      const [y, m, d] = baby.due_date.split('-');
+      setEditDueDate(`${m}/${d}/${y}`);
+    } else {
+      setEditDueDate('');
     }
     setEditWeight(baby.current_weight != null ? String(baby.current_weight) : '');
     setEditHeight(baby.current_height != null ? String(baby.current_height) : '');
@@ -297,12 +305,14 @@ export default function BabyProfileSheet({
       const now = new Date().toISOString();
 
       const parsedBirthDate = editBirthDate.trim() ? parseDateInput(editBirthDate) : baby.birth_date;
+      const parsedDueDate = editDueDate.trim() ? parseDateInput(editDueDate) : baby.due_date;
 
       const { error } = await supabase.from('babies').update({
         name: editName.trim() || baby.name,
         gender: editGender.trim() || null,
         is_expecting: editIsExpecting,
         birth_date: editIsExpecting ? null : parsedBirthDate,
+        due_date: editIsExpecting ? parsedDueDate : null,
         birth_weight: parseFloat(editBirthWeight) || null,
         birth_length: parseFloat(editBirthLength) || null,
         current_weight: weight,
@@ -478,7 +488,9 @@ export default function BabyProfileSheet({
                   <Text style={s.heroAge}>{ageLabel(baby.birth_date)}</Text>
                 )}
                 {!editing && baby.is_expecting && (
-                  <Text style={s.heroAge}>Due soon 🤰</Text>
+                  <Text style={s.heroAge}>
+                    {baby.due_date ? `Due ${formatDate(baby.due_date)} 🤰` : 'Due soon 🤰'}
+                  </Text>
                 )}
               </View>
 
@@ -498,13 +510,26 @@ export default function BabyProfileSheet({
                         </Text>
                       </TouchableOpacity>
                     </View>
-                    {!editIsExpecting && (
+                    {!editIsExpecting ? (
                       <View style={s.row}>
                         <Text style={s.rowLabel}>Birthday</Text>
                         <TextInput
                           style={s.inlineInput}
                           value={editBirthDate}
                           onChangeText={t => setEditBirthDate(autoFormatDate(t))}
+                          placeholder="MM/DD/YYYY"
+                          keyboardType="numeric"
+                          maxLength={10}
+                          placeholderTextColor={c.textMuted}
+                        />
+                      </View>
+                    ) : (
+                      <View style={s.row}>
+                        <Text style={s.rowLabel}>Due date</Text>
+                        <TextInput
+                          style={s.inlineInput}
+                          value={editDueDate}
+                          onChangeText={t => setEditDueDate(autoFormatDate(t))}
                           placeholder="MM/DD/YYYY"
                           keyboardType="numeric"
                           maxLength={10}
@@ -529,7 +554,11 @@ export default function BabyProfileSheet({
                   </>
                 ) : (
                   <>
-                    <Row label="Birthday" value={baby.birth_date ? formatDate(baby.birth_date) : '–'} styles={s} />
+                    {baby.is_expecting ? (
+                      <Row label="Due date" value={baby.due_date ? formatDate(baby.due_date) : '–'} styles={s} />
+                    ) : (
+                      <Row label="Birthday" value={baby.birth_date ? formatDate(baby.birth_date) : '–'} styles={s} />
+                    )}
                     <Row label="Gender" value={baby.gender ?? '–'} last styles={s} />
                   </>
                 )}

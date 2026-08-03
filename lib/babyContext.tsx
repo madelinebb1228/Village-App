@@ -7,6 +7,7 @@ export interface Baby {
   user_id: string;
   name: string;
   birth_date: string | null;
+  due_date?: string | null;
   is_expecting?: boolean | null;
   gender?: string | null;
   current_weight?: number | null;
@@ -60,7 +61,7 @@ export function BabyProvider({ children }: { children: React.ReactNode }) {
       // owns or has been invited to as a caregiver — no manual filter needed.
       const { data, error } = await supabase
         .from('babies')
-        .select('id, user_id, name, birth_date, is_expecting, gender, current_weight, photo_url, invite_code')
+        .select('id, user_id, name, birth_date, due_date, is_expecting, gender, current_weight, photo_url, invite_code')
         .order('birth_date', { ascending: true });
       if (error) throw error;
 

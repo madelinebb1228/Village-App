@@ -70,11 +70,12 @@ interface Props {
   babyId: string | null;
   babyName: string | null;
   onLastFeedLoaded?: (log: LastFeedLog | null) => void;
+  refreshKey?: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function FeedReminderCard({ userId, babyId, babyName, onLastFeedLoaded }: Props) {
+export default function FeedReminderCard({ userId, babyId, babyName, onLastFeedLoaded, refreshKey }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
@@ -109,7 +110,7 @@ export default function FeedReminderCard({ userId, babyId, babyName, onLastFeedL
     setSettings(savedSettings);
     onLastFeedLoaded?.(log);
     setLoading(false);
-  }, [userId, babyId, onLastFeedLoaded]);
+  }, [userId, babyId, onLastFeedLoaded, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -7,20 +7,21 @@ import PaywallModal from '../components/PaywallModal';
 
 const RC_API_KEY = 'test_aKoxsimzJRFcHMqvzVjlVzGjkZX';
 const ENTITLEMENT = 'premium';
-const FREE_PICK_KEY = 'village_free_tracker_pick';
+const FREE_PICK_KEY = 'village_free_tracker_picks';
+export const MAX_FREE_TRACKER_PICKS = 3;
 
 function entitlementCacheKey(userId: string) {
   return `subscription_cache_${userId}`;
 }
 
 // Developer accounts always have premium
-const DEV_EMAILS = ['madelinebb1228@gmail.com'];
+const DEV_EMAILS = ['madelinebb1228@gmail.com', 'test@parentpatch.dev'];
 
 type SubscriptionContextType = {
   isSubscribed: boolean;
   isLoading: boolean;
-  freeTrackerPick: string | null;
-  setFreeTrackerPick: (tracker: string) => Promise<void>;
+  freeTrackerPicks: string[];
+  setFreeTrackerPicks: (trackers: string[]) => Promise<void>;
   purchaseSubscription: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
   openPaywall: () => void;
@@ -30,8 +31,8 @@ type SubscriptionContextType = {
 const SubscriptionContext = createContext<SubscriptionContextType>({
   isSubscribed: false,
   isLoading: true,
-  freeTrackerPick: null,
-  setFreeTrackerPick: async () => {},
+  freeTrackerPicks: [],
+  setFreeTrackerPicks: async () => {},
   purchaseSubscription: async () => false,
   restorePurchases: async () => false,
   openPaywall: () => {},
@@ -41,7 +42,7 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [freeTrackerPick, setFreeTrackerPickState] = useState<string | null>(null);
+  const [freeTrackerPicks, setFreeTrackerPicksState] = useState<string[]>([]);
   const [paywallVisible, setPaywallVisible] = useState(false);
 
   useEffect(() => {
@@ -87,15 +88,20 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         setIsLoading(false);
       }
 
-      const pick = await AsyncStorage.getItem(FREE_PICK_KEY);
-      setFreeTrackerPickState(pick);
+      const stored = await AsyncStorage.getItem(FREE_PICK_KEY);
+      if (stored) {
+        try {
+          setFreeTrackerPicksState(JSON.parse(stored));
+        } catch {}
+      }
     };
     init();
   }, []);
 
-  const setFreeTrackerPick = useCallback(async (tracker: string) => {
-    await AsyncStorage.setItem(FREE_PICK_KEY, tracker);
-    setFreeTrackerPickState(tracker);
+  const setFreeTrackerPicks = useCallback(async (trackers: string[]) => {
+    const capped = trackers.slice(0, MAX_FREE_TRACKER_PICKS);
+    await AsyncStorage.setItem(FREE_PICK_KEY, JSON.stringify(capped));
+    setFreeTrackerPicksState(capped);
   }, []);
 
   const purchaseSubscription = useCallback(async (): Promise<boolean> => {
@@ -140,8 +146,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     <SubscriptionContext.Provider value={{
       isSubscribed,
       isLoading,
-      freeTrackerPick,
-      setFreeTrackerPick,
+      freeTrackerPicks,
+      setFreeTrackerPicks,
       purchaseSubscription,
       restorePurchases,
       openPaywall: () => setPaywallVisible(true),

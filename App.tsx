@@ -1,4 +1,5 @@
 import './lib/carCheckTask'; // registers the background task at module scope — required by TaskManager
+import './lib/alertPolyfill'; // patches Alert.alert on web, where it's otherwise a no-op
 
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';

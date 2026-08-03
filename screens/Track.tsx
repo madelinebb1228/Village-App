@@ -55,6 +55,22 @@ type TimelineEntry = {
   type: EntryType; emoji: string; label: string; detail: string; logged_at: string;
 };
 
+// ─── Input sanitizers ─────────────────────────────────────────────────────────
+// keyboardType is a native-keyboard hint only — react-native-web renders a
+// plain text input that accepts anything typed, so numeric fields need to
+// filter their own input to match the native behavior.
+
+function sanitizeDecimal(text: string): string {
+  const cleaned = text.replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+}
+
+function sanitizeDigits(text: string): string {
+  return text.replace(/[^0-9]/g, '');
+}
+
 // ─── Options ──────────────────────────────────────────────────────────────────
 
 const FEED_TYPE: PickerOption[] = [
@@ -314,7 +330,7 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
       {useManual ? (
         <View style={tw.manualRow}>
           <TextInput style={tw.manualInput} placeholder="0" placeholderTextColor={c.textMuted}
-            value={manualValue} onChangeText={onManualChange} keyboardType="number-pad"
+            value={manualValue} onChangeText={t => onManualChange(sanitizeDigits(t))} keyboardType="number-pad"
             accessibilityLabel="Duration in minutes" />
           <Text style={tw.manualUnit}>min</Text>
         </View>
@@ -1323,6 +1339,7 @@ export default function Track({ route }: any) {
 
       await safeDelete(entry.table as any, entry.rawId);
       setEntries(prev => prev.filter(e => e.id !== entry.id));
+      setInsightsRefreshKey(k => k + 1);
 
       // Restore supplies after successful delete
       try {
@@ -1679,11 +1696,12 @@ export default function Track({ route }: any) {
           babyId={babyId}
           babyName={babyName}
           onLastFeedLoaded={setLastFeedLog}
+          refreshKey={insightsRefreshKey}
         />
-        <NursingReminderCard userId={userId} babyId={babyId} babyName={babyName} />
+        <NursingReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
 
         {/* ── Diaper reminder & color guide */}
-        <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} />
+        <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
 
         {/* ── Car check reminder */}
         <CarCheckReminderCard userId={userId} babyId={babyId} babyName={babyName} />
@@ -2154,7 +2172,7 @@ export default function Track({ route }: any) {
                 <View style={styles.breastRow}>
                   <View style={[styles.breastField, { flex: 1 }]}>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={feedAmount} onChangeText={setFeedAmount} keyboardType="decimal-pad"
+                      value={feedAmount} onChangeText={t => setFeedAmount(sanitizeDecimal(t))} keyboardType="decimal-pad"
                       accessibilityLabel="Bottle amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
@@ -2167,7 +2185,7 @@ export default function Track({ route }: any) {
                   <View style={styles.breastField}>
                     <Text style={styles.breastSideLabel}>Breastmilk 🤱</Text>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={bottleMixBmOz} onChangeText={setBottleMixBmOz} keyboardType="decimal-pad"
+                      value={bottleMixBmOz} onChangeText={t => setBottleMixBmOz(sanitizeDecimal(t))} keyboardType="decimal-pad"
                       accessibilityLabel="Breastmilk amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
@@ -2175,7 +2193,7 @@ export default function Track({ route }: any) {
                   <View style={styles.breastField}>
                     <Text style={styles.breastSideLabel}>Formula 🍶</Text>
                     <TextInput style={styles.breastInput} placeholder="0.0" placeholderTextColor={c.textMuted}
-                      value={bottleMixFmOz} onChangeText={setBottleMixFmOz} keyboardType="decimal-pad"
+                      value={bottleMixFmOz} onChangeText={t => setBottleMixFmOz(sanitizeDecimal(t))} keyboardType="decimal-pad"
                       accessibilityLabel="Formula amount in ounces" />
                     <Text style={styles.breastUnit}>oz</Text>
                   </View>
@@ -2378,7 +2396,7 @@ export default function Track({ route }: any) {
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Left</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
-              value={leftBreast} onChangeText={setLeftBreast} keyboardType="decimal-pad"
+              value={leftBreast} onChangeText={t => setLeftBreast(sanitizeDecimal(t))} keyboardType="decimal-pad"
               accessibilityLabel={`Left breast amount in ${pumpUnit}`} />
             <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>
@@ -2386,7 +2404,7 @@ export default function Track({ route }: any) {
           <View style={styles.breastField}>
             <Text style={styles.breastSideLabel}>Right</Text>
             <TextInput style={styles.breastInput} placeholder="0" placeholderTextColor={c.textMuted}
-              value={rightBreast} onChangeText={setRightBreast} keyboardType="decimal-pad"
+              value={rightBreast} onChangeText={t => setRightBreast(sanitizeDecimal(t))} keyboardType="decimal-pad"
               accessibilityLabel={`Right breast amount in ${pumpUnit}`} />
             <Text style={styles.breastUnit}>{pumpUnit}</Text>
           </View>

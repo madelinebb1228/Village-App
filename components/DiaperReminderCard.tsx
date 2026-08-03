@@ -55,9 +55,10 @@ interface Props {
   userId: string | null;
   babyId: string | null;
   babyName: string | null;
+  refreshKey?: number;
 }
 
-export default function DiaperReminderCard({ userId, babyId, babyName }: Props) {
+export default function DiaperReminderCard({ userId, babyId, babyName, refreshKey }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
@@ -97,7 +98,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName }: Props) 
     setSettings(savedSettings);
 
     setLoading(false);
-  }, [userId, babyId]);
+  }, [userId, babyId, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
 
