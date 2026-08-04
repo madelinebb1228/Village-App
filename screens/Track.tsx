@@ -40,6 +40,7 @@ import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
+import * as Sentry from '@sentry/react-native';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useBaby } from '../lib/babyContext';
 import { useSubscription } from '../lib/subscriptionContext';
@@ -1194,6 +1195,13 @@ export default function Track({ route }: any) {
         } catch {}
       }
 
+      Sentry.addBreadcrumb({
+        category: 'tracking',
+        message: editingId ? 'Updated feeding' : 'Logged feeding',
+        level: 'info',
+        data: { feed_type: feedType },
+      });
+
       feedTimer.stop();
       leftBreastTimer.stop(); rightBreastTimer.stop(); setActiveBreastSide(null);
       setActiveModal(null);
@@ -1245,6 +1253,13 @@ export default function Track({ route }: any) {
           console.warn('[Diaper] Supply update failed (diaper still saved):', supplyErr?.message);
         }
       }
+
+      Sentry.addBreadcrumb({
+        category: 'tracking',
+        message: editingId ? 'Updated diaper change' : 'Logged diaper change',
+        level: 'info',
+        data: { diaper_type: diaperType },
+      });
 
       setActiveModal(null);
       setEditingId(null);
@@ -1316,6 +1331,12 @@ export default function Track({ route }: any) {
           console.warn('[Pump] Supply update failed (session still saved):', supplyErr?.message);
         }
       }
+
+      Sentry.addBreadcrumb({
+        category: 'tracking',
+        message: editingId ? 'Updated pumping session' : 'Logged pumping session',
+        level: 'info',
+      });
 
       pumpTimer.stop();
       setActiveModal(null);

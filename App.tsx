@@ -1,6 +1,16 @@
 import './lib/carCheckTask'; // registers the background task at module scope — required by TaskManager
 import './lib/alertPolyfill'; // patches Alert.alert on web, where it's otherwise a no-op
 
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'TODO_MADELINE_ADD_YOUR_SENTRY_DSN_HERE',
+  debug: __DEV__,
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: 1.0,
+  attachScreenshot: true,
+});
+
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import { useColors } from './lib/theme';
@@ -18,6 +28,8 @@ import { AppContext } from './lib/AppContext';
 import { SubscriptionProvider } from './lib/subscriptionContext';
 import { BabyProvider } from './lib/babyContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import ErrorBoundary from './components/ErrorBoundary';
 
 import AuthScreen from './screens/Auth';
 import OnboardingScreen from './screens/Onboarding';
@@ -40,6 +52,19 @@ function sidebarAware<T extends object>(Screen: React.ComponentType<T>): React.C
       <View style={{ flex: 1, marginLeft: SIDEBAR_WIDTH }}>
         <Screen {...props} />
       </View>
+    );
+  };
+}
+
+function withErrorBoundary<T extends object>(
+  Screen: React.ComponentType<T>,
+  fallbackMessage: string,
+): React.ComponentType<T> {
+  return function BoundedScreen(props: T) {
+    return (
+      <ErrorBoundary fallbackMessage={fallbackMessage}>
+        <Screen {...props} />
+      </ErrorBoundary>
     );
   };
 }
@@ -170,7 +195,7 @@ function MainTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={sidebarAware(HomeScreen)}
+        component={sidebarAware(withErrorBoundary(HomeScreen, 'The Home feed ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Home',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
@@ -181,7 +206,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Track"
-        component={sidebarAware(TrackScreen)}
+        component={sidebarAware(withErrorBoundary(TrackScreen, 'Track ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Track',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
@@ -192,7 +217,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Calendar"
-        component={sidebarAware(CalendarScreen)}
+        component={sidebarAware(withErrorBoundary(CalendarScreen, 'Calendar ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Calendar',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
@@ -203,7 +228,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Resources"
-        component={sidebarAware(ResourcesScreen)}
+        component={sidebarAware(withErrorBoundary(ResourcesScreen, 'Resources ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Resources',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
@@ -214,7 +239,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Patch"
-        component={sidebarAware(VillageScreen)}
+        component={sidebarAware(withErrorBoundary(VillageScreen, 'Patch ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Patch',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
@@ -225,7 +250,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Profile"
-        component={sidebarAware(ProfileScreen)}
+        component={sidebarAware(withErrorBoundary(ProfileScreen, 'Profile ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Profile',
           tabBarIcon: ({ focused }) => (
@@ -260,7 +285,7 @@ async function resolveOnboardingDone(session: Session | null): Promise<boolean> 
   return false;
 }
 
-export default function App() {
+function App() {
   const [session, setSession] = React.useState<Session | null>(null);
   const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(null);
   const resolvedUserId = React.useRef<string | null>(null);
@@ -273,12 +298,14 @@ export default function App() {
       const uid = newSession?.user?.id ?? null;
       if (!uid) {
         resolvedUserId.current = null;
+        Sentry.setUser(null);
         if (!cancelled) setOnboardingDone(false);
         return;
       }
       // Same user as last resolved (e.g. a token-refresh auth event) — skip the re-check.
       if (uid === resolvedUserId.current) return;
       resolvedUserId.current = uid;
+      Sentry.setUser({ id: uid });
       const done = await resolveOnboardingDone(newSession);
       if (!cancelled) setOnboardingDone(done);
     }
@@ -341,3 +368,5 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+export default Sentry.wrap(App);
