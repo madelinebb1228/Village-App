@@ -21,4 +21,5 @@ export const PREMIUM_TRACKERS: PremiumTrackerOption[] = [
   { key: 'mom_sleep_tracker', label: 'Your Sleep', description: "Track how much sleep you're getting and how rested you feel.", emoji: '🌙' },
   { key: 'period_tracker', label: 'Period Return', description: 'Track the return of your menstrual cycle after birth.', emoji: '🩸' },
   { key: 'movement_tracker', label: 'Movement', description: 'Log exercise, walks, and physical activity during your recovery.', emoji: '🏃' },
+  { key: 'pregnancy_log', label: 'Symptoms & Weight', description: 'Track weight and symptoms throughout your pregnancy.', emoji: '📝' },
 ];

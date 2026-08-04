@@ -32,6 +32,9 @@ import BabyFoodTracker from './BabyFoodTracker';
 import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
 import PeriodReturnTracker from './PeriodReturnTracker';
 import MovementTracker from './MovementTracker';
+import KickCounterTracker from './KickCounterTracker';
+import ContractionTimerTracker from './ContractionTimerTracker';
+import PregnancyLogTracker from './PregnancyLogTracker';
 import InsightsSection from '../components/InsightsSection';
 import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
@@ -183,6 +186,8 @@ const YOU_NAV_GROUPS: TrackNavGroup[] = [
   { emoji: '🌈', category: 'Wellness Check-ins' },
   { emoji: '🌸', category: 'Body & Recovery' },
 ];
+
+const PREGNANCY_NAV_GROUP: TrackNavGroup = { emoji: '🤰', category: 'Pregnancy' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -974,6 +979,17 @@ export default function Track({ route }: any) {
     setBabyWeightLbs(activeBaby?.current_weight ?? null);
   }, [activeBaby]);
 
+  // Baby logging (feed/diaper/sleep) doesn't apply before birth — default
+  // expecting parents straight to the You tab's Pregnancy category, unless
+  // a Calendar deep link already asked for a specific view.
+  const isExpecting = !!activeBaby?.is_expecting;
+  useEffect(() => {
+    if (isExpecting && !initialCategory) {
+      setActiveView('you');
+      setYouCategory('Pregnancy');
+    }
+  }, [isExpecting, initialCategory]);
+
   const fetchTimeline = useCallback(async () => {
     setRefreshing(true);
     setTimelineError(false);
@@ -1625,7 +1641,8 @@ export default function Track({ route }: any) {
               { bg: c.cardSage,     border: c.sage,     text: c.sage     },
               { bg: c.cardLavender, border: c.lavender, text: c.lavender },
             ];
-            const groups = activeView === 'baby' ? BABY_NAV_GROUPS : YOU_NAV_GROUPS;
+            const groups = activeView === 'baby' ? BABY_NAV_GROUPS
+              : isExpecting ? [PREGNANCY_NAV_GROUP, ...YOU_NAV_GROUPS] : YOU_NAV_GROUPS;
             const category = activeView === 'baby' ? babyCategory : youCategory;
             const setCategory = activeView === 'baby' ? setBabyCategory : setYouCategory;
             return (
@@ -1881,6 +1898,28 @@ export default function Track({ route }: any) {
         </>)}
 
         </>) : (<>
+
+        {isExpecting && (youCategory === 'All' || youCategory === 'Pregnancy') && (<>
+        {/* ═══ Group: Pregnancy ═══ */}
+        <Text style={styles.groupHeading}>🤰 Pregnancy</Text>
+
+        {/* ── Kick Counter ── */}
+        <View>
+          <KickCounterTracker userId={userId} />
+        </View>
+
+        {/* ── Contraction Timer ── */}
+        <View>
+          <ContractionTimerTracker userId={userId} />
+        </View>
+
+        {/* ── Symptoms & Weight ── */}
+        <View>
+          <PaywallGate feature="pregnancy_log" isTracker title="Symptoms & Weight" description="Track weight and symptoms throughout your pregnancy." emoji="📝">
+            <PregnancyLogTracker userId={userId} />
+          </PaywallGate>
+        </View>
+        </>)}
 
         {(youCategory === 'All' || youCategory === 'Daily Care') && (<>
         {/* ═══ Group: Daily Care ═══ */}

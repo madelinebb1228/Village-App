@@ -16,6 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
+import { getPregnancyProgress, getWeekInfo } from '../lib/pregnancyData';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -130,7 +131,7 @@ export default function HomeTab() {
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [baby, setBaby] = useState<{ name: string; birth_date: string; photo_url: string | null; gender: string | null } | null>(null);
+  const [baby, setBaby] = useState<{ name: string; birth_date: string | null; due_date: string | null; is_expecting: boolean | null; photo_url: string | null; gender: string | null } | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -1106,7 +1107,7 @@ export default function HomeTab() {
           // ── Baby age & milestone ─────────────────────────────────────────────
           const { data: baby } = await supabase
             .from('babies')
-            .select('name, birth_date, photo_url, gender')
+            .select('name, birth_date, due_date, is_expecting, photo_url, gender')
             .eq('user_id', user.id)
             .limit(1)
             .maybeSingle();
@@ -1565,13 +1566,26 @@ export default function HomeTab() {
                 <Image source={{ uri: baby.photo_url }} style={styles.babyAvatarPhoto} />
               ) : (
                 <Text style={styles.babyAvatarText}>
-                  {baby.name ? baby.name.charAt(0).toUpperCase() : '👶'}
+                  {baby.is_expecting ? '🤰' : baby.name ? baby.name.charAt(0).toUpperCase() : '👶'}
                 </Text>
               )}
             </View>
             <View style={styles.babyInfo}>
               <Text style={styles.babyName}>{baby.name || 'Your Baby'}</Text>
-              <Text style={styles.babyAge}>{babyAgeLabel(baby.birth_date)}</Text>
+              {baby.is_expecting && baby.due_date ? (() => {
+                const { weeksPregnant, daysUntilDue } = getPregnancyProgress(baby.due_date);
+                const { size, emoji } = getWeekInfo(weeksPregnant);
+                return (
+                  <Text style={styles.babyAge}>
+                    Week {weeksPregnant} · about the size of {emoji} {size}
+                    {daysUntilDue > 0 ? ` · ${daysUntilDue}d to go` : ''}
+                  </Text>
+                );
+              })() : baby.is_expecting ? (
+                <Text style={styles.babyAge}>Expecting</Text>
+              ) : baby.birth_date ? (
+                <Text style={styles.babyAge}>{babyAgeLabel(baby.birth_date)}</Text>
+              ) : null}
             </View>
             <Text style={styles.babyCardChevron}>›</Text>
           </TouchableOpacity>

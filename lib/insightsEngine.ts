@@ -59,7 +59,7 @@ interface FeedRow {
 interface DiaperRow {
   id: string
   diaper_type: string
-  diaper_consist: string | null
+  consistency: string | null
   logged_at: string
 }
 
@@ -771,8 +771,8 @@ function detectFoodDiaperReaction(foodLogs: FoodRow[], diaperLogs: DiaperRow[], 
   const firstIntros= foodLogs.filter(l => l.is_first_introduction && now - new Date(l.tried_at).getTime() < sevenDays)
   if (firstIntros.length === 0) return []
 
-  const isPoop   = (l: DiaperRow) => l.diaper_type === 'poop' || l.diaper_type === 'both'
-  const isLoose  = (l: DiaperRow) => l.diaper_consist === 'loose' || l.diaper_consist === 'watery'
+  const isPoop   = (l: DiaperRow) => l.diaper_type === 'dirty' || l.diaper_type === 'both'
+  const isLoose  = (l: DiaperRow) => l.consistency === 'loose' || l.consistency === 'watery'
 
   for (const intro of firstIntros.slice(0, 5)) {
     const introTime = new Date(intro.tried_at).getTime()
@@ -1444,7 +1444,7 @@ export async function generateInsights(
       .order('logged_at', { ascending: true }),
     supabase
       .from('diaper_logs')
-      .select('id, diaper_type, diaper_consist, logged_at')
+      .select('id, diaper_type, consistency, logged_at')
       .eq('baby_id', babyId)
       .gte('logged_at', sinceIso)
       .order('logged_at', { ascending: true }),
