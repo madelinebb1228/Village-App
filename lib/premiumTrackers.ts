@@ -13,6 +13,7 @@ export interface PremiumTrackerOption {
 export const PREMIUM_TRACKERS: PremiumTrackerOption[] = [
   { key: 'sleep_tracker', label: 'Sleep Tracker', description: "Log and review your baby's naps and night sleep.", emoji: '🌙' },
   { key: 'growth_tracker', label: 'Growth Tracker', description: 'Track weight and height with WHO growth curve percentiles.', emoji: '📈' },
+  { key: 'health_tracker', label: 'Health Tracker', description: 'Log fevers, symptoms, and illness episodes with medication given.', emoji: '🩺' },
   { key: 'vaccines', label: 'Vaccines & Appointments', description: "Track your baby's vaccine schedule and upcoming appointments.", emoji: '💉' },
   { key: 'baby_journal', label: 'Baby Journal', description: 'Write memories and notes to look back on someday.', emoji: '📓' },
   { key: 'nutrition_tracker', label: 'Nutrition & Hydration', description: 'Track your water intake, meals, and vitamins each day.', emoji: '💧' },

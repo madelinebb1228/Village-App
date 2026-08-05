@@ -16,7 +16,7 @@ import RecipesScreen from './RecipesScreen';
 import BabyFoodChart from './BabyFoodChart';
 import ProductReviewsScreen from './ProductReviewsScreen';
 import ParentingAZ from './ParentingAZ';
-import MomGroupDirectory from './MomGroupDirectory';
+import ParentGroupDirectory from './ParentGroupDirectory';
 import ParentMarketplace from './ParentMarketplace';
 import SmartShoppingLists from './SmartShoppingLists';
 import ServiceProviderReviews from './ServiceProviderReviews';
@@ -155,7 +155,7 @@ export default function ResourcesTab({ route }: any) {
   }
 
   if (selected === 'mom_groups') {
-    return <MomGroupDirectory onBack={() => setSelected(null)} />;
+    return <ParentGroupDirectory onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'parenting_az') {

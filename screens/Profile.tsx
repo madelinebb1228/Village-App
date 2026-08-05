@@ -28,6 +28,7 @@ import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
+import { PARENT_TERM_OPTIONS, CUSTOM_TERM_ID, FAMILY_STRUCTURE_OPTIONS } from '../lib/inclusiveLanguage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,8 @@ interface UserProfile {
   header_url: string | null;
   parent_role: string | null;
   preferred_term: string | null;
+  family_structure: string | null;
+  family_structure_custom: string | null;
   show_villages: boolean | null;
   baby_info_private: boolean | null;
   pinned_post_id: string | null;
@@ -162,6 +165,9 @@ export default function Profile() {
   const [editBio, setEditBio] = useState('');
   const [editParentRole, setEditParentRole] = useState('');
   const [editPreferredTerm, setEditPreferredTerm] = useState('');
+  const [editCustomTerm, setEditCustomTerm] = useState('');
+  const [editFamilyStructure, setEditFamilyStructure] = useState('');
+  const [editFamilyStructureCustom, setEditFamilyStructureCustom] = useState('');
   const [editShowVillages, setEditShowVillages] = useState(true);
   const [editBabyInfoPrivate, setEditBabyInfoPrivate] = useState(false);
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
@@ -243,7 +249,17 @@ export default function Profile() {
     setEditDisplayName(profile?.display_name ?? '');
     setEditBio(profile?.bio ?? '');
     setEditParentRole(profile?.parent_role ?? '');
-    setEditPreferredTerm(profile?.preferred_term ?? '');
+    const savedTerm = profile?.preferred_term ?? '';
+    const knownTerm = PARENT_TERM_OPTIONS.some(o => o.id === savedTerm);
+    if (savedTerm && !knownTerm) {
+      setEditPreferredTerm(CUSTOM_TERM_ID);
+      setEditCustomTerm(savedTerm);
+    } else {
+      setEditPreferredTerm(savedTerm);
+      setEditCustomTerm('');
+    }
+    setEditFamilyStructure(profile?.family_structure ?? '');
+    setEditFamilyStructureCustom(profile?.family_structure_custom ?? '');
     setEditShowVillages(profile?.show_villages !== false);
     setEditBabyInfoPrivate(profile?.baby_info_private === true);
     setPendingAvatarUri(null);
@@ -362,7 +378,9 @@ export default function Profile() {
         avatar_url: avatarUrl,
         header_url: headerUrl,
         parent_role: editParentRole || null,
-        preferred_term: editPreferredTerm || null,
+        preferred_term: (editPreferredTerm === CUSTOM_TERM_ID ? editCustomTerm.trim() : editPreferredTerm) || null,
+        family_structure: editFamilyStructure || null,
+        family_structure_custom: editFamilyStructure === 'Other' ? (editFamilyStructureCustom.trim() || null) : null,
         show_villages: editShowVillages,
         baby_info_private: editBabyInfoPrivate,
       };
@@ -604,17 +622,52 @@ export default function Profile() {
               <Text style={s.fieldLabel}>Call me...</Text>
               <Text style={s.fieldHint}>How the app addresses you</Text>
               <View style={s.roleRow}>
-                {PARENT_ROLES.map(term => (
+                {PARENT_TERM_OPTIONS.map(term => (
                   <TouchableOpacity
-                    key={term}
-                    style={[s.roleChip, editPreferredTerm === term && s.roleChipActive]}
-                    onPress={() => setEditPreferredTerm(prev => prev === term ? '' : term)}
-                    accessibilityRole="button" accessibilityLabel={term}
+                    key={term.id}
+                    style={[s.roleChip, editPreferredTerm === term.id && s.roleChipActive]}
+                    onPress={() => setEditPreferredTerm(prev => prev === term.id ? '' : term.id)}
+                    accessibilityRole="button" accessibilityLabel={term.label}
                   >
-                    <Text style={[s.roleChipText, editPreferredTerm === term && s.roleChipTextActive]}>{term}</Text>
+                    <Text style={[s.roleChipText, editPreferredTerm === term.id && s.roleChipTextActive]}>{term.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
+              {editPreferredTerm === CUSTOM_TERM_ID && (
+                <TextInput
+                  style={s.editNameInput}
+                  value={editCustomTerm}
+                  onChangeText={setEditCustomTerm}
+                  placeholder="What should we call you?"
+                  placeholderTextColor="#C4BAB2"
+                  accessibilityLabel="Custom term"
+                />
+              )}
+
+              <Text style={s.fieldLabel}>Our family looks like</Text>
+              <Text style={s.fieldHint}>Helps us tailor invite wording for your household</Text>
+              <View style={s.roleRow}>
+                {FAMILY_STRUCTURE_OPTIONS.map(fs => (
+                  <TouchableOpacity
+                    key={fs}
+                    style={[s.roleChip, editFamilyStructure === fs && s.roleChipActive]}
+                    onPress={() => setEditFamilyStructure(prev => prev === fs ? '' : fs)}
+                    accessibilityRole="button" accessibilityLabel={fs}
+                  >
+                    <Text style={[s.roleChipText, editFamilyStructure === fs && s.roleChipTextActive]}>{fs}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {editFamilyStructure === 'Other' && (
+                <TextInput
+                  style={s.editNameInput}
+                  value={editFamilyStructureCustom}
+                  onChangeText={setEditFamilyStructureCustom}
+                  placeholder="Describe your family"
+                  placeholderTextColor="#C4BAB2"
+                  accessibilityLabel="Custom family structure"
+                />
+              )}
 
               {/* Village privacy toggle */}
               <View style={s.privacyRow}>

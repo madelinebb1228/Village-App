@@ -11,6 +11,7 @@ import { useOneHanded } from '../lib/OneHandedContext';
 import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
+import PrepareForVisit from './PrepareForVisit';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -553,6 +554,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   const [signingOut, setSigningOut] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
   const [showManageBabies, setShowManageBabies] = useState(false);
+  const [showPrepareVisit, setShowPrepareVisit] = useState(false);
 
   async function handleExportReport() {
     setExportingReport(true);
@@ -735,6 +737,12 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             onPress={exportingReport ? undefined : handleExportReport}
             chevron={!exportingReport}
             right={exportingReport ? <ActivityIndicator color={c.primary} /> : undefined}
+          />
+          <SettingsRow
+            icon="🩺"
+            label="Prepare for Visit"
+            sublabel="Generate a pediatrician-ready summary and share a secure link"
+            onPress={() => setShowPrepareVisit(true)}
           />
         </View>
 
@@ -991,6 +999,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
 
       </ScrollView>
       <ManageBabiesSheet visible={showManageBabies} onClose={() => setShowManageBabies(false)} />
+      <PrepareForVisit visible={showPrepareVisit} onClose={() => setShowPrepareVisit(false)} />
     </SafeAreaView>
   );
 }

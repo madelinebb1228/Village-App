@@ -32,7 +32,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import AuthScreen from './screens/Auth';
-import OnboardingScreen from './screens/Onboarding';
+import OnboardingEntry from './screens/OnboardingEntry';
 import HomeScreen from './screens/HomeTab';
 import TrackScreen from './screens/Track';
 import CalendarScreen from './screens/CalendarTab';
@@ -353,7 +353,7 @@ function App() {
           {!session ? (
             <Stack.Screen name="Auth" component={AuthScreen} />
           ) : !onboardingDone ? (
-            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+            <Stack.Screen name="Onboarding" component={OnboardingEntry} />
           ) : (
             <Stack.Screen name="Main" component={MainTabs} />
           )}

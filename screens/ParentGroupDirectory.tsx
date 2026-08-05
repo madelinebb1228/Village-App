@@ -29,7 +29,7 @@ import {
 
 type GroupType = 'in_person' | 'online' | 'hybrid';
 
-type MomGroup = {
+type ParentGroup = {
   id: string;
   name: string;
   type: GroupType;
@@ -50,8 +50,10 @@ const TYPE_CONFIG: Record<GroupType, { label: string; emoji: string }> = {
 };
 
 const PRESET_TAGS = [
-  'New Moms', 'Breastfeeding', 'NICU', 'Toddlers', 'Working Moms',
-  'Single Moms', 'POC Moms', 'LGBTQ+ Friendly', 'Twins/Multiples',
+  'New Parents', 'New Moms', 'New Dads', 'Breastfeeding', 'NICU', 'Toddlers',
+  'Working Parents', 'Working Moms', 'Working Dads',
+  'Single Parents', 'Single Moms', 'Single Dads',
+  'POC Parents', 'LGBTQ+ Friendly', 'Twins/Multiples',
   'Military', 'Pregnancy Loss', 'Postpartum Support', 'Faith-Based',
 ];
 
@@ -240,7 +242,7 @@ function GroupCard({
   group,
   c,
 }: {
-  group: MomGroup;
+  group: ParentGroup;
   c: ReturnType<typeof useColors>;
 }) {
   const s = cardStyles(c);
@@ -440,7 +442,7 @@ function SuggestModal({
             <Text style={s.label}>Group name *</Text>
             <TextInput
               style={s.input}
-              placeholder="e.g. Austin New Moms Collective"
+              placeholder="e.g. Austin New Parents Collective"
               placeholderTextColor={c.textMuted}
               value={name}
               onChangeText={setName}
@@ -618,7 +620,7 @@ const suggestStyles = (c: Colors) =>
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
+export default function ParentGroupDirectory({ onBack }: { onBack: () => void }) {
   const c = useColors();
   const s = mainStyles(c);
 
@@ -627,8 +629,8 @@ export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
   const [city, setCity]         = useState('');
 
   const [searchedLabel, setSearchedLabel] = useState('');
-  const [localGroups, setLocalGroups]   = useState<MomGroup[]>([]);
-  const [onlineGroups, setOnlineGroups] = useState<MomGroup[]>([]);
+  const [localGroups, setLocalGroups]   = useState<ParentGroup[]>([]);
+  const [onlineGroups, setOnlineGroups] = useState<ParentGroup[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [onlineLoading, setOnlineLoading] = useState(true);
   const [showSuggest, setShowSuggest]   = useState(false);
@@ -686,7 +688,7 @@ export default function MomGroupDirectory({ onBack }: { onBack: () => void }) {
         keyboardDismissMode="on-drag"
       >
         {/* Title */}
-        <Text style={s.pageTitle}>Mom Group Directory</Text>
+        <Text style={s.pageTitle}>Parent Group Directory</Text>
         <Text style={s.pageSubtitle}>
           Find your people — local meetups, online communities, and support groups
         </Text>

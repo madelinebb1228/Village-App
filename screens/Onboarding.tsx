@@ -24,6 +24,7 @@ import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 import { useSubscription, MAX_FREE_TRACKER_PICKS } from '../lib/subscriptionContext';
 import { PREMIUM_TRACKERS } from '../lib/premiumTrackers';
+import { PARENT_TERM_OPTIONS, CUSTOM_TERM_ID } from '../lib/inclusiveLanguage';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,14 +89,7 @@ type Step = {
   singleSelect?: boolean;
 };
 
-const ROLE_OPTIONS: Option[] = [
-  { id: 'Mom',         label: 'Mom',         emoji: '👩' },
-  { id: 'Dad',         label: 'Dad',         emoji: '👨' },
-  { id: 'Parent',      label: 'Parent',      emoji: '🧡' },
-  { id: 'Grandparent', label: 'Grandparent', emoji: '🧓' },
-  { id: 'Caregiver',   label: 'Caregiver',   emoji: '🤲' },
-  { id: 'Nanny',       label: 'Nanny / Professional Caregiver', emoji: '🧑‍🍼' },
-];
+const ROLE_OPTIONS: Option[] = PARENT_TERM_OPTIONS;
 
 const TOPIC_OPTIONS: Option[] = [
   { id: 'feeding',           label: 'Feeding',             emoji: '🍼' },
@@ -366,6 +360,7 @@ function ReviewStep({
   topics,
   patches,
   trackerPicks,
+  customRoleText,
   onEdit,
   styles,
 }: {
@@ -377,9 +372,13 @@ function ReviewStep({
   topics: string[];
   patches: string[];
   trackerPicks: string[];
+  customRoleText: string;
   onEdit: (stepIndex: number) => void;
   styles: Styles;
 }) {
+  const roleDisplay = role
+    .map(r => (r === CUSTOM_TERM_ID ? (customRoleText.trim() || 'Something else') : r))
+    .join(', ');
   return (
     <ScrollView
       style={styles.scroll}
@@ -399,7 +398,7 @@ function ReviewStep({
       <TouchableOpacity style={styles.reviewRow} onPress={() => onEdit(1)} activeOpacity={0.7}>
         <View style={styles.reviewRowText}>
           <Text style={styles.reviewLabel}>Your role</Text>
-          <Text style={styles.reviewValue}>{role.length ? role.join(', ') : 'Not set'}</Text>
+          <Text style={styles.reviewValue}>{role.length ? roleDisplay : 'Not set'}</Text>
         </View>
         <Text style={styles.reviewEdit}>Edit ›</Text>
       </TouchableOpacity>
@@ -594,6 +593,8 @@ export default function Onboarding() {
   const [stepIndex, setStepIndex] = useState(0);
   // selections[0]=role, [1]=feeding, [2]=topics, [3]=patches
   const [selections, setSelections] = useState<string[][]>([[], [], [], []]);
+  // Free-text entry when the Role step's "Something else" chip is selected.
+  const [customRoleText, setCustomRoleText] = useState('');
   const [saving, setSaving] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   // When true, the user jumped here from the Review step to edit an answer —
@@ -644,6 +645,7 @@ export default function Onboarding() {
             if (typeof data.babyPhotoUri === 'string') setBabyPhotoUri(data.babyPhotoUri);
             if (typeof data.babyId === 'string') setBabyId(data.babyId);
             if (Array.isArray(data.selections)) setSelections(data.selections);
+            if (typeof data.customRoleText === 'string') setCustomRoleText(data.customRoleText);
           } catch (err) {
             console.warn('Could not restore onboarding progress:', err);
           }
@@ -658,9 +660,9 @@ export default function Onboarding() {
     if (!hydrated || !userId) return;
     AsyncStorage.setItem(
       progressKey(userId),
-      JSON.stringify({ stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections })
+      JSON.stringify({ stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections, customRoleText })
     ).catch(() => {});
-  }, [hydrated, userId, stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections]);
+  }, [hydrated, userId, stepIndex, babyName, babyDOB, babyGender, isExpecting, babyPhotoUri, babyId, selections, customRoleText]);
 
   const babyAgeMonths = useMemo(() => {
     if (isExpecting || !babyDOB.trim()) return 0;
@@ -681,6 +683,7 @@ export default function Onboarding() {
   }, [babyAgeMonths]);
 
   const isBabyStep = stepIndex === 0;
+  const isRoleStep = stepIndex === 1;
   const isRoleTopicStep = stepIndex >= 1 && stepIndex <= 4;
   const isFeedingStep = stepIndex === 2;
   const isPatchesStep = stepIndex === 4;
@@ -881,6 +884,9 @@ export default function Onboarding() {
   async function handleComplete() {
     setSaving(true);
     const [roleSelection, feedingMethods, helpfulTopics, villages] = selections;
+    const preferredTerm = roleSelection[0] === CUSTOM_TERM_ID
+      ? (customRoleText.trim() || 'Parent')
+      : roleSelection[0];
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -892,7 +898,7 @@ export default function Onboarding() {
           {
             id: user.id,
             onboarding_complete: true,
-            ...(roleSelection.length > 0 ? { preferred_term: roleSelection[0] } : {}),
+            ...(roleSelection.length > 0 ? { preferred_term: preferredTerm } : {}),
           } as any,
           { onConflict: 'id' }
         );
@@ -1087,6 +1093,7 @@ export default function Onboarding() {
           topics={selections[2]}
           patches={selections[3]}
           trackerPicks={trackerPicks}
+          customRoleText={customRoleText}
           onEdit={handleEditFromReview}
           styles={styles}
         />
@@ -1111,6 +1118,16 @@ export default function Onboarding() {
               c={c}
             />
           ))}
+          {isRoleStep && selections[0].includes(CUSTOM_TERM_ID) && (
+            <TextInput
+              style={styles.textInput}
+              placeholder="What should we call you?"
+              placeholderTextColor={c.textMuted}
+              value={customRoleText}
+              onChangeText={setCustomRoleText}
+              autoCapitalize="words"
+            />
+          )}
           <View style={styles.scrollPad} />
         </ScrollView>
       )}

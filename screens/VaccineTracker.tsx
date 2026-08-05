@@ -16,6 +16,7 @@ import {
 import { useCalendarSyncPrompt } from '../lib/calendarSync';
 import ConfirmModal from '../components/ConfirmModal';
 import { getBabyAge } from '../lib/feedUtils';
+import PrepareForVisit from './PrepareForVisit';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,6 +187,9 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
   const [reactionNotes,   setReactionNotes]   = useState('');
   const [savingReactions, setSavingReactions] = useState(false);
   const [showVaccineInfo, setShowVaccineInfo] = useState(false);
+
+  // Prepare for Visit
+  const [prepareVisitAppt, setPrepareVisitAppt] = useState<Appointment | null>(null);
 
   // Appointment modal
   const [apptOpen,    setApptOpen]    = useState(false);
@@ -617,6 +621,12 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
                           📅 {formatDate(a.scheduled_date)}{a.doctor_name ? `  ·  👨‍⚕️ ${a.doctor_name}` : ''}
                         </Text>
                         {a.notes ? <Text style={s.apptNotes} numberOfLines={2}>{a.notes}</Text> : null}
+                        {!a.completed && (
+                          <TouchableOpacity onPress={() => setPrepareVisitAppt(a)} activeOpacity={0.7}
+                            accessibilityRole="button" accessibilityLabel={`Prepare visit summary for ${a.title}`}>
+                            <Text style={s.prepareVisitLink}>📋 Prepare visit summary</Text>
+                          </TouchableOpacity>
+                        )}
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => deleteAppt(a.id)} style={s.deleteBtn} activeOpacity={0.7}
                         accessibilityRole="button" accessibilityLabel={`Delete ${a.title}`}>
@@ -882,6 +892,13 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
           { label: 'Not now', onPress: dismissCalSync },
         ]}
       />
+
+      <PrepareForVisit
+        visible={!!prepareVisitAppt}
+        onClose={() => setPrepareVisitAppt(null)}
+        initialDate={prepareVisitAppt?.scheduled_date}
+        initialTitle={prepareVisitAppt?.title}
+      />
     </View>
   );
 }
@@ -966,6 +983,7 @@ function makeStyles(c: Colors) {
     apptMeta:          { fontSize: 12, color: c.textMuted, marginBottom: 3 },
     apptMetaOverdue:   { color: '#dc2626' },
     apptNotes:         { fontSize: 12, color: c.textMuted, fontStyle: 'italic' },
+    prepareVisitLink:  { fontSize: 12, fontWeight: '700', color: c.primary, marginTop: 4 },
     deleteBtn: { paddingLeft: 10 },
     deleteIcon: { fontSize: 16 },
 

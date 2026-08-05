@@ -32,6 +32,8 @@ import QAScreen from './QAScreen';
 import MessagesInbox from './MessagesInbox';
 import NotificationsScreen from './NotificationsScreen';
 import EventsScreen from './EventsScreen';
+import HandoffNotesSheet from '../components/HandoffNotesSheet';
+import { useBaby } from '../lib/babyContext';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
 import LoadErrorBanner from '../components/LoadErrorBanner';
@@ -66,6 +68,17 @@ function formatUpcomingWhen(startsAt: string, allDay: boolean): string {
   const day = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   if (allDay) return day;
   return `${day}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+async function fetchLatestHandoffNote(babyId: string): Promise<string | null> {
+  const { data } = await (supabase as any)
+    .from('handoff_notes')
+    .select('note')
+    .eq('baby_id', babyId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.note ?? null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -133,6 +146,8 @@ export default function HomeTab() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [baby, setBaby] = useState<{ name: string; birth_date: string | null; due_date: string | null; is_expecting: boolean | null; photo_url: string | null; gender: string | null } | null>(null);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
+  const [showHandoffNotes, setShowHandoffNotes] = useState(false);
+  const [latestHandoffNote, setLatestHandoffNote] = useState<string | null>(null);
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -154,6 +169,13 @@ export default function HomeTab() {
     id: string; title: string; starts_at: string; all_day: boolean; calendar_type: 'personal' | 'shared';
   }>>([]);
   const [qaDetailId, setQaDetailId] = useState<string | null>(null);
+
+  const { activeBaby } = useBaby();
+
+  useFocusEffect(useCallback(() => {
+    if (!activeBaby?.id) { setLatestHandoffNote(null); return; }
+    fetchLatestHandoffNote(activeBaby.id).then(setLatestHandoffNote);
+  }, [activeBaby?.id]));
 
   // App tour (coach marks)
   const { tourRequestId } = useContext(AppContext);
@@ -1613,6 +1635,22 @@ export default function HomeTab() {
           ))}
         </View>
 
+        {/* Handoff notes */}
+        {activeBaby && (
+          <TouchableOpacity
+            style={styles.handoffCard}
+            onPress={() => setShowHandoffNotes(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Handoff notes"
+          >
+            <Text style={styles.handoffLabel}>📝 Handoff Notes</Text>
+            <Text style={styles.handoffText} numberOfLines={2}>
+              {latestHandoffNote ?? 'No notes yet — leave one for your co-parent.'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Reminders */}
         {reminders.length > 0 && (
           <View style={styles.remindersSection}>
@@ -2236,6 +2274,14 @@ export default function HomeTab() {
 
       {/* Search sheet */}
       <SearchSheet visible={showSearch} onClose={() => setShowSearch(false)} />
+
+      <HandoffNotesSheet
+        visible={showHandoffNotes}
+        onClose={() => {
+          setShowHandoffNotes(false);
+          if (activeBaby?.id) fetchLatestHandoffNote(activeBaby.id).then(setLatestHandoffNote);
+        }}
+      />
 
       {/* Baby profile sheet */}
       <BabyProfileSheet
@@ -3175,6 +3221,25 @@ function makeStyles(c: Colors) {
     },
     remindersSection: {
       marginBottom: 28,
+    },
+    handoffCard: {
+      backgroundColor: c.card,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: c.separator,
+      padding: 16,
+      marginBottom: 20,
+    },
+    handoffLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginBottom: 4,
+    },
+    handoffText: {
+      fontSize: 14,
+      color: c.textPrimary,
+      lineHeight: 19,
     },
     reminderCard: {
       flexDirection: 'row',

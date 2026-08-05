@@ -14,12 +14,12 @@ export interface ExportRange {
   endDate: Date;
 }
 
-function esc(s: string | null | undefined): string {
+export function esc(s: string | null | undefined): string {
   if (!s) return '';
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function section(title: string, rows: string[][], headers: string[]): string {
+export function section(title: string, rows: string[][], headers: string[]): string {
   if (rows.length === 0) return '';
   const head = headers.map(h => `<th>${esc(h)}</th>`).join('');
   const body = rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');

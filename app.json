@@ -22,7 +22,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Village uses your camera to scan baby food barcodes."
+          "cameraPermission": "Parent Patch uses your camera to scan baby food barcodes."
         }
       ],
       "@react-native-community/datetimepicker",

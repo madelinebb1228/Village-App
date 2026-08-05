@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useBaby } from '../lib/babyContext';
 import { useColors, Colors } from '../lib/theme';
+import { getParentTerm, getCaregiverInviteLabel } from '../lib/inclusiveLanguage';
 
 interface Props {
   visible: boolean;
@@ -18,6 +19,7 @@ interface Caregiver {
   user_id: string;
   role: string;
   name: string;
+  term: string;
 }
 
 export default function ManageBabiesSheet({ visible, onClose }: Props) {
@@ -26,6 +28,7 @@ export default function ManageBabiesSheet({ visible, onClose }: Props) {
   const { babies, activeBabyId, activeBaby, loading, setActiveBabyId, refreshBabies, joinBabyByCode } = useBaby();
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [myFamilyStructure, setMyFamilyStructure] = useState<string | null>(null);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [caregiversLoading, setCaregiversLoading] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -36,7 +39,12 @@ export default function ManageBabiesSheet({ visible, onClose }: Props) {
 
   useEffect(() => {
     if (!visible) return;
-    supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id ?? null));
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      setUserId(user?.id ?? null);
+      if (!user) return;
+      const { data } = await supabase.from('profiles').select('family_structure').eq('id', user.id).maybeSingle();
+      setMyFamilyStructure((data as any)?.family_structure ?? null);
+    });
   }, [visible]);
 
   const loadCaregivers = useCallback(async () => {
@@ -50,10 +58,16 @@ export default function ManageBabiesSheet({ visible, onClose }: Props) {
       if (error) throw error;
       const ids = (rows ?? []).map((r: any) => r.user_id);
       const { data: profiles } = ids.length
-        ? await supabase.from('profiles').select('id, display_name, username').in('id', ids)
+        ? await supabase.from('profiles').select('id, display_name, username, preferred_term').in('id', ids)
         : { data: [] as any[] };
-      const nameById = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name || (p.username ? `@${p.username}` : 'Caregiver')]));
-      setCaregivers((rows ?? []).map((r: any) => ({ ...r, name: nameById.get(r.user_id) ?? 'Caregiver' })));
+      const infoById = new Map((profiles ?? []).map((p: any) => [
+        p.id,
+        { name: p.display_name || (p.username ? `@${p.username}` : 'Caregiver'), term: getParentTerm(p) },
+      ]));
+      setCaregivers((rows ?? []).map((r: any) => {
+        const info = infoById.get(r.user_id);
+        return { ...r, name: info?.name ?? 'Caregiver', term: info?.term ?? 'Parent' };
+      }));
     } catch (err: any) {
       console.warn('[ManageBabiesSheet] loadCaregivers error:', err?.message);
     } finally {
@@ -184,7 +198,7 @@ export default function ManageBabiesSheet({ visible, onClose }: Props) {
 
             {activeBaby && (
               <>
-                <Text style={[s.label, { marginTop: 28 }]}>Invite a caregiver to {activeBaby.name}</Text>
+                <Text style={[s.label, { marginTop: 28 }]}>{getCaregiverInviteLabel(myFamilyStructure)} to {activeBaby.name}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <View style={s.codeBox}>
                     <Text style={s.codeText}>{activeBaby.invite_code ?? '——'}</Text>
@@ -207,7 +221,7 @@ export default function ManageBabiesSheet({ visible, onClose }: Props) {
                     return (
                       <View key={cg.id} style={s.caregiverRow}>
                         <Text style={s.caregiverName}>
-                          {cg.name}{self ? ' (you)' : ''}{cg.role === 'owner' ? ' · owner' : ''}
+                          {cg.name} · {cg.term}{self ? ' (you)' : ''}{cg.role === 'owner' ? ' · owner' : ''}
                         </Text>
                         {canRemove ? (
                           <TouchableOpacity

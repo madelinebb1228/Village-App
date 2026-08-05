@@ -14,6 +14,7 @@ import MilestoneTracker from './MilestoneTracker';
 import VaccineTracker from './VaccineTracker';
 import GrowthTracker from './GrowthTracker';
 import AllergenTracker from './AllergenTracker';
+import HealthTracker from './HealthTracker';
 import SleepTracker from './SleepTracker';
 import BabyJournal from './BabyJournal';
 import BabyFoodChart from './BabyFoodChart';
@@ -1915,6 +1916,13 @@ export default function Track({ route }: any) {
         {/* ── Allergen Tracker */}
         <View>
           <AllergenTracker userId={userId} babyId={babyId} babyBirthDate={babyBirthDate} />
+        </View>
+
+        {/* ── Health Tracker */}
+        <View>
+          <PaywallGate feature="health_tracker" isTracker title="Health Tracker" description="Log fevers, symptoms, and illness episodes." emoji="🩺">
+            <HealthTracker userId={userId} babyId={babyId} />
+          </PaywallGate>
         </View>
         </>)}
 
