@@ -23,4 +23,5 @@ export const PREMIUM_TRACKERS: PremiumTrackerOption[] = [
   { key: 'period_tracker', label: 'Period Return', description: 'Track the return of your menstrual cycle after birth.', emoji: '🩸' },
   { key: 'movement_tracker', label: 'Movement', description: 'Log exercise, walks, and physical activity during your recovery.', emoji: '🏃' },
   { key: 'pregnancy_log', label: 'Symptoms & Weight', description: 'Track weight and symptoms throughout your pregnancy.', emoji: '📝' },
+  { key: 'expense_tracker', label: 'Expense Tracker', description: 'Log baby expenses and see spending insights by category.', emoji: '💰' },
 ];

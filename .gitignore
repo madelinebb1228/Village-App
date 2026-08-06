@@ -24,3 +24,6 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Seed script session (holds a live auth token)
+scripts/.seed-session.json

@@ -24,6 +24,7 @@ import PostpartumMentalHealthTracker from './PostpartumMentalHealthTracker';
 import MoodEnergyTracker from './MoodEnergyTracker';
 import MomSleepTracker from './MomSleepTracker';
 import MedTracker from './MedTracker';
+import ExpenseTracker from './ExpenseTracker';
 import DiaperReminderCard from '../components/DiaperReminderCard';
 import CarCheckReminderCard from '../components/CarCheckReminderCard';
 import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/diaperNotifications';
@@ -182,6 +183,7 @@ const BABY_NAV_GROUPS: TrackNavGroup[] = [
   { emoji: '🍽️', category: 'Feeding' },
   { emoji: '🌙', category: 'Sleep & Development' },
   { emoji: '🏥', category: 'Health' },
+  { emoji: '💰', category: 'Expenses' },
 ];
 
 const YOU_NAV_GROUPS: TrackNavGroup[] = [
@@ -1928,6 +1930,18 @@ export default function Track({ route }: any) {
         <View>
           <PaywallGate feature="health_tracker" isTracker title="Health Tracker" description="Log fevers, symptoms, and illness episodes." emoji="🩺">
             <HealthTracker userId={userId} babyId={babyId} />
+          </PaywallGate>
+        </View>
+        </>)}
+
+        {(babyCategory === 'All' || babyCategory === 'Expenses') && (<>
+        {/* ═══ Group: Expenses ═══ */}
+        <Text style={styles.groupHeading}>💰 Expenses</Text>
+
+        {/* ── Expense Tracker */}
+        <View>
+          <PaywallGate feature="expense_tracker" isTracker title="Expense Tracker" description="Log baby expenses and see spending insights by category." emoji="💰">
+            <ExpenseTracker userId={userId} babyId={babyId} babyName={babyName} />
           </PaywallGate>
         </View>
         </>)}
