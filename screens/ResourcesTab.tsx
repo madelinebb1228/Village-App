@@ -27,6 +27,7 @@ import EmergencyContacts from './EmergencyContacts';
 import ArticlesScreen from './ArticlesScreen';
 import TopQuestionsScreen from './TopQuestionsScreen';
 import VideoGuidesScreen from './VideoGuidesScreen';
+import ActivitiesScreen from './ActivitiesScreen';
 
 // ─── Resource definitions ─────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ export const RESOURCES = [
   { id: 'water_safety',      emoji: '🌊',  title: 'Water Safety',                  description: 'Drowning prevention, pool safety, and age-by-age guidance every parent should know', category: 'Safety' },
   { id: 'choking_safety',    emoji: '🫁',  title: 'Choking Safety',                description: 'Prevention, recognizing it, and how to clear it for infants and older kids', category: 'Safety' },
   { id: 'videos',            emoji: '🎬',  title: 'Video Guides',                  description: 'How-to videos for feeding, sleep, soothing, and more', category: 'Guides & Learning' },
+  { id: 'activities',        emoji: '🧩',  title: 'Activities & Play',             description: 'Age-appropriate activities and developmental play ideas for your baby', category: 'Guides & Learning' },
   { id: 'top100',            emoji: '🔢',  title: '100 Questions Every Parent Asks', description: 'The most common parenting questions — answered', category: 'Guides & Learning' },
 ] as const satisfies ReadonlyArray<{ id: string; emoji: string; title: string; description: string; category: Category }>;
 
@@ -212,6 +214,10 @@ export default function ResourcesTab({ route }: any) {
 
   if (selected === 'videos') {
     return <VideoGuidesScreen onBack={() => setSelected(null)} />;
+  }
+
+  if (selected === 'activities') {
+    return <ActivitiesScreen onBack={() => setSelected(null)} />;
   }
 
   if (selected) {

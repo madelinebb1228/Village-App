@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
 
-export type ContentType = 'post_image' | 'post_video' | 'profile_avatar' | 'baby_photo' | 'event_photo' | 'listing_photo' | 'item_photo' | 'story_photo';
+export type ContentType = 'post_image' | 'post_video' | 'profile_avatar' | 'baby_photo' | 'event_photo' | 'listing_photo' | 'item_photo' | 'story_photo' | 'activity_photo';
 
 interface Props {
   visible: boolean;
@@ -27,6 +27,7 @@ const CONTENT_LABELS: Record<ContentType, string> = {
   listing_photo: 'listing photo',
   item_photo: 'item photo',
   story_photo: 'story photo',
+  activity_photo: 'activity photo',
 };
 
 const UPLOAD_VERB: Record<ContentType, string> = {
@@ -38,6 +39,7 @@ const UPLOAD_VERB: Record<ContentType, string> = {
   listing_photo: 'uploading',
   item_photo: 'uploading',
   story_photo: 'posting',
+  activity_photo: 'uploading',
 };
 
 export default function ContentBlockedModal({

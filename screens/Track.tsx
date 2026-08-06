@@ -11,6 +11,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
 import MilestoneTracker from './MilestoneTracker';
+import ActivityTracker from './ActivityTracker';
 import VaccineTracker from './VaccineTracker';
 import GrowthTracker from './GrowthTracker';
 import AllergenTracker from './AllergenTracker';
@@ -1868,6 +1869,11 @@ export default function Track({ route }: any) {
         {/* ── Development Tracker */}
         <View>
           <MilestoneTracker userId={userId} babyBirthDate={babyBirthDate} />
+        </View>
+
+        {/* ── Activities & Play Tracker */}
+        <View>
+          <ActivityTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} />
         </View>
 
         {/* ── Baby Journal */}
