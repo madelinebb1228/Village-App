@@ -258,6 +258,15 @@ async function logHistory(n: CategorizedNotification, decision: DeliveryDecision
 
 const DIGEST_CATEGORIES: NotificationCategory[] = ['community', 'insights'];
 
+export interface DeliveryOutcome extends DeliveryDecision {
+  // False when the preference decision was to deliver but the notification
+  // still couldn't be shown (no OS permission, or Platform.OS === 'web',
+  // which expo-notifications doesn't support) — distinct from `deliver:
+  // false`, which means a preference (category/DND/quiet hours/baby asleep)
+  // held it on purpose.
+  presented: boolean;
+}
+
 // Checks shouldDeliver() and, if it passes, either presents the notification
 // immediately or — when the user has digest batching on for a batchable
 // category (community/insights) — queues it for the next daily summary
@@ -266,26 +275,26 @@ const DIGEST_CATEGORIES: NotificationCategory[] = ['community', 'insights'];
 // the hold reason when suppressed by a preference (not by digest batching).
 export async function deliverCategorizedNotification(
   n: CategorizedNotification,
-): Promise<DeliveryDecision> {
+): Promise<DeliveryOutcome> {
   const decision = await shouldDeliver({ userId: n.userId, category: n.category, babyId: n.babyId });
   await logHistory(n, decision);
-  if (!decision.deliver) return decision;
+  if (!decision.deliver) return { ...decision, presented: false };
 
   if (DIGEST_CATEGORIES.includes(n.category)) {
     const settings = await getSettings(n.userId);
     if (settings.digest_enabled) {
       await queueDigestItem(n.userId, n.category as 'community' | 'insights', n.title, n.body);
-      return decision;
+      return { ...decision, presented: true };
     }
   }
 
   const ok = await ensureNotificationPermission();
-  if (!ok) return { deliver: false };
+  if (!ok) return { ...decision, presented: false };
 
   await Notifications.scheduleNotificationAsync({
     identifier: n.identifier,
     content: { title: n.title, body: n.body, data: { category: n.category, ...n.data }, sound: true },
     trigger: null, // fire immediately
   });
-  return decision;
+  return { ...decision, presented: true };
 }

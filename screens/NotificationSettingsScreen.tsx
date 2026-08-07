@@ -80,19 +80,29 @@ export default function NotificationSettingsScreen({ onBack }: { onBack: () => v
   async function sendTest(category: NotificationCategory) {
     if (!userId) return;
     const meta = NOTIFICATION_CATEGORIES.find(m => m.id === category)!;
-    const decision = await deliverCategorizedNotification({
+    const outcome = await deliverCategorizedNotification({
       userId,
       category,
       title: `Test: ${meta.label}`,
       body: `This is what a ${meta.label.toLowerCase()} notification looks like.`,
       identifier: `test-${category}-${Date.now()}`,
     });
-    Alert.alert(
-      decision.deliver ? 'Test sent' : 'Test held',
-      decision.deliver
-        ? 'Check your device notifications now — or find it under "What did I miss?" if digest batching is on for this category.'
-        : `This was held (${decision.reason?.replace('_', ' ')}) — exactly what would happen to a real notification right now. See "What did I miss?" for the record.`,
-    );
+    if (!outcome.deliver) {
+      Alert.alert(
+        'Test held',
+        `This was held (${outcome.reason?.replace(/_/g, ' ')}) — exactly what would happen to a real notification right now. See "What did I miss?" for the record.`,
+      );
+    } else if (!outcome.presented) {
+      Alert.alert(
+        'Preferences allow it — platform doesn’t',
+        'Your settings would let this through, but this device/session can’t show system notifications right now (no permission granted, or running in a browser). It’s logged in "What did I miss?" as delivered.',
+      );
+    } else {
+      Alert.alert(
+        'Test sent',
+        'Check your device notifications now — or find it under "What did I miss?" if digest batching is on for this category.',
+      );
+    }
   }
 
   if (loading || !prefs || !settings) {
