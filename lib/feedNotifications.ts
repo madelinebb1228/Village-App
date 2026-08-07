@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { ensureNotificationPermission } from './notifications';
 import { adjustForQuietHours } from './reminderUtils';
+import { FEED_REMINDER_CATEGORY } from './notificationCategoryIds';
 
 export interface FeedReminderSettings {
   enabled: boolean;
@@ -90,7 +91,7 @@ export async function scheduleNextFeedReminder(
   const { title, body } = buildMessage(babyName, settings.intervalHours);
   await Notifications.scheduleNotificationAsync({
     identifier: NOTIF_ID(babyId),
-    content: { title, body, sound: true },
+    content: { title, body, sound: true, categoryIdentifier: FEED_REMINDER_CATEGORY },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: fireAt,

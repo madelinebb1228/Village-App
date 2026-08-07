@@ -25,7 +25,12 @@ import MoodEnergyTracker from './MoodEnergyTracker';
 import MomSleepTracker from './MomSleepTracker';
 import MedTracker from './MedTracker';
 import ExpenseTracker from './ExpenseTracker';
+import KudosTracker from './KudosTracker';
+import UsTimeTracker from './UsTimeTracker';
 import DiaperReminderCard from '../components/DiaperReminderCard';
+import TummyTimeCard from '../components/TummyTimeCard';
+import { checkDiaperSupplyForecast } from '../lib/predictiveNotifications';
+import { notifyHandoff } from '../lib/partnerCoordination';
 import CarCheckReminderCard from '../components/CarCheckReminderCard';
 import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/diaperNotifications';
 import FeedReminderCard from '../components/FeedReminderCard';
@@ -190,6 +195,7 @@ const YOU_NAV_GROUPS: TrackNavGroup[] = [
   { emoji: '💧', category: 'Daily Care' },
   { emoji: '🌈', category: 'Wellness Check-ins' },
   { emoji: '🌸', category: 'Body & Recovery' },
+  { emoji: '💞', category: 'Relationship' },
 ];
 
 const PREGNANCY_NAV_GROUP: TrackNavGroup = { emoji: '🤰', category: 'Pregnancy' };
@@ -984,6 +990,15 @@ export default function Track({ route }: any) {
     setBabyWeightLbs(activeBaby?.current_weight ?? null);
   }, [activeBaby]);
 
+  // Once-a-day predictive check (usage rate vs. supply on hand) — see
+  // lib/predictiveNotifications.ts. Tummy time's equivalent check lives
+  // inside TummyTimeCard itself since it only needs babyId, not this
+  // screen's full load sequence.
+  useEffect(() => {
+    if (!userId || !babyId) return;
+    checkDiaperSupplyForecast(userId, babyId).catch(() => {});
+  }, [userId, babyId]);
+
   // Baby logging (feed/diaper/sleep) doesn't apply before birth — default
   // expecting parents straight to the You tab's Pregnancy category, unless
   // a Calendar deep link already asked for a specific view.
@@ -1197,6 +1212,9 @@ export default function Track({ route }: any) {
             await scheduleNextFeedReminder(bid, babyName ?? 'Baby', new Date(), reminderCfg);
           }
         } catch {}
+        if (baby_id && userId) {
+          notifyHandoff(baby_id, userId, userName ?? 'Your co-parent', babyName ?? 'Baby', 'fed').catch(() => {});
+        }
       }
 
       Sentry.addBreadcrumb({
@@ -1280,6 +1298,9 @@ export default function Track({ route }: any) {
           if (bid) {
             const reminderCfg = await getDiaperReminderSettings(userId, bid);
             await scheduleNextDiaperReminder(bid, babyName ?? 'Baby', new Date(), reminderCfg);
+          }
+          if (bid) {
+            notifyHandoff(bid, userId, userName ?? 'Your co-parent', babyName ?? 'Baby', 'changed').catch(() => {});
           }
         } catch {}
       }
@@ -1748,6 +1769,9 @@ export default function Track({ route }: any) {
         {/* ── Car check reminder */}
         <CarCheckReminderCard userId={userId} babyId={babyId} babyName={babyName} />
 
+        {/* ── Tummy time tracker */}
+        <TummyTimeCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
+
         {/* ── Charts */}
         <View style={{ overflow: 'visible' }}>
           <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
@@ -1864,7 +1888,7 @@ export default function Track({ route }: any) {
         {/* ── Sleep Tracker */}
         <View>
           <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
-            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} userId={userId} babyName={babyName} />
+            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} userId={userId} babyName={babyName} userName={userName} />
           </PaywallGate>
         </View>
 
@@ -2039,6 +2063,25 @@ export default function Track({ route }: any) {
         <View>
           <PaywallGate feature="movement_tracker" isTracker title="Movement" description="Log exercise, walks, and physical activity during your recovery." emoji="🏃">
             <MovementTracker userId={userId} />
+          </PaywallGate>
+        </View>
+        </>)}
+
+        {(youCategory === 'All' || youCategory === 'Relationship') && (<>
+        {/* ═══ Group: Relationship ═══ */}
+        <Text style={styles.groupHeading}>💞 Relationship</Text>
+
+        {/* ── You: Send Kudos */}
+        <View>
+          <PaywallGate feature="kudos_tracker" isTracker title="Send Kudos" description="Send your partner appreciation for the little things." emoji="💌">
+            <KudosTracker userId={userId} />
+          </PaywallGate>
+        </View>
+
+        {/* ── You: Us Time */}
+        <View>
+          <PaywallGate feature="us_time_tracker" isTracker title="Us Time" description="Log time together and get gentle nudges to reconnect." emoji="💞">
+            <UsTimeTracker userId={userId} />
           </PaywallGate>
         </View>
         </>)}

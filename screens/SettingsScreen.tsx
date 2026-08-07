@@ -12,10 +12,12 @@ import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
 import PrepareForVisit from './PrepareForVisit';
+import NotificationSettingsScreen from './NotificationSettingsScreen';
+import NotificationHistoryScreen from './NotificationHistoryScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter';
+type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history';
 
 interface NotifPrefs {
   enabled: boolean;
@@ -686,6 +688,12 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   if (view === 'word_filter') {
     return <WordFilterView onBack={() => setView('main')} />;
   }
+  if (view === 'smart_notifications') {
+    return <NotificationSettingsScreen onBack={() => setView('main')} />;
+  }
+  if (view === 'notification_history') {
+    return <NotificationHistoryScreen onBack={() => setView('main')} />;
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -837,6 +845,18 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
         {/* ── Notifications ───────────────────────────────────────── */}
         <SectionHeader label="Notifications" />
         <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
+          <SettingsRow
+            icon="🧠"
+            label="Smart Notifications"
+            sublabel="Quiet hours, Do Not Disturb, and per-category delivery"
+            onPress={() => setView('smart_notifications')}
+          />
+          <SettingsRow
+            icon="🔕"
+            label="What did I miss?"
+            sublabel="Everything sent, batched, or held — including quiet-hours holds"
+            onPress={() => setView('notification_history')}
+          />
           <SettingsRow
             icon="🔔"
             label="Push Notifications"

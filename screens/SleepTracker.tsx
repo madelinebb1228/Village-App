@@ -3,7 +3,8 @@ import { ActivityIndicator, Alert, AppState, Image, StyleSheet, Text, TextInput,
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
-import { getRange, getSleepGoal, scheduleWindDownNow, handleNapEnded } from '../lib/napSchedule';
+import { getRange, getSleepGoal, scheduleWindDownNow, handleNapEnded, scheduleWakePredictionNow, cancelWakePrediction } from '../lib/napSchedule';
+import { notifyHandoff } from '../lib/partnerCoordination';
 
 type Mode = 'idle' | 'awake' | 'sleeping' | 'quality' | 'manual';
 type SleepType = 'nap' | 'night';
@@ -194,11 +195,13 @@ export default function SleepTracker({
   babyBirthDate,
   userId,
   babyName,
+  userName,
 }: {
   babyId: string | null;
   babyBirthDate: string | null;
   userId?: string | null;
   babyName?: string | null;
+  userName?: string | null;
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
@@ -353,10 +356,18 @@ export default function SleepTracker({
     intervalRef.current = setInterval(() => {
       if (modeStartTimeRef.current) setElapsed(Math.floor((Date.now() - modeStartTimeRef.current) / 1000));
     }, 1000);
+    const napStart = new Date();
     const { id } = await safeInsert('sleep_logs', {
-      baby_id: babyId, sleep_type: sleepType, start_time: new Date().toISOString(),
+      baby_id: babyId, sleep_type: sleepType, start_time: napStart.toISOString(),
     });
     activeSleepIdRef.current = id;
+
+    if (sleepType === 'nap') {
+      scheduleWakePredictionNow(babyId, babyName ?? null, babyBirthDate, napStart).catch(() => {});
+    }
+    if (userId) {
+      notifyHandoff(babyId, userId, userName || 'Your co-parent', babyName ?? 'Baby', 'asleep').catch(() => {});
+    }
   }
 
   function handleWakeUp() {
@@ -376,6 +387,7 @@ export default function SleepTracker({
     try {
       const wasNap = sleepType === 'nap';
       const durationMinutes = Math.round(finalSleepSecs / 60);
+      if (wasNap) cancelWakePrediction(babyId).catch(() => {});
       if (activeSleepIdRef.current) {
         await safeUpdate('sleep_logs', activeSleepIdRef.current, {
           end_time: new Date().toISOString(),

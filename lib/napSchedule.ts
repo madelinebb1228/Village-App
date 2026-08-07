@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { supabase } from './supabase';
 import { ensureNotificationPermission } from './notifications';
 import { ensureCalendar } from './calendarSync';
+import { NAP_WINDOW_CATEGORY } from './notificationCategoryIds';
 
 // ─── Age-based norms (moved here from SleepTracker.tsx so both the tracker's
 // live awake-timer and this module's nap prediction share one definition) ────
@@ -51,6 +52,7 @@ export function getSleepGoal(birthDate: string | null): AgeGoal {
 
 const NOISE_THRESHOLD_MIN = 10;   // ignore shifts smaller than this
 const WIND_DOWN_BUFFER_MIN = 20;  // notify this long before the predicted nap
+const WAKE_PREP_BUFFER_MIN = 20;  // notify this long before the predicted wake-up
 const LOOKAHEAD_HOURS = 4;        // only protect commitments this far out
 const MIN_NAP_SAMPLES = 3;        // history required before trusting real averages
 
@@ -287,6 +289,7 @@ async function scheduleWindDownCore(
       title: 'Nap window coming up',
       body,
       sound: true,
+      categoryIdentifier: NAP_WINDOW_CATEGORY,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -349,4 +352,59 @@ export async function recomputeWindDown(userId: string | null): Promise<void> {
   } catch {
     // best-effort — never block the calendar save/delete flow on this
   }
+}
+
+// ─── Wake prediction ("prep bottle?") notification ─────────────────────────────
+// The reverse of wind-down: fires while a nap is IN PROGRESS, ~20 min before
+// the baby is predicted to wake, using the same avgNapMinutes history. Only
+// makes sense for daytime naps, not night sleep.
+
+function wakeNotifId(babyId: string) {
+  return `nap-wake-prediction-${babyId}`;
+}
+
+// Called right when a nap starts (SleepTracker.startSleep). Predicts the wake
+// time from recent nap-duration history and schedules a heads-up before it.
+export async function scheduleWakePredictionNow(
+  babyId: string | null,
+  babyName: string | null,
+  birthDate: string | null,
+  napStartTime: Date,
+): Promise<void> {
+  if (!babyId || Platform.OS === 'web') return;
+  const identifier = wakeNotifId(babyId);
+  await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
+
+  try {
+    const { avgNapMinutes } = await getNapStats(babyId, birthDate);
+    const predictedWake = new Date(napStartTime.getTime() + avgNapMinutes * 60000);
+    const fireAt = new Date(predictedWake.getTime() - WAKE_PREP_BUFFER_MIN * 60000);
+    if (fireAt.getTime() <= Date.now()) return; // nap already shorter than the buffer — nothing useful to schedule
+
+    const ok = await ensureNotificationPermission();
+    if (!ok) return;
+
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: `${babyName || 'Baby'} might wake soon`,
+        body: `Based on recent naps, ${babyName || 'baby'} may wake in ~${WAKE_PREP_BUFFER_MIN} min. Prep a bottle?`,
+        sound: true,
+        data: { category: 'insights' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: fireAt,
+      },
+    });
+  } catch {
+    // best-effort — never block the sleep tracker's start-nap flow on this
+  }
+}
+
+// Called when the nap ends (actual wake already happened) so the predicted
+// notification doesn't fire late and redundant.
+export async function cancelWakePrediction(babyId: string | null): Promise<void> {
+  if (!babyId || Platform.OS === 'web') return;
+  await Notifications.cancelScheduledNotificationAsync(wakeNotifId(babyId)).catch(() => {});
 }

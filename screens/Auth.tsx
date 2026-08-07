@@ -68,12 +68,13 @@ export default function Auth() {
         const { data, error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
         if (data.user) {
-          await supabase.from('profiles').upsert({
+          const { error: profileError } = await supabase.from('profiles').upsert({
             id: data.user.id,
             display_name: firstName.trim(),
             first_name: firstName.trim(),
             date_of_birth: dobIso,
-          } as any, { onConflict: 'id' }).catch((e: any) => console.warn('Profile name save failed:', e.message));
+          } as any, { onConflict: 'id' });
+          if (profileError) console.warn('Profile name save failed:', profileError.message);
         }
         Alert.alert(
           'Check your email',

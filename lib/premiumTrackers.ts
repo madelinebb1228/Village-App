@@ -24,4 +24,6 @@ export const PREMIUM_TRACKERS: PremiumTrackerOption[] = [
   { key: 'movement_tracker', label: 'Movement', description: 'Log exercise, walks, and physical activity during your recovery.', emoji: '🏃' },
   { key: 'pregnancy_log', label: 'Symptoms & Weight', description: 'Track weight and symptoms throughout your pregnancy.', emoji: '📝' },
   { key: 'expense_tracker', label: 'Expense Tracker', description: 'Log baby expenses and see spending insights by category.', emoji: '💰' },
+  { key: 'kudos_tracker', label: 'Send Kudos', description: 'Send your partner appreciation for the little things.', emoji: '💌' },
+  { key: 'us_time_tracker', label: 'Us Time', description: 'Log time together and get gentle nudges to reconnect.', emoji: '💞' },
 ];

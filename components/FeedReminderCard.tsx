@@ -11,6 +11,7 @@ import {
   saveFeedReminderSettings,
   scheduleNextFeedReminder,
 } from '../lib/feedNotifications';
+import { subscribeToBabyActivity } from '../lib/partnerCoordination';
 
 // ─── Quiet-hour presets ───────────────────────────────────────────────────────
 
@@ -113,6 +114,15 @@ export default function FeedReminderCard({ userId, babyId, babyName, onLastFeedL
   }, [userId, babyId, onLastFeedLoaded, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
+
+  // A partner logging a feed on their own device should reschedule THIS
+  // device's already-scheduled reminder off the new last-fed time, not wait
+  // for this screen to be reopened — otherwise it fires a stale "time to
+  // feed" nudge right after someone already fed the baby.
+  useEffect(() => {
+    if (!babyId) return;
+    return subscribeToBabyActivity(babyId, { onFeed: load });
+  }, [babyId, load]);
 
   // ── Live elapsed timer ─────────────────────────────────────────────────────
 

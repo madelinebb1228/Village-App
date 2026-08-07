@@ -12,6 +12,7 @@ import {
   saveDiaperReminderSettings,
   scheduleNextDiaperReminder,
 } from '../lib/diaperNotifications';
+import { subscribeToBabyActivity } from '../lib/partnerCoordination';
 
 // ─── Poop color reference data ────────────────────────────────────────────────
 
@@ -101,6 +102,14 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
   }, [userId, babyId, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
+
+  // See FeedReminderCard's identical effect — a partner's diaper change
+  // should reschedule this device's own reminder off the fresh last-changed
+  // time, not wait for this screen to reopen.
+  useEffect(() => {
+    if (!babyId) return;
+    return subscribeToBabyActivity(babyId, { onDiaper: load });
+  }, [babyId, load]);
 
   // ── Live elapsed timer ─────────────────────────────────────────────────────
 

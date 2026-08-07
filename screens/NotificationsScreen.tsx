@@ -9,12 +9,14 @@ import { useColors } from '../lib/theme';
 
 interface NotifRow {
   id: string;
-  type: 'like' | 'comment' | 'mention';
+  type: 'like' | 'comment' | 'mention' | 'kudos' | 'handoff';
   actor_id: string | null;
   actor: { display_name: string | null; username: string | null; avatar_url: string | null } | null;
   post_id: string | null;
   post_preview: string | null;
   comment_preview: string | null;
+  kudos_preview: string | null;
+  handoff_note: string | null;
   read: boolean;
   created_at: string;
 }
@@ -46,6 +48,8 @@ function Avatar({ name, url }: { name: string; url: string | null }) {
 function NotifIcon({ type }: { type: NotifRow['type'] }) {
   if (type === 'like') return <Text style={{ fontSize: 16 }}>❤️</Text>;
   if (type === 'comment') return <Text style={{ fontSize: 16 }}>💬</Text>;
+  if (type === 'kudos') return <Text style={{ fontSize: 16 }}>💌</Text>;
+  if (type === 'handoff') return <Text style={{ fontSize: 16 }}>🤝</Text>;
   return <Text style={{ fontSize: 16 }}>👋</Text>;
 }
 
@@ -56,6 +60,12 @@ function notifText(n: NotifRow): { bold: string; rest: string; sub?: string } {
   }
   if (n.type === 'comment') {
     return { bold: actor, rest: ' commented on your post', sub: n.comment_preview ? `"${n.comment_preview}"` : undefined };
+  }
+  if (n.type === 'kudos') {
+    return { bold: actor, rest: ' sent you kudos', sub: n.kudos_preview ?? undefined };
+  }
+  if (n.type === 'handoff') {
+    return { bold: '', rest: n.handoff_note || `${actor} logged an update for baby` };
   }
   return { bold: actor, rest: ' mentioned you', sub: n.comment_preview ?? undefined };
 }

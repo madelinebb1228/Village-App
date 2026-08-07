@@ -1,5 +1,6 @@
 import './lib/carCheckTask'; // registers the background task at module scope — required by TaskManager
 import './lib/alertPolyfill'; // patches Alert.alert on web, where it's otherwise a no-op
+import { registerNotificationCategories, registerNotificationResponseListener } from './lib/notificationActions';
 
 import * as Sentry from '@sentry/react-native';
 
@@ -289,6 +290,11 @@ function App() {
   const [session, setSession] = React.useState<Session | null>(null);
   const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(null);
   const resolvedUserId = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    registerNotificationCategories();
+    registerNotificationResponseListener();
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
