@@ -14,8 +14,11 @@ import {
 import { supabase } from '../lib/supabase'
 import { useColors, Colors } from '../lib/theme'
 import { MAX_FONT_SCALE } from '../lib/accessibility'
+import PrivacyPolicyScreen from './PrivacyPolicyScreen'
+import TermsOfServiceScreen from './TermsOfServiceScreen'
 
 export default function Auth() {
+  const [legalScreen, setLegalScreen] = useState<'privacy' | 'terms' | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -26,6 +29,7 @@ export default function Auth() {
   const [dobMonth, setDobMonth] = useState('')
   const [dobDay, setDobDay] = useState('')
   const [dobYear, setDobYear] = useState('')
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
 
   const c = useColors()
   const styles = useMemo(() => makeStyles(c), [c])
@@ -59,6 +63,10 @@ export default function Auth() {
       }
       if (age < 15) {
         Alert.alert('Age Requirement', 'Sorry — you must be 15 or older to use Parent Patch.');
+        return;
+      }
+      if (!agreedToTerms) {
+        Alert.alert('Agreement Required', 'Please agree to the Terms of Service and Privacy Policy to continue.');
         return;
       }
     }
@@ -107,6 +115,13 @@ export default function Auth() {
     } finally {
       setResetLoading(false)
     }
+  }
+
+  if (legalScreen === 'privacy') {
+    return <PrivacyPolicyScreen onClose={() => setLegalScreen(null)} />
+  }
+  if (legalScreen === 'terms') {
+    return <TermsOfServiceScreen onClose={() => setLegalScreen(null)} />
   }
 
   return (
@@ -242,14 +257,39 @@ export default function Auth() {
             </View>
           )}
 
+          {isSignUp && (
+            <TouchableOpacity
+              style={styles.consentRow}
+              onPress={() => setAgreedToTerms(v => !v)}
+              activeOpacity={0.7}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: agreedToTerms }}
+              accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
+            >
+              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+                {agreedToTerms && <Text style={styles.checkboxMark}>✓</Text>}
+              </View>
+              <Text style={styles.consentText}>
+                I agree to the{' '}
+                <Text style={styles.consentLink} onPress={() => setLegalScreen('terms')}>
+                  Terms of Service
+                </Text>
+                {' '}and{' '}
+                <Text style={styles.consentLink} onPress={() => setLegalScreen('privacy')}>
+                  Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, loading && styles.buttonDisabled, isSignUp && !agreedToTerms && styles.buttonDisabled]}
             onPress={handleAuth}
-            disabled={loading}
+            disabled={loading || (isSignUp && !agreedToTerms)}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={isSignUp ? 'Create Account' : 'Sign In'}
-            accessibilityState={{ disabled: loading, busy: loading }}
+            accessibilityState={{ disabled: loading || (isSignUp && !agreedToTerms), busy: loading }}
           >
             {loading ? (
               <ActivityIndicator color={c.primaryText} />
@@ -262,7 +302,7 @@ export default function Auth() {
 
           <TouchableOpacity
             style={styles.switchButton}
-            onPress={() => { setIsSignUp(v => !v); setFirstName(''); }}
+            onPress={() => { setIsSignUp(v => !v); setFirstName(''); setAgreedToTerms(false); }}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
@@ -386,6 +426,43 @@ function makeStyles(c: Colors) {
     },
     buttonDisabled: {
       opacity: 0.65,
+    },
+    consentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      marginTop: 4,
+      marginBottom: 4,
+    },
+    checkbox: {
+      width: 20,
+      height: 20,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      backgroundColor: c.inputBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 1,
+    },
+    checkboxChecked: {
+      backgroundColor: c.primary,
+      borderColor: c.primary,
+    },
+    checkboxMark: {
+      color: c.primaryText,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    consentText: {
+      flex: 1,
+      fontSize: 13,
+      color: c.textMuted,
+      lineHeight: 19,
+    },
+    consentLink: {
+      color: c.primary,
+      fontWeight: '700',
     },
     buttonText: {
       color: c.primaryText,

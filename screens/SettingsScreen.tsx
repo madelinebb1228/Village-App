@@ -5,10 +5,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PrivacyPolicyScreen from './PrivacyPolicyScreen';
+import TermsOfServiceScreen from './TermsOfServiceScreen';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
+import { exportAndShareUserData } from '../lib/exportUserData';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
 import PaywallModal from '../components/PaywallModal';
 import PrepareForVisit from './PrepareForVisit';
@@ -19,7 +22,7 @@ import AccessibilitySettings from './AccessibilitySettings';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history' | 'integrations' | 'accessibility';
+type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history' | 'integrations' | 'accessibility' | 'delete_confirm' | 'privacy_policy' | 'terms_of_service';
 
 interface NotifPrefs {
   enabled: boolean;
@@ -225,6 +228,122 @@ function AccountInfoView({ onBack }: { onBack: () => void }) {
                 </TouchableOpacity>
               )}
             </View>
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ─── Delete Account sub-screen ───────────────────────────────────────────────
+// Two-step confirmation per App Store Guideline 5.1.1: an explanation of what
+// gets deleted, then a typed "DELETE" so a stray tap can't destroy the account.
+
+function DeleteAccountView({ onBack }: { onBack: () => void }) {
+  const c = useColors();
+  const [step, setStep] = useState<'warn' | 'confirm'>('warn');
+  const [confirmText, setConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      const { error: fnError } = await supabase.functions.invoke('delete-user-account', { body: {} });
+      if (fnError) throw fnError;
+      await supabase.auth.signOut();
+    } catch (err: any) {
+      setDeleting(false);
+      setError(err?.message ?? 'Could not delete your account. Please try again.');
+    }
+  }
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        paddingHorizontal: 20, paddingVertical: 14,
+        borderBottomWidth: 1, borderBottomColor: c.separator,
+      }}>
+        <TouchableOpacity onPress={onBack} disabled={deleting} accessibilityRole="button" accessibilityLabel="Back to Settings">
+          <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
+        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Delete Account</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+        {step === 'warn' ? (
+          <>
+            <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>⚠️</Text>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary, textAlign: 'center', marginBottom: 12 }}>
+              Delete Your Account?
+            </Text>
+            <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 21, marginBottom: 28 }}>
+              This will permanently delete your profile, all baby tracking data, posts, comments, messages, and photos.{'\n\n'}
+              This action CANNOT be undone.
+            </Text>
+            <TouchableOpacity
+              onPress={() => setStep('confirm')}
+              style={{ backgroundColor: '#DC2626', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 12 }}
+              accessibilityRole="button" accessibilityLabel="Continue to delete account"
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Continue</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onBack}
+              style={{ paddingVertical: 14, alignItems: 'center' }}
+              accessibilityRole="button" accessibilityLabel="Cancel"
+            >
+              <Text style={{ color: c.textPrimary, fontSize: 15, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 21, marginBottom: 20 }}>
+              Type <Text style={{ fontWeight: '800', color: c.textPrimary }}>DELETE</Text> to confirm. This is your last chance to back out.
+            </Text>
+            <TextInput
+              value={confirmText}
+              onChangeText={setConfirmText}
+              placeholder="Type DELETE to confirm"
+              placeholderTextColor={c.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!deleting}
+              style={{
+                borderWidth: 1, borderColor: c.separator, borderRadius: 10,
+                paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
+                color: c.textPrimary, backgroundColor: c.card, marginBottom: 16,
+              }}
+              accessibilityLabel="Type DELETE to confirm account deletion"
+            />
+            {error && (
+              <Text style={{ color: '#DC2626', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>{error}</Text>
+            )}
+            <TouchableOpacity
+              onPress={handleDelete}
+              disabled={confirmText !== 'DELETE' || deleting}
+              style={{
+                backgroundColor: '#DC2626', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 12,
+                opacity: confirmText !== 'DELETE' || deleting ? 0.5 : 1,
+              }}
+              accessibilityRole="button" accessibilityLabel="Permanently delete my account"
+              accessibilityState={{ disabled: confirmText !== 'DELETE' || deleting }}
+            >
+              {deleting
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Delete My Account</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onBack}
+              disabled={deleting}
+              style={{ paddingVertical: 14, alignItems: 'center' }}
+              accessibilityRole="button" accessibilityLabel="Cancel"
+            >
+              <Text style={{ color: c.textPrimary, fontSize: 15, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -566,6 +685,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   const [loadingPrefs, setLoadingPrefs] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [showManageBabies, setShowManageBabies] = useState(false);
   const [showPrepareVisit, setShowPrepareVisit] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
@@ -594,6 +714,17 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
       Alert.alert('Export Failed', err?.message ?? 'Could not generate the summary. Please try again.');
     } finally {
       setExportingReport(false);
+    }
+  }
+
+  async function handleExportData() {
+    setExportingData(true);
+    try {
+      await exportAndShareUserData();
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message ?? 'Could not export your data. Please try again.');
+    } finally {
+      setExportingData(false);
     }
   }
 
@@ -654,40 +785,6 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
     ]);
   }
 
-  async function handleDeleteAccount() {
-    const confirm = async () => {
-      Alert.alert(
-        'Are you absolutely sure?',
-        'This will permanently delete your account, posts, and all data. This cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete My Account',
-            style: 'destructive',
-            onPress: async () => {
-              await supabase.auth.signOut();
-            },
-          },
-        ]
-      );
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm('Delete your account? This is permanent and cannot be undone.')) {
-        await supabase.auth.signOut();
-      }
-      return;
-    }
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action is permanent.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', style: 'destructive', onPress: confirm },
-      ]
-    );
-  }
-
   if (view === 'account') {
     return <AccountInfoView onBack={() => setView('main')} />;
   }
@@ -711,6 +808,15 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   }
   if (view === 'accessibility') {
     return <AccessibilitySettings onBack={() => setView('main')} />;
+  }
+  if (view === 'delete_confirm') {
+    return <DeleteAccountView onBack={() => setView('main')} />;
+  }
+  if (view === 'privacy_policy') {
+    return <PrivacyPolicyScreen onClose={() => setView('main')} />;
+  }
+  if (view === 'terms_of_service') {
+    return <TermsOfServiceScreen onClose={() => setView('main')} />;
   }
 
   return (
@@ -763,6 +869,14 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             onPress={exportingReport ? undefined : handleExportReport}
             chevron={!exportingReport}
             right={exportingReport ? <ActivityIndicator color={c.primary} /> : undefined}
+          />
+          <SettingsRow
+            icon="📦"
+            label="Export My Data"
+            sublabel="Download everything tied to your account as a JSON file"
+            onPress={exportingData ? undefined : handleExportData}
+            chevron={!exportingData}
+            right={exportingData ? <ActivityIndicator color={c.primary} /> : undefined}
           />
           <SettingsRow
             icon="🩺"
@@ -1003,6 +1117,21 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
           />
         </View>
 
+        {/* ── Legal ────────────────────────────────────────────────── */}
+        <SectionHeader label="Legal" />
+        <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
+          <SettingsRow
+            icon="🔒"
+            label="Privacy Policy"
+            onPress={() => setView('privacy_policy')}
+          />
+          <SettingsRow
+            icon="📄"
+            label="Terms of Service"
+            onPress={() => setView('terms_of_service')}
+          />
+        </View>
+
         {/* ── Support ─────────────────────────────────────────────── */}
         <SectionHeader label="Support" />
         <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
@@ -1060,7 +1189,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             label="Delete Account"
             sublabel="Permanently delete your account and all data"
             danger
-            onPress={handleDeleteAccount}
+            onPress={() => setView('delete_confirm')}
             accessibilityHint="Permanently deletes your account, posts, and all data. This cannot be undone."
           />
         </View>

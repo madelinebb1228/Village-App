@@ -1417,9 +1417,15 @@ export default function HomeTab() {
 
   const tourSeenKey = useCallback((uid: string) => `app_tour_seen:${uid}`, []);
 
+  // handleTourDismiss (both the initial auto-run and a "Take a Tour" replay from
+  // Settings) marks the tour seen. Only persist that to the profile row when this
+  // was the auto-run, not a deliberate replay — otherwise a replay would be
+  // indistinguishable from first-time completion, which is already recorded.
   const handleTourDismiss = useCallback(() => {
     setTourVisible(false);
-    if (currentUserId) AsyncStorage.setItem(tourSeenKey(currentUserId), 'true').catch(() => {});
+    if (!currentUserId) return;
+    AsyncStorage.setItem(tourSeenKey(currentUserId), 'true').catch(() => {});
+    (supabase.from('profiles') as any).update({ tour_seen: true }).eq('id', currentUserId).then(() => {});
   }, [currentUserId, tourSeenKey]);
 
   // Replay requested from Settings ("Take a Tour").
@@ -1430,15 +1436,27 @@ export default function HomeTab() {
     }
   }, [tourRequestId]);
 
-  // Auto-show once, the first time this user reaches Home with data loaded (e.g. right after onboarding).
+  // Auto-show once, ever, per account — mirrors the onboarding_complete pattern in
+  // App.tsx: check the local cache first, then fall back to the profile row so a
+  // user who already completed the tour on another device/browser (where this
+  // device's AsyncStorage has no record of it) isn't shown it again.
   useEffect(() => {
     if (!currentUserId || loading) return;
     let cancelled = false;
-    AsyncStorage.getItem(tourSeenKey(currentUserId)).then(seen => {
-      if (!cancelled && seen !== 'true') {
-        setTimeout(() => { if (!cancelled) setTourVisible(true); }, 600);
+    (async () => {
+      const seen = await AsyncStorage.getItem(tourSeenKey(currentUserId));
+      if (seen === 'true') return;
+      const { data } = await (supabase.from('profiles') as any)
+        .select('tour_seen')
+        .eq('id', currentUserId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data?.tour_seen) {
+        AsyncStorage.setItem(tourSeenKey(currentUserId), 'true').catch(() => {});
+        return;
       }
-    });
+      setTimeout(() => { if (!cancelled) setTourVisible(true); }, 600);
+    })();
     return () => { cancelled = true; };
   }, [currentUserId, loading, tourSeenKey]);
 

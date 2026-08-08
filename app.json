@@ -7,7 +7,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,9 +25,17 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Parent Patch uses your camera to scan baby food barcodes."
+          "cameraPermission": "Parent Patch uses your camera to scan baby food barcodes and add photos or videos to your posts."
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Parent Patch needs access to your photo library so you can add photos and videos to posts, journal entries, and your baby's profile.",
+          "microphonePermission": "Parent Patch needs microphone access to record audio when you post a video."
+        }
+      ],
+      "expo-notifications",
       "@react-native-community/datetimepicker",
       [
         "expo-location",
