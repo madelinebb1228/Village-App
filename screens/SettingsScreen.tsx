@@ -14,10 +14,11 @@ import ManageBabiesSheet from '../components/ManageBabiesSheet';
 import PrepareForVisit from './PrepareForVisit';
 import NotificationSettingsScreen from './NotificationSettingsScreen';
 import NotificationHistoryScreen from './NotificationHistoryScreen';
+import IntegrationsScreen from './IntegrationsScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history';
+type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history' | 'integrations';
 
 interface NotifPrefs {
   enabled: boolean;
@@ -694,6 +695,9 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   if (view === 'notification_history') {
     return <NotificationHistoryScreen onBack={() => setView('main')} />;
   }
+  if (view === 'integrations') {
+    return <IntegrationsScreen onBack={() => setView('main')} />;
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -751,6 +755,12 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             label="Prepare for Visit"
             sublabel="Generate a pediatrician-ready summary and share a secure link"
             onPress={() => setShowPrepareVisit(true)}
+          />
+          <SettingsRow
+            icon="🔗"
+            label="Integrations"
+            sublabel="Connect Google Calendar and other services"
+            onPress={() => setView('integrations')}
           />
         </View>
 

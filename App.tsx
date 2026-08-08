@@ -2,6 +2,14 @@ import './lib/carCheckTask'; // registers the background task at module scope â€
 import './lib/alertPolyfill'; // patches Alert.alert on web, where it's otherwise a no-op
 import { registerNotificationCategories, registerNotificationResponseListener } from './lib/notificationActions';
 
+import * as WebBrowser from 'expo-web-browser';
+// On web, an OAuth popup (e.g. Google Calendar connect) redirects back to this
+// same app's own URL. This call, made unconditionally at module scope so it
+// runs on every load including inside that popup, is what detects "I'm the
+// redirect landing page" and hands the result back to the opener window
+// instead of just booting a second copy of the app in place.
+WebBrowser.maybeCompleteAuthSession();
+
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({

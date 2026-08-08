@@ -853,6 +853,41 @@ export default function Track({ route }: any) {
   const [babyCategory, setBabyCategory] = useState<string>(initialActiveView !== 'you' ? initialCategory ?? 'All' : 'All');
   const [youCategory,  setYouCategory]  = useState<string>(initialActiveView === 'you' ? initialCategory ?? 'All' : 'All');
 
+  // Category filter row — tap arrows for paging through chips that overflow
+  // the screen width, since showsHorizontalScrollIndicator is off on web/iOS.
+  const categoryScrollRef = useRef<ScrollView>(null);
+  const categoryScrollX = useRef(0);
+  const categoryContainerWidth = useRef(0);
+  const categoryContentWidth = useRef(0);
+  const [canScrollCategoryLeft, setCanScrollCategoryLeft] = useState(false);
+  const [canScrollCategoryRight, setCanScrollCategoryRight] = useState(false);
+
+  const updateCategoryScrollArrows = useCallback(() => {
+    // >12px rather than >0 — Chrome's scroll anchoring nudges scrollLeft by a
+    // few px on its own when the chip row's content changes underneath it
+    // (e.g. switching Baby/You), which would otherwise leave the left arrow
+    // stuck on at a "reset" scroll position.
+    setCanScrollCategoryLeft(categoryScrollX.current > 12);
+    setCanScrollCategoryRight(
+      categoryContentWidth.current > categoryContainerWidth.current + categoryScrollX.current + 4,
+    );
+  }, []);
+
+  const scrollCategoryBy = useCallback((delta: number) => {
+    const nextX = Math.max(0, categoryScrollX.current + delta);
+    categoryScrollRef.current?.scrollTo({ x: nextX, animated: true });
+  }, []);
+
+  // Re-assert scroll-to-start after the Baby/You toggle swaps in a
+  // differently-sized chip row — runs after the new content has actually
+  // mounted, which is what scroll anchoring needs to have already happened
+  // for our reset to stick.
+  useEffect(() => {
+    categoryScrollRef.current?.scrollTo({ x: 0, animated: false });
+    categoryScrollX.current = 0;
+    setCanScrollCategoryLeft(false);
+  }, [activeView]);
+
   // Jump to the category a synced calendar event points back to, e.g. Health
   // for a vaccine appointment, whenever the Calendar tab navigates here.
   useEffect(() => {
@@ -1653,7 +1688,10 @@ export default function Track({ route }: any) {
         <View style={styles.viewToggleRow}>
           <TouchableOpacity
             style={[styles.viewToggleBtn, activeView === 'baby' && styles.viewToggleBtnActive]}
-            onPress={() => { setActiveView('baby'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
+            onPress={() => {
+              setActiveView('baby');
+              scrollRef.current?.scrollTo({ y: 0, animated: false });
+            }}
             activeOpacity={0.8}
             accessibilityRole="button" accessibilityLabel="Show baby tracking"
           >
@@ -1663,7 +1701,10 @@ export default function Track({ route }: any) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.viewToggleBtn, activeView === 'you' && styles.viewToggleBtnActive]}
-            onPress={() => { setActiveView('you'); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
+            onPress={() => {
+              setActiveView('you');
+              scrollRef.current?.scrollTo({ y: 0, animated: false });
+            }}
             activeOpacity={0.8}
             accessibilityRole="button" accessibilityLabel="Show your tracking"
           >
@@ -1674,9 +1715,35 @@ export default function Track({ route }: any) {
         </View>
 
         {/* ── Category filter ── */}
-        <ScrollView
+        <View style={styles.categoryRowWrap}>
+          {canScrollCategoryLeft && (
+            <TouchableOpacity
+              onPress={() => scrollCategoryBy(-160)}
+              style={styles.categoryArrowBtn}
+              activeOpacity={0.7}
+              accessibilityRole="button" accessibilityLabel="Scroll categories left"
+            >
+              <Text style={styles.categoryArrowText}>‹</Text>
+            </TouchableOpacity>
+          )}
+          <ScrollView
+          ref={categoryScrollRef}
+          style={styles.categoryScrollView}
           horizontal
           showsHorizontalScrollIndicator={false}
+          onLayout={(e) => {
+            categoryContainerWidth.current = e.nativeEvent.layout.width;
+            updateCategoryScrollArrows();
+          }}
+          onContentSizeChange={(w) => {
+            categoryContentWidth.current = w;
+            updateCategoryScrollArrows();
+          }}
+          onScroll={(e) => {
+            categoryScrollX.current = e.nativeEvent.contentOffset.x;
+            updateCategoryScrollArrows();
+          }}
+          scrollEventThrottle={32}
           contentContainerStyle={styles.categoryRow}
         >
           {(() => {
@@ -1731,7 +1798,18 @@ export default function Track({ route }: any) {
               </>
             );
           })()}
-        </ScrollView>
+          </ScrollView>
+          {canScrollCategoryRight && (
+            <TouchableOpacity
+              onPress={() => scrollCategoryBy(160)}
+              style={styles.categoryArrowBtn}
+              activeOpacity={0.7}
+              accessibilityRole="button" accessibilityLabel="Scroll categories right"
+            >
+              <Text style={styles.categoryArrowText}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {activeView === 'baby' ? (<>
 
@@ -2830,6 +2908,16 @@ function makeStyles(c: Colors) {
                        marginBottom: 20, marginTop: 4 },
 
     // Quick nav arrows
+    categoryRowWrap:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    // flex:1 + minWidth:0 is what lets this horizontal ScrollView actually
+    // clip and scroll its content within the row instead of growing to fit
+    // it — without minWidth:0, a flex child's default min-width:auto on web
+    // stops it shrinking below its content size no matter how narrow the
+    // window is, which is what silently swallowed the scroll/arrows before.
+    categoryScrollView:   { flex: 1, minWidth: 0 },
+    categoryArrowBtn:     { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator, marginBottom: 20 },
+    categoryArrowText:    { fontSize: 16, fontWeight: '800', color: c.textSecondary, lineHeight: 18 },
     categoryRow:          { gap: 8, paddingBottom: 20, paddingRight: 4 },
     categoryChip:         { borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.card, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
     categoryChipText:     { fontSize: 13, fontWeight: '700', color: c.textSecondary },

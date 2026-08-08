@@ -27,3 +27,6 @@ yarn-error.log*
 
 # Seed script session (holds a live auth token)
 scripts/.seed-session.json
+
+# Supabase CLI local cache
+supabase/.temp/

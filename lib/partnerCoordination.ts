@@ -87,12 +87,20 @@ export async function notifyHandoff(
 // the freshest "last logged" time as soon as anyone — including a partner —
 // logs, instead of only recomputing the next time this device opens the
 // screen. Returns an unsubscribe function; call it on unmount.
+//
+// Multiple cards (DiaperReminderCard, FeedReminderCard, ...) call this for
+// the same babyId at once. Supabase's realtime client reuses an existing
+// channel object when asked for the same topic name, so a shared
+// `baby-activity-${babyId}` topic meant the second caller's .on() calls hit
+// a channel that was already subscribed and threw. A per-call random suffix
+// keeps every subscriber on its own channel.
 export function subscribeToBabyActivity(
   babyId: string,
   handlers: { onFeed?: () => void; onDiaper?: () => void; onSleepStart?: () => void },
 ): () => void {
+  const instanceId = Math.random().toString(36).slice(2, 10);
   const channel = supabase
-    .channel(`baby-activity-${babyId}`)
+    .channel(`baby-activity-${babyId}-${instanceId}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'feeds', filter: `baby_id=eq.${babyId}` },
