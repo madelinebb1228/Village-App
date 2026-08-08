@@ -28,6 +28,8 @@ interface PublicProfile {
   show_villages: boolean | null;
   pinned_post_id: string | null;
   is_private: boolean | null;
+  is_founder: boolean | null;
+  is_official: boolean | null;
 }
 
 interface PinnedPost {
@@ -89,6 +91,15 @@ function makeStyles(c: Colors) {
       shadowRadius: 10,
       elevation: 4,
     },
+    heroAdmin: {
+      borderWidth: 1.5,
+      borderColor: 'rgba(212,175,55,0.45)',
+      shadowColor: '#D4AF37',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 18,
+      elevation: 10,
+    },
     avatarWrap: {
       width: 80,
       height: 80,
@@ -99,8 +110,52 @@ function makeStyles(c: Colors) {
       marginBottom: 14,
       overflow: 'hidden',
     },
+    avatarWrapAdmin: {
+      borderWidth: 3,
+      borderColor: '#D4AF37',
+      shadowColor: '#D4AF37',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.6,
+      shadowRadius: 14,
+      elevation: 8,
+    },
     avatarImage: { width: 80, height: 80, borderRadius: 40 },
     avatarInitial: { fontSize: 30, fontWeight: '800', color: c.primary },
+    founderWrap: {
+      alignItems: 'center',
+      gap: 5,
+      marginBottom: 6,
+    },
+    founderStars: {
+      fontSize: 11,
+      color: '#D4AF37',
+      letterSpacing: 3,
+      fontWeight: '700',
+    },
+    founderBadge: {
+      backgroundColor: '#FFF8E1',
+      borderWidth: 1.5,
+      borderColor: '#D4AF37',
+      borderRadius: 22,
+      paddingHorizontal: 20,
+      paddingVertical: 9,
+      shadowColor: '#D4AF37',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    founderBadgeText: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#7C5C00',
+      letterSpacing: 0.3,
+    },
+    founderStarsBottom: {
+      fontSize: 13,
+      color: '#D4AF37',
+      letterSpacing: 4,
+    },
 
     heroName: {
       fontSize: 20,
@@ -322,7 +377,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         }
 
         const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes, blockRes, muteRes, followReqRes] = await Promise.all([
-          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id,is_private').eq('id', userId).maybeSingle(),
+          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id,is_private,is_founder,is_official').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
@@ -448,6 +503,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const displayName = profile?.display_name || profile?.username || 'Parent';
   const initial = displayName.charAt(0).toUpperCase();
   const showVillages = profile?.show_villages !== false;
+  const isAdmin = profile?.is_founder === true;
+  const isOfficial = profile?.is_official === true;
+  const isGoldTier = isAdmin || isOfficial;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -477,9 +535,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         ) : (
           <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
             {/* Hero card */}
-            <View style={s.hero}>
+            <View style={[s.hero, isGoldTier && s.heroAdmin]}>
               {/* Avatar */}
-              <View style={s.avatarWrap}>
+              <View style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}>
                 {profile.avatar_url ? (
                   <Image source={{ uri: profile.avatar_url }} style={s.avatarImage} />
                 ) : (
@@ -491,6 +549,19 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 <Text style={s.heroName}>{displayName}</Text>
                 {profile.is_private && <Text style={{ fontSize: 16 }}>🔒</Text>}
               </View>
+
+              {isGoldTier && (
+                <View style={s.founderWrap}>
+                  <Text style={s.founderStars}>✦  ✦  ✦  ✦  ✦</Text>
+                  <View style={s.founderBadge}>
+                    <Text style={s.founderBadgeText}>
+                      {isAdmin ? '👑  Founder of Parent Patch  👑' : '🌿  Official Parent Patch Account  🌿'}
+                    </Text>
+                  </View>
+                  <Text style={s.founderStarsBottom}>⭐  ⭐  ⭐  ⭐  ⭐</Text>
+                </View>
+              )}
+
               {profile.username && (
                 <Text style={s.heroUsername}>@{profile.username}</Text>
               )}

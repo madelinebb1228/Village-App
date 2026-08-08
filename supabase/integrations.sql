@@ -24,7 +24,7 @@ create table if not exists public.user_integrations (
   user_id                 uuid not null references auth.users(id) on delete cascade,
   service_name            text not null check (service_name in (
                             'google_calendar', 'apple_health', 'google_fit',
-                            'google_photos', 'icloud_photos', 'hatch', 'nanit', 'owlet'
+                            'google_photos', 'icloud_photos', 'hatch', 'nanit'
                           )),
   status                  text not null default 'disconnected'
                             check (status in ('connected', 'disconnected', 'error', 'expired')),

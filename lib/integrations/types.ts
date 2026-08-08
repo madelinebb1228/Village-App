@@ -5,8 +5,7 @@ export type ServiceName =
   | 'google_photos'
   | 'icloud_photos'
   | 'hatch'
-  | 'nanit'
-  | 'owlet';
+  | 'nanit';
 
 export type IntegrationStatusValue = 'connected' | 'disconnected' | 'error' | 'expired';
 

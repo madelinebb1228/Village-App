@@ -11,6 +11,7 @@ import { useOneHanded } from '../lib/OneHandedContext';
 import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
+import PaywallModal from '../components/PaywallModal';
 import PrepareForVisit from './PrepareForVisit';
 import NotificationSettingsScreen from './NotificationSettingsScreen';
 import NotificationHistoryScreen from './NotificationHistoryScreen';
@@ -547,7 +548,7 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
 export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => void; onTakeTour?: () => void }) {
   const c = useColors();
   const { isOneHanded, toggleOneHanded } = useOneHanded();
-  const { isSubscribed, openPaywall } = useSubscription();
+  const { isSubscribed, purchaseSubscription, restorePurchases } = useSubscription();
   const [view, setView] = useState<View>('main');
   const [notifs, setNotifs] = useState<NotifPrefs>(DEFAULT_NOTIFS);
   const [showVillages, setShowVillages] = useState(true);
@@ -558,6 +559,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   const [exportingReport, setExportingReport] = useState(false);
   const [showManageBabies, setShowManageBabies] = useState(false);
   const [showPrepareVisit, setShowPrepareVisit] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
 
   async function handleExportReport() {
     setExportingReport(true);
@@ -735,7 +737,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             icon="⭐"
             label="Parent Patch Premium"
             sublabel={isSubscribed ? "You're subscribed — thank you!" : 'Unlock exclusive features and support the app'}
-            onPress={openPaywall}
+            onPress={() => setShowPremium(true)}
           />
         </View>
 
@@ -1030,6 +1032,20 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
       </ScrollView>
       <ManageBabiesSheet visible={showManageBabies} onClose={() => setShowManageBabies(false)} />
       <PrepareForVisit visible={showPrepareVisit} onClose={() => setShowPrepareVisit(false)} />
+      <PaywallModal
+        visible={showPremium}
+        onClose={() => setShowPremium(false)}
+        onSubscribe={async () => {
+          const subscribed = await purchaseSubscription();
+          if (subscribed) setShowPremium(false);
+          return subscribed;
+        }}
+        onRestore={async () => {
+          const restored = await restorePurchases();
+          if (restored) setShowPremium(false);
+          return restored;
+        }}
+      />
     </SafeAreaView>
   );
 }

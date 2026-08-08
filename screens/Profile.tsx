@@ -336,29 +336,29 @@ export default function Profile() {
   }
 
   async function saveProfile() {
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) { setSaveError('Not signed in — please restart the app.'); return; }
-
-    const trimmedUsername = editUsername.trim().toLowerCase();
-    if (trimmedUsername) {
-      if (!/^[a-z0-9_]{3,20}$/.test(trimmedUsername)) {
-        setUsernameError('3–20 chars, letters / numbers / underscores only');
-        return;
-      }
-      if (trimmedUsername !== profile?.username) {
-        const { data: existing } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('username', trimmedUsername)
-          .maybeSingle();
-        if (existing) { setUsernameError('That username is already taken'); return; }
-      }
-    }
-
     setUsernameError('');
     setSaveError('');
     setSaving(true);
     try {
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) { setSaveError('Not signed in — please restart the app.'); return; }
+
+      const trimmedUsername = editUsername.trim().toLowerCase();
+      if (trimmedUsername) {
+        if (!/^[a-z0-9_]{3,20}$/.test(trimmedUsername)) {
+          setUsernameError('3–20 chars, letters / numbers / underscores only');
+          return;
+        }
+        if (trimmedUsername !== profile?.username) {
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('username', trimmedUsername)
+            .maybeSingle();
+          if (existing) { setUsernameError('That username is already taken'); return; }
+        }
+      }
+
       let avatarUrl = profile?.avatar_url ?? null;
       if (pendingAvatarUri) {
         const uploaded = await uploadAvatar(pendingAvatarUri, user.id);
@@ -466,7 +466,9 @@ export default function Profile() {
   const headerDisplayUri = pendingHeaderUri || profile?.header_url || null;
 
   const displayName = profile?.display_name || profile?.username || userEmail.split('@')[0] || 'Your Name';
-  const isAdmin = userEmail === 'madelinebb1228@gmail.com';
+  const isAdmin = (profile as any)?.is_founder === true;
+  const isOfficial = (profile as any)?.is_official === true;
+  const isGoldTier = isAdmin || isOfficial;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -521,14 +523,14 @@ export default function Profile() {
         </View>
 
         {/* ── Hero ── */}
-        <View style={[s.hero, isAdmin && s.heroAdmin]}>
+        <View style={[s.hero, isGoldTier && s.heroAdmin]}>
 
           {/* Header banner */}
           <View style={s.headerBannerWrap}>
             {headerDisplayUri ? (
               <Image source={{ uri: headerDisplayUri }} style={s.headerBannerImage} resizeMode="cover" />
             ) : (
-              <View style={[s.headerBannerPlaceholder, isAdmin && s.headerBannerPlaceholderAdmin]} />
+              <View style={[s.headerBannerPlaceholder, isGoldTier && s.headerBannerPlaceholderAdmin]} />
             )}
             {editing && (
               <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}
@@ -541,7 +543,7 @@ export default function Profile() {
           {/* Avatar overlapping header */}
           <View style={s.avatarOverlapRow}>
             <TouchableOpacity
-              style={[s.avatarWrap, isAdmin && s.avatarWrapAdmin]}
+              style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}
               onPress={editing ? pickAvatar : undefined}
               activeOpacity={editing ? 0.75 : 1}
               accessibilityRole={editing ? 'button' : undefined}
@@ -705,11 +707,13 @@ export default function Profile() {
             <View style={s.viewBlock}>
               <Text style={s.heroName}>{displayName}</Text>
 
-              {isAdmin && (
+              {isGoldTier && (
                 <View style={s.founderWrap}>
                   <Text style={s.founderStars}>✦  ✦  ✦  ✦  ✦</Text>
                   <View style={s.founderBadge}>
-                    <Text style={s.founderBadgeText}>👑  Founder of Parent Patch  👑</Text>
+                    <Text style={s.founderBadgeText}>
+                      {isAdmin ? '👑  Founder of Parent Patch  👑' : '🌿  Official Parent Patch Account  🌿'}
+                    </Text>
                   </View>
                   <Text style={s.founderStarsBottom}>⭐  ⭐  ⭐  ⭐  ⭐</Text>
                 </View>

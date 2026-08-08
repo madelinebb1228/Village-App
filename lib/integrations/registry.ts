@@ -68,14 +68,6 @@ export const INTEGRATION_CATALOG: IntegrationMeta[] = [
     permissions: ['Read sleep session data'],
     available: false,
   },
-  {
-    serviceName: 'owlet',
-    label: 'Owlet',
-    icon: '🧦',
-    description: 'Bring heart rate and oxygen readings into Parent Patch.',
-    permissions: ['Read vitals data'],
-    available: false,
-  },
 ];
 
 const instances: Partial<Record<ServiceName, BaseIntegration>> = {
