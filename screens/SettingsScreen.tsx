@@ -7,7 +7,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
-import { useOneHanded } from '../lib/OneHandedContext';
 import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
@@ -16,10 +15,11 @@ import PrepareForVisit from './PrepareForVisit';
 import NotificationSettingsScreen from './NotificationSettingsScreen';
 import NotificationHistoryScreen from './NotificationHistoryScreen';
 import IntegrationsScreen from './IntegrationsScreen';
+import AccessibilitySettings from './AccessibilitySettings';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history' | 'integrations';
+type View = 'main' | 'account' | 'blocked' | 'muted' | 'word_filter' | 'smart_notifications' | 'notification_history' | 'integrations' | 'accessibility';
 
 interface NotifPrefs {
   enabled: boolean;
@@ -39,22 +39,25 @@ const DEFAULT_NOTIFS: NotifPrefs = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionHeader({ label }: { label: string }) {
+export function SectionHeader({ label }: { label: string }) {
   const c = useColors();
   return (
-    <Text style={{
-      fontSize: 12, fontWeight: '700', color: c.textMuted,
-      textTransform: 'uppercase', letterSpacing: 0.8,
-      paddingHorizontal: 20, paddingTop: 28, paddingBottom: 8,
-    }}>
+    <Text
+      accessibilityRole="header"
+      style={{
+        fontSize: 12, fontWeight: '700', color: c.textMuted,
+        textTransform: 'uppercase', letterSpacing: 0.8,
+        paddingHorizontal: 20, paddingTop: 28, paddingBottom: 8,
+      }}
+    >
       {label}
     </Text>
   );
 }
 
-function SettingsRow({
+export function SettingsRow({
   icon, label, sublabel, onPress, chevron = true, danger = false,
-  right,
+  right, toggleValue, accessibilityHint,
 }: {
   icon: string;
   label: string;
@@ -63,8 +66,12 @@ function SettingsRow({
   chevron?: boolean;
   danger?: boolean;
   right?: React.ReactNode;
+  /** When set, the whole row is announced/operated as a single switch control. */
+  toggleValue?: boolean;
+  accessibilityHint?: string;
 }) {
   const c = useColors();
+  const isToggle = toggleValue !== undefined;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -75,10 +82,13 @@ function SettingsRow({
         paddingHorizontal: 20, paddingVertical: 14,
         borderBottomWidth: 1, borderBottomColor: c.separator,
       }}
-      accessibilityRole={onPress ? 'button' : undefined}
+      accessible
+      accessibilityRole={isToggle ? 'switch' : onPress ? 'button' : undefined}
+      accessibilityState={isToggle ? { checked: toggleValue } : undefined}
       accessibilityLabel={sublabel ? `${label}. ${sublabel}` : label}
+      accessibilityHint={accessibilityHint}
     >
-      <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{icon}</Text>
+      <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }} accessibilityElementsHidden importantForAccessibility="no">{icon}</Text>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontWeight: '600', color: danger ? '#DC2626' : c.textPrimary }}>
           {label}
@@ -90,7 +100,7 @@ function SettingsRow({
         ) : null}
       </View>
       {right ?? (chevron && onPress ? (
-        <Text style={{ fontSize: 18, color: c.textMuted }}>›</Text>
+        <Text style={{ fontSize: 18, color: c.textMuted }} accessibilityElementsHidden importantForAccessibility="no">›</Text>
       ) : null)}
     </TouchableOpacity>
   );
@@ -547,7 +557,6 @@ function WordFilterView({ onBack }: { onBack: () => void }) {
 
 export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => void; onTakeTour?: () => void }) {
   const c = useColors();
-  const { isOneHanded, toggleOneHanded } = useOneHanded();
   const { isSubscribed, purchaseSubscription, restorePurchases } = useSubscription();
   const [view, setView] = useState<View>('main');
   const [notifs, setNotifs] = useState<NotifPrefs>(DEFAULT_NOTIFS);
@@ -700,6 +709,9 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   if (view === 'integrations') {
     return <IntegrationsScreen onBack={() => setView('main')} />;
   }
+  if (view === 'accessibility') {
+    return <AccessibilitySettings onBack={() => setView('main')} />;
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -774,6 +786,12 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             label="Show my patches on profile"
             sublabel="Others can see which patches you're in"
             chevron={false}
+            toggleValue={showVillages}
+            onPress={() => {
+              const v = !showVillages;
+              setShowVillages(v);
+              saveProfilePref('show_villages', v);
+            }}
             right={
               <Switch
                 value={showVillages}
@@ -783,7 +801,8 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 }}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
-                accessibilityLabel="Show my patches on profile"
+                importantForAccessibility="no"
+                accessibilityElementsHidden
               />
             }
           />
@@ -808,7 +827,8 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                   backgroundColor: messagesFrom === 'everyone' ? c.cardSage : c.cardBlush,
                   borderRadius: 12, paddingHorizontal: 12, paddingVertical: 5,
                 }}
-                accessibilityRole="button" accessibilityLabel={`Who can message me: ${messagesFrom === 'everyone' ? 'Everyone' : 'Nobody'}`}
+                importantForAccessibility="no"
+                accessibilityElementsHidden
               >
                 <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>
                   {messagesFrom === 'everyone' ? 'Everyone' : 'Nobody'}
@@ -821,6 +841,12 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             label="Private Account"
             sublabel="Only your followers can see your posts"
             chevron={false}
+            toggleValue={isPrivate}
+            onPress={() => {
+              const v = !isPrivate;
+              setIsPrivate(v);
+              saveProfilePref('is_private', v);
+            }}
             right={
               <Switch
                 value={isPrivate}
@@ -830,7 +856,8 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 }}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
-                accessibilityLabel="Private account"
+                importantForAccessibility="no"
+                accessibilityElementsHidden
               />
             }
           />
@@ -874,13 +901,16 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             label="Push Notifications"
             sublabel="Master on/off for all notifications"
             chevron={false}
+            toggleValue={notifs.enabled}
+            onPress={() => saveNotifs({ ...notifs, enabled: !notifs.enabled })}
             right={
               <Switch
                 value={notifs.enabled}
                 onValueChange={v => saveNotifs({ ...notifs, enabled: v })}
                 trackColor={{ false: c.separator, true: c.sage }}
                 thumbColor="#fff"
-                accessibilityLabel="Push notifications"
+                importantForAccessibility="no"
+                accessibilityElementsHidden
               />
             }
           />
@@ -891,13 +921,16 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 label="Likes & Comments"
                 sublabel="When someone likes or comments on your posts"
                 chevron={false}
+                toggleValue={notifs.likes}
+                onPress={() => saveNotifs({ ...notifs, likes: !notifs.likes })}
                 right={
                   <Switch
                     value={notifs.likes}
                     onValueChange={v => saveNotifs({ ...notifs, likes: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
-                    accessibilityLabel="Likes and comments notifications"
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
                   />
                 }
               />
@@ -906,13 +939,16 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 label="New Followers"
                 sublabel="When someone follows you"
                 chevron={false}
+                toggleValue={notifs.followers}
+                onPress={() => saveNotifs({ ...notifs, followers: !notifs.followers })}
                 right={
                   <Switch
                     value={notifs.followers}
                     onValueChange={v => saveNotifs({ ...notifs, followers: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
-                    accessibilityLabel="New followers notifications"
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
                   />
                 }
               />
@@ -921,13 +957,16 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 label="New Messages"
                 sublabel="When you receive a direct message"
                 chevron={false}
+                toggleValue={notifs.messages}
+                onPress={() => saveNotifs({ ...notifs, messages: !notifs.messages })}
                 right={
                   <Switch
                     value={notifs.messages}
                     onValueChange={v => saveNotifs({ ...notifs, messages: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
-                    accessibilityLabel="New messages notifications"
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
                   />
                 }
               />
@@ -936,13 +975,16 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
                 label="Milestone Celebrations"
                 sublabel="When your community reacts to your milestones"
                 chevron={false}
+                toggleValue={notifs.milestones}
+                onPress={() => saveNotifs({ ...notifs, milestones: !notifs.milestones })}
                 right={
                   <Switch
                     value={notifs.milestones}
                     onValueChange={v => saveNotifs({ ...notifs, milestones: v })}
                     trackColor={{ false: c.separator, true: c.sage }}
                     thumbColor="#fff"
-                    accessibilityLabel="Milestone celebrations notifications"
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
                   />
                 }
               />
@@ -954,19 +996,10 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
         <SectionHeader label="Accessibility" />
         <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: c.separator }}>
           <SettingsRow
-            icon="☝️"
-            label="One-Handed Mode"
-            sublabel="Moves save buttons to the bottom of the screen — great when holding your baby"
-            chevron={false}
-            right={
-              <Switch
-                value={isOneHanded}
-                onValueChange={toggleOneHanded}
-                trackColor={{ false: c.separator, true: c.sage }}
-                thumbColor="#fff"
-                accessibilityLabel="One-handed mode"
-              />
-            }
+            icon="♿"
+            label="Accessibility"
+            sublabel="One-handed mode, high contrast, text size, and more"
+            onPress={() => setView('accessibility')}
           />
         </View>
 
@@ -1014,7 +1047,9 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
               paddingHorizontal: 20, paddingVertical: 14,
               borderBottomWidth: 1, borderBottomColor: c.separator,
             }}
-            accessibilityRole="button" accessibilityLabel="Sign out"
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            accessibilityHint="Signs you out of Parent Patch on this device"
           >
             <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }}>🚪</Text>
             <Text style={{ fontSize: 15, fontWeight: '600', color: c.textPrimary, flex: 1 }}>Sign Out</Text>
@@ -1026,6 +1061,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             sublabel="Permanently delete your account and all data"
             danger
             onPress={handleDeleteAccount}
+            accessibilityHint="Permanently deletes your account, posts, and all data. This cannot be undone."
           />
         </View>
 

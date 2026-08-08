@@ -23,6 +23,7 @@ import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
 import SettingsScreen from './SettingsScreen';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor } from '../lib/accessibility';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
@@ -515,7 +516,8 @@ export default function Profile() {
                 <Text style={s.editProfileBtnText}>Edit Profile</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn} activeOpacity={0.75}
-                accessibilityRole="button" accessibilityLabel="Settings">
+                hitSlop={hitSlopFor(36)}
+                accessibilityRole="button" accessibilityLabel="Open settings">
                 <Text style={{ fontSize: 20 }}>⚙️</Text>
               </TouchableOpacity>
             </View>
@@ -733,22 +735,22 @@ export default function Profile() {
 
               {/* Stats row */}
               <View style={s.statsRow}>
-                <View style={s.statItem}>
+                <View style={s.statItem} accessible accessibilityLabel={`${posts.length} Posts`}>
                   <Text style={s.statNum}>{posts.length}</Text>
                   <Text style={s.statLbl}>Posts</Text>
                 </View>
                 <View style={s.statDivider} />
-                <View style={s.statItem}>
+                <View style={s.statItem} accessible accessibilityLabel={`${followerCount} Followers`}>
                   <Text style={s.statNum}>{followerCount}</Text>
                   <Text style={s.statLbl}>Followers</Text>
                 </View>
                 <View style={s.statDivider} />
-                <View style={s.statItem}>
+                <View style={s.statItem} accessible accessibilityLabel={`${followingCount} Following`}>
                   <Text style={s.statNum}>{followingCount}</Text>
                   <Text style={s.statLbl}>Following</Text>
                 </View>
                 <View style={s.statDivider} />
-                <View style={s.statItem}>
+                <View style={s.statItem} accessible accessibilityLabel={`${myVillageIds.length} Patches`}>
                   <Text style={s.statNum}>{myVillageIds.length}</Text>
                   <Text style={s.statLbl}>Patches</Text>
                 </View>

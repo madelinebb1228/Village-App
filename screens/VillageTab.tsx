@@ -649,7 +649,10 @@ export default function VillageTab() {
             /* ── Question ── */
             <ScrollView contentContainerStyle={s.quizContent} keyboardShouldPersistTaps="handled">
               {/* Progress bar */}
-              <View style={s.progressBar}>
+              <View
+                style={s.progressBar}
+                accessibilityLabel={`Question ${quizStep + 1} of ${QUIZ_QUESTIONS.length}`}
+              >
                 <View style={{ flex: quizStep + 1, backgroundColor: c.progressFill, borderRadius: 3 }} />
                 <View style={{ flex: QUIZ_QUESTIONS.length - quizStep - 1 }} />
               </View>
@@ -677,7 +680,9 @@ export default function VillageTab() {
                         style={[s.optionBtn, selected && s.optionBtnSelected]}
                         onPress={() => toggleAnswer(currentQ.id, option, currentQ.multi)}
                         activeOpacity={0.75}
-                        accessibilityRole="button" accessibilityLabel={option}
+                        accessibilityRole={currentQ.multi ? 'checkbox' : 'radio'}
+                        accessibilityLabel={option}
+                        accessibilityState={{ checked: selected, selected }}
                       >
                         <View style={[s.optionDot, selected && s.optionDotSelected]} />
                         <Text style={[s.optionText, selected && s.optionTextSelected]}>{option}</Text>
@@ -706,7 +711,9 @@ export default function VillageTab() {
                 )}
                 <TouchableOpacity
                   style={[s.nextBtn, !canAdvance && s.nextBtnDisabled]}
-                  accessibilityRole="button" accessibilityLabel={isLastStep ? 'See my patches' : 'Next'}
+                  accessibilityRole="button"
+                  accessibilityLabel={isLastStep ? 'See my patches' : 'Next'}
+                  accessibilityState={{ disabled: !canAdvance }}
                   onPress={() => {
                     if (isLocationStep) {
                       const loc: Record<string, string[]> = {};

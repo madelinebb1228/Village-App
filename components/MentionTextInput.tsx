@@ -38,6 +38,7 @@ export default function MentionTextInput({
   onChangeText,
   suggestionsAbove = false,
   style,
+  accessibilityLabel,
   ...rest
 }: Props) {
   const c = useColors();
@@ -158,6 +159,7 @@ export default function MentionTextInput({
         onChangeText={handleChangeText}
         onSelectionChange={handleSelectionChange}
         style={style}
+        accessibilityLabel={accessibilityLabel ?? 'Message text, type @ to mention someone'}
         {...rest}
       />
       {!suggestionsAbove && suggestionsList}

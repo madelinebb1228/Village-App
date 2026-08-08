@@ -82,7 +82,7 @@ export default function PartnerJoinOnboarding({ onBack }: { onBack: () => void }
         <View style={styles.body}>
           {step === 'code' && (
             <>
-              <Text style={styles.title}>Enter your invite code</Text>
+              <Text style={styles.title} accessibilityRole="header">Enter your invite code</Text>
               <Text style={styles.subtitle}>
                 Ask your co-parent or family caregiver for the code from Settings → Manage Babies on their account.
               </Text>
@@ -96,12 +96,17 @@ export default function PartnerJoinOnboarding({ onBack }: { onBack: () => void }
                 autoCorrect={false}
                 accessibilityLabel="Invite code"
               />
-              {!!joinError && <Text style={styles.error}>{joinError}</Text>}
+              {!!joinError && (
+                <Text style={styles.error} accessibilityLiveRegion="assertive" accessibilityRole="alert">
+                  {joinError}
+                </Text>
+              )}
               <TouchableOpacity
                 style={[styles.primaryBtn, (!code.trim() || joining) && styles.primaryBtnDisabled]}
                 onPress={handleJoin}
                 disabled={!code.trim() || joining}
                 accessibilityRole="button" accessibilityLabel="Join"
+                accessibilityState={{ disabled: !code.trim() || joining, busy: joining }}
               >
                 {joining ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Join</Text>}
               </TouchableOpacity>
@@ -110,7 +115,7 @@ export default function PartnerJoinOnboarding({ onBack }: { onBack: () => void }
 
           {step === 'confirm' && activeBaby && (
             <>
-              <Text style={styles.title}>You're in! 🎉</Text>
+              <Text style={styles.title} accessibilityRole="header">You're in! 🎉</Text>
               <View style={styles.babyCard}>
                 {activeBaby.photo_url ? (
                   <Image source={{ uri: activeBaby.photo_url }} style={styles.babyPhoto} />
@@ -136,14 +141,16 @@ export default function PartnerJoinOnboarding({ onBack }: { onBack: () => void }
 
           {step === 'about' && (
             <>
-              <Text style={styles.title}>What should we call you?</Text>
+              <Text style={styles.title} accessibilityRole="header">What should we call you?</Text>
               <View style={styles.chipRow}>
                 {PARENT_TERM_OPTIONS.map(opt => (
                   <TouchableOpacity
                     key={opt.id}
                     style={[styles.chip, term === opt.id && styles.chipActive]}
                     onPress={() => setTerm(prev => prev === opt.id ? '' : opt.id)}
-                    accessibilityRole="button" accessibilityLabel={opt.label}
+                    accessibilityRole="button"
+                    accessibilityLabel={opt.label}
+                    accessibilityState={{ selected: term === opt.id }}
                   >
                     <Text style={[styles.chipText, term === opt.id && styles.chipTextActive]}>{opt.emoji} {opt.label}</Text>
                   </TouchableOpacity>
@@ -167,7 +174,9 @@ export default function PartnerJoinOnboarding({ onBack }: { onBack: () => void }
                     key={fs}
                     style={[styles.chip, familyStructure === fs && styles.chipActive]}
                     onPress={() => setFamilyStructure(prev => prev === fs ? '' : fs)}
-                    accessibilityRole="button" accessibilityLabel={fs}
+                    accessibilityRole="button"
+                    accessibilityLabel={fs}
+                    accessibilityState={{ selected: familyStructure === fs }}
                   >
                     <Text style={[styles.chipText, familyStructure === fs && styles.chipTextActive]}>{fs}</Text>
                   </TouchableOpacity>

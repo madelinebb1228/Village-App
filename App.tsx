@@ -27,6 +27,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SyncProvider } from './lib/syncService';
 import OfflineBanner from './components/OfflineBanner';
 import { OneHandedProvider, useOneHanded } from './lib/OneHandedContext';
+import { MAX_FONT_SCALE } from './lib/accessibility';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BottomTabBar, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -119,6 +120,9 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
             key={route.key}
             onPress={() => navigation.navigate(route.name)}
             activeOpacity={0.75}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: focused }}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -129,13 +133,23 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
               backgroundColor: focused ? c.cardBlush : 'transparent',
             }}
           >
-            <Text style={{ fontSize: 22 }}>{tab.emoji}</Text>
-            <Text style={{
-              marginLeft: 14,
-              fontSize: 16,
-              fontWeight: focused ? '700' : '500',
-              color: focused ? c.textPrimary : c.textMuted,
-            }}>
+            <Text
+              style={{ fontSize: 22 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              {tab.emoji}
+            </Text>
+            <Text
+              allowFontScaling
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
+              style={{
+                marginLeft: 14,
+                fontSize: 16,
+                fontWeight: focused ? '700' : '500',
+                color: focused ? c.textPrimary : c.textMuted,
+              }}
+            >
               {tab.label}
             </Text>
           </TouchableOpacity>
@@ -151,6 +165,8 @@ function OneHandedIndicator() {
   return (
     <View
       pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={{ position: 'absolute', bottom: 74, right: 14, zIndex: 998 }}
     >
       <View style={{
@@ -209,7 +225,11 @@ function MainTabs() {
           tabBarLabel: 'Home',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏡</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >🏡</Text>
           ),
         }}
       />
@@ -220,7 +240,11 @@ function MainTabs() {
           tabBarLabel: 'Track',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📋</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >📋</Text>
           ),
         }}
       />
@@ -231,7 +255,11 @@ function MainTabs() {
           tabBarLabel: 'Calendar',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📅</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >📅</Text>
           ),
         }}
       />
@@ -242,7 +270,11 @@ function MainTabs() {
           tabBarLabel: 'Resources',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>📚</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >📚</Text>
           ),
         }}
       />
@@ -253,7 +285,11 @@ function MainTabs() {
           tabBarLabel: 'Patch',
           tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🏘️</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >🏘️</Text>
           ),
         }}
       />
@@ -263,7 +299,11 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Profile',
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}>🌸</Text>
+            <Text
+              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >🌸</Text>
           ),
         }}
       />

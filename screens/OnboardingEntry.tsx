@@ -18,7 +18,7 @@ export default function OnboardingEntry() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.body}>
-        <Text style={styles.title}>Welcome to{'\n'}Parent Patch</Text>
+        <Text style={styles.title} accessibilityRole="header">Welcome to{'\n'}Parent Patch</Text>
         <Text style={styles.subtitle}>How are you getting started?</Text>
 
         <TouchableOpacity

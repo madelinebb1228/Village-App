@@ -320,6 +320,7 @@ function ProgressDots({
           hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
           accessibilityLabel={`Go to step ${i + 1} of ${total}`}
           accessibilityRole="button"
+          accessibilityState={{ selected: i === current, disabled: i >= current }}
         >
           <View
             style={[
@@ -569,7 +570,8 @@ function PartnerInviteStep({
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={onSkip} style={styles.skipLarge}>
+      <TouchableOpacity onPress={onSkip} style={styles.skipLarge}
+        accessibilityRole="button" accessibilityLabel="Skip — I'll invite them later">
         <Text style={styles.skipLargeText}>Skip — I'll invite them later</Text>
       </TouchableOpacity>
 
@@ -998,6 +1000,7 @@ export default function Onboarding() {
               placeholderTextColor={c.textMuted}
               autoCapitalize="words"
               returnKeyType="next"
+              accessibilityLabel="Baby's name"
             />
 
             {/* Expecting toggle */}
@@ -1006,6 +1009,9 @@ export default function Onboarding() {
               <TouchableOpacity
                 style={[styles.togglePill, isExpecting && styles.togglePillOn]}
                 onPress={() => setIsExpecting(v => !v)}
+                accessibilityRole="switch"
+                accessibilityLabel="Not born yet / expecting"
+                accessibilityState={{ checked: isExpecting }}
               >
                 <Text style={[styles.togglePillText, isExpecting && styles.togglePillTextOn]}>
                   {isExpecting ? 'Yes' : 'No'}
@@ -1025,6 +1031,7 @@ export default function Onboarding() {
               placeholderTextColor={c.textMuted}
               keyboardType="numbers-and-punctuation"
               maxLength={10}
+              accessibilityLabel={isExpecting ? 'Due date' : "Date of birth"}
             />
 
             {/* Gender */}
@@ -1135,12 +1142,14 @@ export default function Onboarding() {
       <View style={styles.footer}>
         <View style={styles.footerLeft}>
           {stepIndex > 0 && (
-            <TouchableOpacity onPress={handleBack} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleBack} activeOpacity={0.7}
+              accessibilityRole="button" accessibilityLabel="Back">
               <Text style={styles.backBtnText}>← Back</Text>
             </TouchableOpacity>
           )}
           {isOptionalStep(stepIndex) && (
-            <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
+            <TouchableOpacity onPress={handleSkip} style={styles.skipButton}
+              accessibilityRole="button" accessibilityLabel="Skip for now">
               <Text style={styles.skipText}>Skip for now</Text>
             </TouchableOpacity>
           )}
@@ -1151,8 +1160,9 @@ export default function Onboarding() {
             style={[styles.nextBtn, { backgroundColor: accent }, isNextDisabled && styles.nextBtnOff]}
             onPress={isBabyStep ? saveBabyAndContinue : isReviewStep ? handleComplete : handleNext}
             disabled={isNextDisabled}
+            accessibilityRole="button"
             accessibilityLabel={canContinue ? 'Continue to next step' : 'Complete required fields to continue'}
-            accessibilityState={{ disabled: isNextDisabled }}
+            accessibilityState={{ disabled: isNextDisabled, busy: saving }}
             activeOpacity={0.85}
           >
             {saving ? (

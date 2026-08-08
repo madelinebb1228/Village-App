@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Text, TouchableOpacity, View, StyleSheet, Platform } from 'react-native';
 import { useSyncStatus } from '../lib/syncService';
 import { useColors } from '../lib/theme';
+import { useAccessibility } from '../lib/AccessibilityContext';
 
 export default function OfflineBanner() {
   const { isOnline, isSyncing, pendingCount, failedCount, lastSyncedAt, triggerSync, retryFailed, dismissFailed } = useSyncStatus();
   const c = useColors();
+  const { isReduceMotionEnabled } = useAccessibility();
 
   // Show a brief "All synced" flash after coming back online
   const [showSynced, setShowSynced] = useState(false);
@@ -15,6 +17,12 @@ export default function OfflineBanner() {
   useEffect(() => {
     if (!prevOnline.current && isOnline && pendingCount === 0) {
       setShowSynced(true);
+      if (isReduceMotionEnabled) {
+        fadeAnim.setValue(1);
+        const t = setTimeout(() => setShowSynced(false), 1500);
+        prevOnline.current = isOnline;
+        return () => clearTimeout(t);
+      }
       Animated.sequence([
         Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
         Animated.delay(2000),
@@ -22,7 +30,7 @@ export default function OfflineBanner() {
       ]).start(() => setShowSynced(false));
     }
     prevOnline.current = isOnline;
-  }, [isOnline, pendingCount, fadeAnim]);
+  }, [isOnline, pendingCount, fadeAnim, isReduceMotionEnabled]);
 
   // Nothing to show
   if (isOnline && !isSyncing && !showSynced && failedCount === 0) return null;

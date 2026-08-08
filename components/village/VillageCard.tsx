@@ -49,6 +49,7 @@ export function VillageCard({
         ]}
         onPress={onJoin}
         disabled={joining}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityRole="button"
         accessibilityLabel={joined ? `Leave ${village.name}` : `Join ${village.name}`}
         accessibilityState={{ disabled: joining, selected: joined }}

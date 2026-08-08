@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import UserAvatar from './UserAvatar';
 import { StoryGroup } from './StoriesBar';
+import { useAccessibility } from '../lib/AccessibilityContext';
 
 const { width: W, height: H } = Dimensions.get('window');
 const PHOTO_DURATION = 5000;
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export default function StoryViewer({ visible, groups, startGroupIndex, onClose }: Props) {
+  const { isReduceMotionEnabled } = useAccessibility();
   const [groupIdx, setGroupIdx] = useState(startGroupIndex);
   const [storyIdx, setStoryIdx] = useState(0);
   const progress = useRef(new Animated.Value(0)).current;
@@ -146,12 +148,19 @@ export default function StoryViewer({ visible, groups, startGroupIndex, onClose 
                 {i < storyIdx ? (
                   <View style={[s.progressFill, { width: segmentWidth }]} />
                 ) : i === storyIdx ? (
-                  <Animated.View style={[s.progressFill, {
-                    width: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, segmentWidth],
-                    }),
-                  }]} />
+                  isReduceMotionEnabled ? (
+                    // Reduce motion: the underlying timer (driving story advance) still
+                    // runs unchanged above — only the animated sweep is replaced with a
+                    // static "in progress" indicator so nothing visually moves.
+                    <View style={[s.progressFill, { width: segmentWidth * 0.5, opacity: 0.6 }]} />
+                  ) : (
+                    <Animated.View style={[s.progressFill, {
+                      width: progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, segmentWidth],
+                      }),
+                    }]} />
+                  )
                 ) : null}
               </View>
             ))}

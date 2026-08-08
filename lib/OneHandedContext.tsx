@@ -1,42 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AccessibilityProvider, useAccessibility } from './AccessibilityContext';
 
-const STORAGE_KEY = 'one_handed_mode_v1';
+/**
+ * One-handed mode now lives inside AccessibilityContext. This module is kept as a
+ * thin compatibility shim so existing consumers (App.tsx, OneHandedTray.tsx) don't
+ * need to change their imports.
+ */
+export { AccessibilityProvider as OneHandedProvider };
 
-interface OneHandedContextType {
-  isOneHanded: boolean;
-  toggleOneHanded: () => void;
-}
-
-const OneHandedContext = createContext<OneHandedContextType>({
-  isOneHanded: false,
-  toggleOneHanded: () => {},
-});
-
-export function useOneHanded(): OneHandedContextType {
-  return useContext(OneHandedContext);
-}
-
-export function OneHandedProvider({ children }: { children: React.ReactNode }) {
-  const [isOneHanded, setIsOneHanded] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(val => {
-      if (val === 'true') setIsOneHanded(true);
-    });
-  }, []);
-
-  const toggleOneHanded = useCallback(() => {
-    setIsOneHanded(prev => {
-      const next = !prev;
-      AsyncStorage.setItem(STORAGE_KEY, String(next));
-      return next;
-    });
-  }, []);
-
-  return (
-    <OneHandedContext.Provider value={{ isOneHanded, toggleOneHanded }}>
-      {children}
-    </OneHandedContext.Provider>
-  );
+export function useOneHanded(): { isOneHanded: boolean; toggleOneHanded: () => void } {
+  const { isOneHanded, toggleOneHanded } = useAccessibility();
+  return { isOneHanded, toggleOneHanded };
 }

@@ -48,6 +48,7 @@ import PaywallGate from '../components/PaywallGate';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor, MAX_FONT_SCALE } from '../lib/accessibility';
 import * as Sentry from '@sentry/react-native';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useBaby } from '../lib/babyContext';
@@ -282,7 +283,9 @@ function ColorCirclePicker({ label, options, value, onChange }: {
             <TouchableOpacity key={opt.value}
               style={[cp.circle, { backgroundColor: opt.color }, sel && cp.selected]}
               onPress={() => onChange(opt.value)} activeOpacity={0.8}
-              accessibilityRole="button" accessibilityLabel={opt.label}>
+              hitSlop={hitSlopFor(40)}
+              accessibilityRole="button" accessibilityLabel={opt.label}
+              accessibilityState={{ selected: sel }}>
               {sel && <Text style={cp.check}>✓</Text>}
             </TouchableOpacity>
           );
@@ -307,12 +310,14 @@ function Stepper({ label, value, onChange, min = 0, max = 10, accent }: {
       <View style={st.row}>
         <TouchableOpacity style={[st.btn, { borderColor: accent }]}
           onPress={() => onChange(Math.max(min, value - 1))} activeOpacity={0.7}
+          hitSlop={hitSlopFor(40)}
           accessibilityRole="button" accessibilityLabel={`Decrease ${label}`}>
           <Text style={[st.btnText, { color: accent }]}>−</Text>
         </TouchableOpacity>
-        <Text style={st.val}>{value}</Text>
+        <Text style={st.val} allowFontScaling maxFontSizeMultiplier={MAX_FONT_SCALE}>{value}</Text>
         <TouchableOpacity style={[st.btn, { borderColor: accent }]}
           onPress={() => onChange(Math.min(max, value + 1))} activeOpacity={0.7}
+          hitSlop={hitSlopFor(40)}
           accessibilityRole="button" accessibilityLabel={`Increase ${label}`}>
           <Text style={[st.btnText, { color: accent }]}>+</Text>
         </TouchableOpacity>
@@ -352,7 +357,15 @@ function TimerWidget({ timer, accent, useManual, onToggleManual, manualValue, on
         </View>
       ) : (
         <>
-          <Text style={[tw.display, { color: accent }]}>{formatTimer(timer.elapsed)}</Text>
+          <Text
+            style={[tw.display, { color: accent }]}
+            allowFontScaling
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={`Elapsed time ${formatTimer(timer.elapsed)}`}
+          >
+            {formatTimer(timer.elapsed)}
+          </Text>
           <View style={tw.btnRow}>
             {!timer.running && !timer.paused && (
               <TouchableOpacity style={[tw.timerBtn, { backgroundColor: accent }]} onPress={timer.start}
@@ -1721,6 +1734,7 @@ export default function Track({ route }: any) {
               onPress={() => scrollCategoryBy(-160)}
               style={styles.categoryArrowBtn}
               activeOpacity={0.7}
+              hitSlop={hitSlopFor(26)}
               accessibilityRole="button" accessibilityLabel="Scroll categories left"
             >
               <Text style={styles.categoryArrowText}>‹</Text>
@@ -1765,6 +1779,7 @@ export default function Track({ route }: any) {
                   style={[styles.categoryChip, category === 'All' && { backgroundColor: c.primary, borderColor: c.primary }]}
                   activeOpacity={0.75}
                   accessibilityRole="button" accessibilityLabel="Show all categories"
+                  accessibilityState={{ selected: category === 'All' }}
                 >
                   <Text style={[styles.categoryChipText, category === 'All' && styles.categoryChipTextActive]}>All</Text>
                 </TouchableOpacity>
@@ -1781,6 +1796,7 @@ export default function Track({ route }: any) {
                       ]}
                       activeOpacity={0.75}
                       accessibilityRole="button" accessibilityLabel={`Filter by ${group.category}`}
+                      accessibilityState={{ selected: active }}
                     >
                       <Text style={[styles.categoryChipText, { color: active ? '#fff' : col.text }]}>
                         {group.emoji} {group.category}
@@ -1804,6 +1820,7 @@ export default function Track({ route }: any) {
               onPress={() => scrollCategoryBy(160)}
               style={styles.categoryArrowBtn}
               activeOpacity={0.7}
+              hitSlop={hitSlopFor(26)}
               accessibilityRole="button" accessibilityLabel="Scroll categories right"
             >
               <Text style={styles.categoryArrowText}>›</Text>
@@ -1868,14 +1885,22 @@ export default function Track({ route }: any) {
         {/* Date navigation */}
         <View style={styles.dateNav}>
           <TouchableOpacity style={styles.dateNavBtn} onPress={goToPrevDay} activeOpacity={0.7}
+            hitSlop={hitSlopFor(36)}
             accessibilityRole="button" accessibilityLabel="Previous day">
             <Text style={styles.dateNavArrow}>‹</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.dateNavCenter} onPress={openCalendar} activeOpacity={0.7}
             accessibilityRole="button" accessibilityLabel="Open calendar to pick a date">
-            <Text style={styles.dateNavLabel}>{dateLabel} <Text style={styles.dateNavCal}>▾</Text></Text>
+            <Text
+              allowFontScaling
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
+              style={styles.dateNavLabel}
+            >
+              {dateLabel} <Text style={styles.dateNavCal}>▾</Text>
+            </Text>
             {!isToday && (
               <TouchableOpacity onPress={() => setSelectedDate(new Date())} activeOpacity={0.7}
+                hitSlop={hitSlopFor(20)}
                 accessibilityRole="button" accessibilityLabel="Back to today">
                 <Text style={styles.dateNavToday}>Back to today</Text>
               </TouchableOpacity>
@@ -1883,7 +1908,10 @@ export default function Track({ route }: any) {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.dateNavBtn, isToday && styles.dateNavBtnDisabled]}
             onPress={goToNextDay} activeOpacity={isToday ? 1 : 0.7}
-            accessibilityRole="button" accessibilityLabel="Next day">
+            disabled={isToday}
+            hitSlop={hitSlopFor(36)}
+            accessibilityRole="button" accessibilityLabel="Next day"
+            accessibilityState={{ disabled: isToday }}>
             <Text style={[styles.dateNavArrow, isToday && styles.dateNavArrowDisabled]}>›</Text>
           </TouchableOpacity>
         </View>
@@ -2671,17 +2699,23 @@ export default function Track({ route }: any) {
               {calMode === 'month' ? (
                 <>
                   <TouchableOpacity onPress={calPrevMonth} style={cal.headerBtn}
+                    hitSlop={hitSlopFor(36)}
                     accessibilityRole="button" accessibilityLabel="Previous month">
                     <Text style={cal.headerArrow}>‹</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setCalMode('year')} activeOpacity={0.7}
                     accessibilityRole="button" accessibilityLabel="Select year">
-                    <Text style={cal.headerTitle}>
+                    <Text
+                      allowFontScaling
+                      maxFontSizeMultiplier={MAX_FONT_SCALE}
+                      style={cal.headerTitle}
+                    >
                       {calViewDate.toLocaleDateString('en-US', { month: 'long' })}{' '}
                       <Text style={cal.headerYear}>{calYear}</Text>
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={calNextMonth} style={cal.headerBtn}
+                    hitSlop={hitSlopFor(36)}
                     accessibilityRole="button" accessibilityLabel="Next month">
                     <Text style={cal.headerArrow}>›</Text>
                   </TouchableOpacity>
@@ -2691,6 +2725,7 @@ export default function Track({ route }: any) {
                   <View style={cal.headerBtn} />
                   <Text style={cal.headerTitle}>Select Year</Text>
                   <TouchableOpacity onPress={() => setCalMode('month')} style={cal.headerBtn}
+                    hitSlop={hitSlopFor(36)}
                     accessibilityRole="button" accessibilityLabel="Close year picker">
                     <Text style={[cal.headerArrow, { fontSize: 14 }]}>✕</Text>
                   </TouchableOpacity>
@@ -2736,7 +2771,10 @@ export default function Track({ route }: any) {
                     return (
                       <TouchableOpacity key={day} style={cal.cell} disabled={isFut}
                         onPress={() => selectCalDay(day)} activeOpacity={0.75}
-                        accessibilityRole="button" accessibilityLabel={`${date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}${isSel ? ', selected' : ''}`}>
+                        hitSlop={hitSlopFor(40)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSel, disabled: isFut }}
+                        accessibilityLabel={`${date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}${isSel ? ', selected' : ''}`}>
                         <View style={[cal.dayCell, isSel && cal.dayCellSel, isTod && !isSel && cal.dayCellToday]}>
                           <Text style={[cal.dayText, isFut && cal.dayFuture, isSel && cal.daySel]}>{day}</Text>
                         </View>

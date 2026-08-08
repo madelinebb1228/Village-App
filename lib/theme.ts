@@ -1,4 +1,5 @@
 import { useColorScheme } from 'react-native';
+import { useAccessibility } from './AccessibilityContext';
 
 // ─── Reminder / stat sub-types ────────────────────────────────────────────────
 
@@ -284,9 +285,53 @@ export const darkColors: Colors = {
   nextBtn:              '#7BA7BC',
 };
 
+// ─── High contrast palettes (WCAG AAA-oriented overrides) ─────────────────────
+// Spreads the base palette and only overrides text/border/primary/reminder-text
+// tokens that need real contrast gains — everything else (card fills, accents
+// used purely decoratively) is left as-is.
+
+export const highContrastLightColors: Colors = {
+  ...lightColors,
+  textPrimary:   '#000000',
+  textSecondary: '#1A1A1A',
+  textMuted:     '#3D3D3D',
+  separator:     '#000000',
+  cardBorder:    '#000000',
+  inputBorder:   '#000000',
+  primary:       '#5B21B6',
+
+  reminderInfo:      { ...lightColors.reminderInfo,      text: '#0A1E4D', border: '#0A1E4D' },
+  reminderWarning:   { ...lightColors.reminderWarning,   text: '#4A2100', border: '#4A2100' },
+  reminderAlert:     { ...lightColors.reminderAlert,     text: '#4D0026', border: '#4D0026' },
+  reminderMilestone: { ...lightColors.reminderMilestone, text: '#022C1E', border: '#022C1E' },
+  reminderStreak:    { ...lightColors.reminderStreak,    text: '#2A0A5C', border: '#2A0A5C' },
+};
+
+export const highContrastDarkColors: Colors = {
+  ...darkColors,
+  textPrimary:   '#FFFFFF',
+  textSecondary: '#F0F0F0',
+  textMuted:     '#D0D0D0',
+  separator:     '#FFFFFF',
+  cardBorder:    '#FFFFFF',
+  inputBorder:   '#FFFFFF',
+  primary:       '#A9C9DC',
+
+  // Base dark palette reuses the same '#B8C8D8' text token across all five
+  // reminder types with no differentiation; give each its own near-white text.
+  reminderInfo:      { ...darkColors.reminderInfo,      text: '#DCEEFA' },
+  reminderWarning:   { ...darkColors.reminderWarning,   text: '#FBEBD4' },
+  reminderAlert:     { ...darkColors.reminderAlert,     text: '#FBE0EE' },
+  reminderMilestone: { ...darkColors.reminderMilestone, text: '#DFF6EA' },
+  reminderStreak:    { ...darkColors.reminderStreak,    text: '#EAE2FA' },
+};
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useColors(): Colors {
   const scheme = useColorScheme();
-  return scheme === 'dark' ? darkColors : lightColors;
+  const { settings } = useAccessibility();
+  const isDark = scheme === 'dark';
+  if (!settings.highContrast) return isDark ? darkColors : lightColors;
+  return isDark ? highContrastDarkColors : highContrastLightColors;
 }

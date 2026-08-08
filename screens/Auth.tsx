@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { useColors, Colors } from '../lib/theme'
+import { MAX_FONT_SCALE } from '../lib/accessibility'
 
 export default function Auth() {
   const [email, setEmail] = useState('')
@@ -119,12 +120,12 @@ export default function Auth() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.logo}>Parent Patch</Text>
+          <Text style={styles.logo} accessibilityRole="header" allowFontScaling maxFontSizeMultiplier={MAX_FONT_SCALE}>Parent Patch</Text>
           <Text style={styles.tagline}>Track · Connect · Support · Grow</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
+          <Text style={styles.title} accessibilityRole="header">{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
           <Text style={styles.subtitle}>
             {isSignUp ? 'Join Parent Patch today' : 'Sign in to continue'}
           </Text>
@@ -141,6 +142,7 @@ export default function Auth() {
                 autoCapitalize="words"
                 autoCorrect={false}
                 autoComplete="given-name"
+                accessibilityLabel="First name"
               />
             </View>
           )}
@@ -156,6 +158,7 @@ export default function Auth() {
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
+              accessibilityLabel="Email address"
             />
           </View>
 
@@ -170,11 +173,14 @@ export default function Auth() {
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                accessibilityLabel="Password"
               />
               <TouchableOpacity
                 style={styles.showPasswordBtn}
                 onPress={() => setShowPassword(v => !v)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
                 <Text style={styles.showPasswordText}>{showPassword ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
@@ -184,6 +190,9 @@ export default function Auth() {
                 style={styles.forgotPasswordBtn}
                 onPress={handleForgotPassword}
                 disabled={resetLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot password?"
+                accessibilityHint="Sends a password reset link to the email address entered above"
               >
                 <Text style={styles.forgotPasswordText}>
                   {resetLoading ? 'Sending...' : 'Forgot password?'}
@@ -204,6 +213,7 @@ export default function Auth() {
                   onChangeText={setDobMonth}
                   keyboardType="number-pad"
                   maxLength={2}
+                  accessibilityLabel="Birth month"
                 />
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
@@ -213,6 +223,7 @@ export default function Auth() {
                   onChangeText={setDobDay}
                   keyboardType="number-pad"
                   maxLength={2}
+                  accessibilityLabel="Birth day"
                 />
                 <TextInput
                   style={[styles.input, { flex: 2 }]}
@@ -222,6 +233,7 @@ export default function Auth() {
                   onChangeText={setDobYear}
                   keyboardType="number-pad"
                   maxLength={4}
+                  accessibilityLabel="Birth year"
                 />
               </View>
               <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 5 }}>
@@ -235,6 +247,9 @@ export default function Auth() {
             onPress={handleAuth}
             disabled={loading}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={isSignUp ? 'Create Account' : 'Sign In'}
+            accessibilityState={{ disabled: loading, busy: loading }}
           >
             {loading ? (
               <ActivityIndicator color={c.primaryText} />
@@ -249,6 +264,8 @@ export default function Auth() {
             style={styles.switchButton}
             onPress={() => { setIsSignUp(v => !v); setFirstName(''); }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
           >
             <Text style={styles.switchText}>
               {isSignUp ? 'Already have an account? ' : "Don't have an account? "}

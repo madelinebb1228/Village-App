@@ -36,6 +36,7 @@ import HandoffNotesSheet from '../components/HandoffNotesSheet';
 import { useBaby } from '../lib/babyContext';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor, MAX_FONT_SCALE } from '../lib/accessibility';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
 import StreakCard from '../components/StreakCard';
@@ -1482,7 +1483,9 @@ export default function HomeTab() {
               onPress={() => setShowNotifications(true)}
               activeOpacity={0.75}
               style={styles.notifBtn}
-              accessibilityRole="button" accessibilityLabel="Notifications"
+              hitSlop={hitSlopFor(40)}
+              accessibilityRole="button"
+              accessibilityLabel={unreadNotifCount > 0 ? `Notifications, ${unreadNotifCount} unread` : 'Notifications'}
             >
               <View style={styles.notifBtnClip}>
                 <Image source={require('../assets/notification-bell.png')} style={styles.notifBtnImage} resizeMode="cover" />
@@ -1504,7 +1507,9 @@ export default function HomeTab() {
               onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
               activeOpacity={0.75}
               style={styles.searchBtn}
-              accessibilityRole="button" accessibilityLabel="Messages"
+              hitSlop={hitSlopFor(40)}
+              accessibilityRole="button"
+              accessibilityLabel={unreadCount > 0 ? `Messages, ${unreadCount} unread` : 'Messages'}
             >
               <Text style={styles.searchBtnIcon}>💬</Text>
               {unreadCount > 0 && (
@@ -1524,6 +1529,7 @@ export default function HomeTab() {
               style={styles.notifBtn}
               onPress={() => setShowEvents(true)}
               activeOpacity={0.75}
+              hitSlop={hitSlopFor(40)}
               accessibilityRole="button" accessibilityLabel="Events"
             >
               <View style={styles.notifBtnClip}>
@@ -1534,6 +1540,7 @@ export default function HomeTab() {
               style={styles.notifBtn}
               onPress={() => setShowSearch(true)}
               activeOpacity={0.75}
+              hitSlop={hitSlopFor(40)}
               accessibilityRole="button" accessibilityLabel="Search"
             >
               <View style={styles.notifBtnClip}>
@@ -1619,6 +1626,8 @@ export default function HomeTab() {
             <View
               key={card.label}
               style={[styles.statCard, { borderTopColor: card.accent, backgroundColor: card.bg }]}
+              accessible
+              accessibilityLabel={loading ? `${card.label}, loading` : `${card.label}: ${card.value}`}
             >
               {loading ? (
                 <ActivityIndicator
@@ -1626,7 +1635,11 @@ export default function HomeTab() {
                   style={styles.statSpinner}
                 />
               ) : (
-                <Text style={[styles.statValue, { color: card.accent }]}>
+                <Text
+                  allowFontScaling
+                  maxFontSizeMultiplier={MAX_FONT_SCALE}
+                  style={[styles.statValue, { color: card.accent }]}
+                >
                   {card.value}
                 </Text>
               )}
@@ -1694,21 +1707,33 @@ export default function HomeTab() {
           <View style={styles.suppliesCard}>
             <Text style={styles.sectionTitle}>Supplies</Text>
             <View style={styles.suppliesGrid}>
-              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? c.supplyLowBg : c.cardHoney }]}>
+              <View
+                style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? c.supplyLowBg : c.cardHoney }]}
+                accessible
+                accessibilityLabel={`Formula: ${suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} ounces` : 'no data'}${suppliesSnap.formulaLow ? ', low' : ''}`}
+              >
                 <Text style={styles.supplyChipEmoji}>🍼</Text>
                 <Text style={[styles.supplyChipValue, suppliesSnap.formulaLow && styles.supplyChipValueLow]}>
                   {suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} oz` : '–'}
                 </Text>
                 <Text style={styles.supplyChipLabel}>Formula</Text>
               </View>
-              <View style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? c.supplyLowBg : c.cardSage }]}>
+              <View
+                style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? c.supplyLowBg : c.cardSage }]}
+                accessible
+                accessibilityLabel={`Diapers: ${suppliesSnap.diapers !== null ? Math.round(suppliesSnap.diapers) : 'no data'}${suppliesSnap.diapersLow ? ', low' : ''}`}
+              >
                 <Text style={styles.supplyChipEmoji}>👶</Text>
                 <Text style={[styles.supplyChipValue, suppliesSnap.diapersLow && styles.supplyChipValueLow]}>
                   {suppliesSnap.diapers !== null ? String(Math.round(suppliesSnap.diapers)) : '–'}
                 </Text>
                 <Text style={styles.supplyChipLabel}>Diapers</Text>
               </View>
-              <View style={[styles.supplyChip, { backgroundColor: c.cardBlush }]}>
+              <View
+                style={[styles.supplyChip, { backgroundColor: c.cardBlush }]}
+                accessible
+                accessibilityLabel={`Milk Stash: ${suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} ounces` : 'no data'}`}
+              >
                 <Text style={styles.supplyChipEmoji}>🤱</Text>
                 <Text style={styles.supplyChipValue}>
                   {suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} oz` : '–'}

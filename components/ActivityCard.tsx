@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useColors, Colors } from '../lib/theme';
+import { useAccessibility } from '../lib/AccessibilityContext';
+import { MAX_FONT_SCALE } from '../lib/accessibility';
 import {
   Activity, ActivityRating, primaryEmoji, cardPalette, difficultyLabel, ageRangeLabel,
   noMaterialsNeeded, ratingEmoji, ratingLabel,
@@ -17,6 +19,7 @@ export default function ActivityCard({ activity, onPress, triedRating }: Props) 
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const palette = cardPalette(activity, c);
+  const { settings } = useAccessibility();
   const materialsText = noMaterialsNeeded(activity.materials_needed)
     ? 'No materials needed'
     : `Needs: ${activity.materials_needed.join(', ')}`;
@@ -32,7 +35,14 @@ export default function ActivityCard({ activity, onPress, triedRating }: Props) 
       <View style={s.topRow}>
         <Text style={s.emoji}>{primaryEmoji(activity)}</Text>
         <View style={{ flex: 1 }}>
-          <Text style={s.title} numberOfLines={1}>{activity.title}</Text>
+          <Text
+            style={s.title}
+            numberOfLines={settings.largeText ? undefined : 1}
+            allowFontScaling
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
+          >
+            {activity.title}
+          </Text>
           <Text style={s.ageBadge}>{ageRangeLabel(activity.age_min_months, activity.age_max_months)}</Text>
         </View>
         {triedRating !== undefined && (
@@ -42,17 +52,31 @@ export default function ActivityCard({ activity, onPress, triedRating }: Props) 
         )}
       </View>
 
-      <Text style={s.description} numberOfLines={2}>{activity.description}</Text>
+      <Text
+        style={s.description}
+        numberOfLines={settings.largeText ? 3 : 2}
+        allowFontScaling
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+      >
+        {activity.description}
+      </Text>
 
       <View style={s.metaRow}>
         <Text style={s.metaText}>⏱ {activity.duration_minutes} min</Text>
         <Text style={s.metaDot}>·</Text>
         <Text style={s.metaText}>{difficultyLabel(activity.difficulty)}</Text>
         <Text style={s.metaDot}>·</Text>
-        <Text style={s.metaText}>{'💧'.repeat(activity.mess_level)}</Text>
+        <Text style={s.metaText} accessibilityLabel={`Mess level ${activity.mess_level} of 5`}>{'💧'.repeat(activity.mess_level)}</Text>
       </View>
 
-      <Text style={s.materials} numberOfLines={1}>{materialsText}</Text>
+      <Text
+        style={s.materials}
+        numberOfLines={settings.largeText ? undefined : 1}
+        allowFontScaling
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+      >
+        {materialsText}
+      </Text>
 
       <View style={s.footer}>
         <View style={s.tryBtn}>
