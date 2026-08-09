@@ -14,6 +14,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useColors, Colors } from '../lib/theme'
 import { MAX_FONT_SCALE } from '../lib/accessibility'
+import { track, identifyUser } from '../lib/analytics'
 import PrivacyPolicyScreen from './PrivacyPolicyScreen'
 import TermsOfServiceScreen from './TermsOfServiceScreen'
 
@@ -84,14 +85,18 @@ export default function Auth() {
             date_of_birth: dobIso,
           } as any, { onConflict: 'id' });
           if (profileError) console.warn('Profile name save failed:', profileError.message);
+          track('sign_up', { method: 'email' })
+          identifyUser(data.user.id, { email: data.user.email })
         }
         Alert.alert(
           'Check your email',
           'We sent you a confirmation link. Please verify your email before signing in.'
         )
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
+        track('sign_in', { method: 'email' })
+        if (data.user) identifyUser(data.user.id)
       }
     } catch (error: any) {
       Alert.alert('Authentication Error', error.message)

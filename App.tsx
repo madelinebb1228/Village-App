@@ -20,6 +20,8 @@ Sentry.init({
   attachScreenshot: true,
 });
 
+import { PostHogProvider } from 'posthog-react-native';
+
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import { useColors } from './lib/theme';
@@ -34,6 +36,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
+import { posthog, identifyUser, setUserProperties, resetAnalytics, restoreAnalyticsOptOut } from './lib/analytics';
 import { AppContext } from './lib/AppContext';
 import { SubscriptionProvider } from './lib/subscriptionContext';
 import { BabyProvider } from './lib/babyContext';
@@ -342,6 +345,7 @@ function App() {
   React.useEffect(() => {
     registerNotificationCategories();
     registerNotificationResponseListener();
+    restoreAnalyticsOptOut();
   }, []);
 
   React.useEffect(() => {
@@ -351,6 +355,7 @@ function App() {
       setSession(newSession);
       const uid = newSession?.user?.id ?? null;
       if (!uid) {
+        if (resolvedUserId.current) resetAnalytics();
         resolvedUserId.current = null;
         Sentry.setUser(null);
         if (!cancelled) setOnboardingDone(false);
@@ -360,6 +365,15 @@ function App() {
       if (uid === resolvedUserId.current) return;
       resolvedUserId.current = uid;
       Sentry.setUser({ id: uid });
+      identifyUser(uid, { email: newSession?.user?.email ?? undefined });
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('preferred_term')
+          .eq('id', uid)
+          .maybeSingle();
+        if (profile) setUserProperties({ role: (profile as any).preferred_term ?? undefined });
+      } catch {}
       const done = await resolveOnboardingDone(newSession);
       if (!cancelled) setOnboardingDone(done);
     }
@@ -395,6 +409,7 @@ function App() {
   }
 
   return (
+    <PostHogProvider client={posthog} autocapture={{ captureTouches: true, captureScreens: false }}>
     <SafeAreaProvider>
     <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour }}>
       <OneHandedProvider>
@@ -420,6 +435,7 @@ function App() {
       </OneHandedProvider>
     </AppContext.Provider>
     </SafeAreaProvider>
+    </PostHogProvider>
   );
 }
 

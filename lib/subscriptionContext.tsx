@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { Purchases, LOG_LEVEL } from './purchases';
 import PaywallModal from '../components/PaywallModal';
+import { track } from './analytics';
 
 const RC_API_KEY = 'test_aKoxsimzJRFcHMqvzVjlVzGjkZX';
 const ENTITLEMENT = 'premium';
@@ -24,7 +25,7 @@ type SubscriptionContextType = {
   setFreeTrackerPicks: (trackers: string[]) => Promise<void>;
   purchaseSubscription: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
-  openPaywall: () => void;
+  openPaywall: (trigger?: string) => void;
   closePaywall: () => void;
 };
 
@@ -44,6 +45,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true);
   const [freeTrackerPicks, setFreeTrackerPicksState] = useState<string[]>([]);
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [paywallTrigger, setPaywallTrigger] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const init = async () => {
@@ -115,14 +117,17 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       const { customerInfo } = await (Purchases.purchasePackage(pkg) as any);
       const subscribed = !!customerInfo.entitlements.active[ENTITLEMENT];
       setIsSubscribed(subscribed);
-      if (subscribed) setPaywallVisible(false);
+      if (subscribed) {
+        setPaywallVisible(false);
+        track('subscription_started', { plan: 'monthly', price: 5.99, trigger: paywallTrigger });
+      }
       return subscribed;
     } catch (e: any) {
       if (e?.userCancelled) return false;
       Alert.alert('Purchase Failed', e?.message || 'Something went wrong. Please try again.');
       return false;
     }
-  }, []);
+  }, [paywallTrigger]);
 
   const restorePurchases = useCallback(async (): Promise<boolean> => {
     try {
@@ -150,12 +155,13 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setFreeTrackerPicks,
       purchaseSubscription,
       restorePurchases,
-      openPaywall: () => setPaywallVisible(true),
+      openPaywall: (trigger?: string) => { setPaywallTrigger(trigger); setPaywallVisible(true); },
       closePaywall: () => setPaywallVisible(false),
     }}>
       {children}
       <PaywallModal
         visible={paywallVisible}
+        trigger={paywallTrigger}
         onClose={() => setPaywallVisible(false)}
         onSubscribe={purchaseSubscription}
         onRestore={restorePurchases}

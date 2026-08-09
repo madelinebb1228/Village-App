@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors, Colors } from '../lib/theme';
+import { track } from '../lib/analytics';
 
 const FEATURES = [
   { emoji: '🌙', label: 'Sleep tracker + Wake Windows' },
@@ -20,17 +21,22 @@ const FEATURES = [
 
 type Props = {
   visible: boolean;
+  trigger?: string;
   onClose: () => void;
   onSubscribe: () => Promise<boolean>;
   onRestore: () => Promise<boolean>;
 };
 
-export default function PaywallModal({ visible, onClose, onSubscribe, onRestore }: Props) {
+export default function PaywallModal({ visible, trigger, onClose, onSubscribe, onRestore }: Props) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const s = styles(c, insets);
   const [subscribing, setSubscribing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => {
+    if (visible) track('paywall_viewed', { trigger: trigger ?? 'unknown' });
+  }, [visible, trigger]);
 
   async function handleSubscribe() {
     setSubscribing(true);

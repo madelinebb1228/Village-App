@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useColors, Colors } from '../lib/theme';
+import { screenView } from '../lib/analytics';
 import QAScreen from './QAScreen';
 import LocalServicesScreen from './LocalServicesScreen';
 import BabyNameFinder from './BabyNameFinder';
@@ -130,6 +131,8 @@ export default function ResourcesTab({ route }: any) {
   React.useEffect(() => {
     if (initialResourceId) setSelected(initialResourceId);
   }, [initialResourceId]);
+
+  useEffect(() => { screenView('Resources'); }, []);
 
   const filteredResources = useMemo(() => {
     const q = query.trim().toLowerCase();

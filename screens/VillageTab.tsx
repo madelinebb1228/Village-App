@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import { QUIZ_QUESTIONS } from '../lib/quizData';
 import { suggestVillages, getNextVisibleStep, getPrevVisibleStep } from '../lib/quizLogic';
 import { VillageCard } from '../components/village/VillageCard';
 import { LocationPicker } from '../components/village/LocationPicker';
+import { track, screenView } from '../lib/analytics';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,8 @@ export default function VillageTab() {
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
+  useEffect(() => { screenView('Patch'); }, []);
+
   function closeQuiz() {
     setShowQuiz(false);
     setQuizStep(0);
@@ -109,7 +112,7 @@ export default function VillageTab() {
     if (!user) return;
 
     if (!joinedIds.has(villageId) && !isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT) {
-      openPaywall();
+      openPaywall('village_limit');
       return;
     }
 
@@ -117,9 +120,11 @@ export default function VillageTab() {
     if (joinedIds.has(villageId)) {
       await supabase.from('user_villages').delete().eq('user_id', user.id).eq('village_id', villageId);
       setJoinedIds(prev => { const next = new Set(prev); next.delete(villageId); return next; });
+      track('patch_left', { patch_id: villageId });
     } else {
       await supabase.from('user_villages').insert({ user_id: user.id, village_id: villageId });
       setJoinedIds(prev => new Set([...prev, villageId]));
+      track('patch_joined', { patch_id: villageId });
     }
     setJoining(null);
   }
@@ -197,6 +202,7 @@ export default function VillageTab() {
         limited.map(village_id => ({ user_id: user.id, village_id }))
       );
       setJoinedIds(prev => new Set([...prev, ...limited]));
+      limited.forEach(patch_id => track('patch_joined', { patch_id, source: 'quiz' }));
     }
     closeQuiz();
     const skipped = toJoin.length - limited.length;
@@ -205,7 +211,7 @@ export default function VillageTab() {
       // On web, RN's multi-button Alert doesn't fire onPress callbacks —
       // the browser confirm() dialog is the reliable alternative.
       if (Platform.OS === 'web') {
-        if (window.confirm(`${message} Open upgrade screen?`)) openPaywall();
+        if (window.confirm(`${message} Open upgrade screen?`)) openPaywall('quiz_suggestions');
         return;
       }
       Alert.alert(
@@ -213,7 +219,7 @@ export default function VillageTab() {
         message,
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => openPaywall() },
+          { text: 'Upgrade', onPress: () => openPaywall('quiz_suggestions') },
         ]
       );
     }
@@ -539,7 +545,7 @@ export default function VillageTab() {
             {!isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT && (
               <TouchableOpacity
                 style={s.limitBanner}
-                onPress={openPaywall}
+                onPress={() => openPaywall('village_limit')}
                 activeOpacity={0.8}
                 accessibilityRole="button"
                 accessibilityLabel={`You've joined ${FREE_VILLAGE_LIMIT} free patches. Upgrade to join more.`}

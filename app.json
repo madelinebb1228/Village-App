@@ -48,7 +48,9 @@
         }
       ],
       "expo-task-manager",
-      "@sentry/react-native"
+      "@sentry/react-native",
+      "expo-localization",
+      "posthog-react-native/expo"
     ]
   }
 }

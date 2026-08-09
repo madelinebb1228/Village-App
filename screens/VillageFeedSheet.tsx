@@ -22,6 +22,7 @@ import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
+import { track } from '../lib/analytics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -266,6 +267,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
     const { error } = await supabase.from('posts').insert(payload);
     if (error) { Alert.alert('Could not post', error.message); return; }
 
+    track('post_created', { patch_id: village.id, has_image: !!imageUrl });
     setPostContent('');
     setPendingPostImageUri(null);
     setPostType('text');

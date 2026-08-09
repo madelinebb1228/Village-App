@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
 import { getRange, getSleepGoal, scheduleWindDownNow, handleNapEnded, scheduleWakePredictionNow, cancelWakePrediction } from '../lib/napSchedule';
 import { notifyHandoff } from '../lib/partnerCoordination';
+import { track } from '../lib/analytics';
 
 type Mode = 'idle' | 'awake' | 'sleeping' | 'quality' | 'manual';
 type SleepType = 'nap' | 'night';
@@ -397,6 +398,7 @@ export default function SleepTracker({
         });
         activeSleepIdRef.current = null;
       }
+      track('sleep_logged', { duration_minutes: durationMinutes, sleep_type: sleepType });
       setNotes('');
       await loadTodayLogs();
       startAwake();
@@ -444,6 +446,7 @@ export default function SleepTracker({
         ...(manualQuality ? { quality: manualQuality } : {}),
         ...(manualNotes.trim() ? { notes: manualNotes.trim() } : {}),
       });
+      track('sleep_logged', { duration_minutes: durationMinutes, sleep_type: manualType });
       await loadTodayLogs();
       setManualStart(''); setManualEnd(''); setManualNotes('');
       setManualQuality(null); setManualYesterday(false);

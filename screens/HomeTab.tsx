@@ -59,6 +59,7 @@ import PaywallGate from '../components/PaywallGate';
 import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
 import TipOfTheDayCard from '../components/TipOfTheDayCard';
+import { track, screenView } from '../lib/analytics';
 
 function formatUpcomingWhen(startsAt: string, allDay: boolean): string {
   const d = new Date(startsAt);
@@ -177,6 +178,8 @@ export default function HomeTab() {
     if (!activeBaby?.id) { setLatestHandoffNote(null); return; }
     fetchLatestHandoffNote(activeBaby.id).then(setLatestHandoffNote);
   }, [activeBaby?.id]));
+
+  useEffect(() => { screenView('HomeTab'); }, []);
 
   // App tour (coach marks)
   const { tourRequestId } = useContext(AppContext);
@@ -975,6 +978,7 @@ export default function HomeTab() {
     if (newPost && postContent.trim()) {
       sendMentionNotifications(postContent.trim(), newPost.id, user.id);
     }
+    track('post_created', { post_type: postType, has_image: !!imageUrl || !!videoUrl });
     setPostContent('');
     setPendingPostImageUri(null);
     setPendingPostVideoUri(null);

@@ -53,6 +53,7 @@ import * as Sentry from '@sentry/react-native';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useBaby } from '../lib/babyContext';
 import { useSubscription } from '../lib/subscriptionContext';
+import { track, screenView } from '../lib/analytics';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -1026,6 +1027,8 @@ export default function Track({ route }: any) {
     });
   }, []);
 
+  useEffect(() => { screenView('Track'); }, []);
+
   // Source the current baby from the shared BabyContext (multi-child +
   // multi-caregiver aware) rather than an independent single-baby query —
   // every tracker below reads babyId/babyName/etc. from this screen's state.
@@ -1271,6 +1274,13 @@ export default function Track({ route }: any) {
         level: 'info',
         data: { feed_type: feedType },
       });
+      if (!editingId) {
+        track('feeding_logged', {
+          feeding_type: feedType,
+          amount_oz: bmOz + fmOz + singleOz || undefined,
+          time_of_day: new Date().getHours(),
+        });
+      }
 
       feedTimer.stop();
       leftBreastTimer.stop(); rightBreastTimer.stop(); setActiveBreastSide(null);
@@ -1330,6 +1340,7 @@ export default function Track({ route }: any) {
         level: 'info',
         data: { diaper_type: diaperType },
       });
+      if (!editingId) track('diaper_logged', { type: diaperType });
 
       setActiveModal(null);
       setEditingId(null);
@@ -2200,7 +2211,7 @@ export default function Track({ route }: any) {
             <Text style={styles.premiumBody}>
               Unlock all trackers, your journal & calendar, unlimited patches, community sharing, and more — for $5.99/mo.
             </Text>
-            <TouchableOpacity style={styles.premiumBtn} onPress={openPaywall} activeOpacity={0.85}
+            <TouchableOpacity style={styles.premiumBtn} onPress={() => openPaywall('tracker_limit')} activeOpacity={0.85}
               accessibilityRole="button" accessibilityLabel="Learn more and upgrade to Patch Premium">
               <Text style={styles.premiumBtnText}>Learn More & Upgrade</Text>
             </TouchableOpacity>

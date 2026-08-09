@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 import { PARENT_TERM_OPTIONS, CUSTOM_TERM_ID, FAMILY_STRUCTURE_OPTIONS } from '../lib/inclusiveLanguage';
+import { track, screenView } from '../lib/analytics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -245,6 +246,8 @@ export default function Profile() {
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
+  useEffect(() => { screenView('Profile'); }, []);
+
   function startEdit() {
     setEditUsername(profile?.username ?? '');
     setEditDisplayName(profile?.display_name ?? '');
@@ -402,6 +405,7 @@ export default function Profile() {
         if (insertErr) throw insertErr;
       }
 
+      track('profile_updated', { has_avatar: !!avatarUrl, has_header: !!headerUrl });
       await loadAll();
       setEditing(false);
       setPendingAvatarUri(null);

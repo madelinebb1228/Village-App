@@ -924,7 +924,7 @@ function Article({
   };
 
   const handleShareTip = () => {
-    if (!isSubscribed) { openPaywall(); return; }
+    if (!isSubscribed) { openPaywall('breastfeeding_101'); return; }
     setShowInput(true);
   };
 
@@ -1159,7 +1159,7 @@ function CommunityRecipes() {
   };
 
   const handleAdd = () => {
-    if (!isSubscribed) { openPaywall(); return; }
+    if (!isSubscribed) { openPaywall('breastfeeding_101'); return; }
     setShowForm(true);
   };
 

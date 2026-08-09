@@ -25,6 +25,7 @@ import ContentBlockedModal, { ContentType } from '../components/ContentBlockedMo
 import { useSubscription, MAX_FREE_TRACKER_PICKS } from '../lib/subscriptionContext';
 import { PREMIUM_TRACKERS } from '../lib/premiumTrackers';
 import { PARENT_TERM_OPTIONS, CUSTOM_TERM_ID } from '../lib/inclusiveLanguage';
+import { track } from '../lib/analytics';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,12 +70,6 @@ async function uploadPhoto(uri: string, userId: string): Promise<string | null> 
     console.warn('Photo upload failed:', err.message);
     return null;
   }
-}
-
-// Local breadcrumb until a real analytics SDK is wired up — no PostHog/Segment
-// exists in this codebase yet, so these events currently only reach the dev console.
-function track(event: string, props?: Record<string, any>) {
-  if (__DEV__) console.log('[analytics]', event, props ?? {});
 }
 
 // ─── Option data ──────────────────────────────────────────────────────────────
@@ -937,7 +932,12 @@ export default function Onboarding() {
       console.warn('Onboarding DB save error (non-blocking):', err.message);
     }
 
-    track('onboarding_completed', {});
+    track('onboarding_completed', {
+      role: preferredTerm,
+      feeding_methods: feedingMethods,
+      topics: helpfulTopics,
+      patches_joined: villages.length,
+    });
     if (userId) await AsyncStorage.removeItem(progressKey(userId));
     await markOnboardingComplete();
     setSaving(false);

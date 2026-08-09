@@ -12,6 +12,7 @@ import { useColors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
 import { generateAndShareReport } from '../lib/exportReport';
 import { exportAndShareUserData } from '../lib/exportUserData';
+import { track, setAnalyticsEnabled, ANALYTICS_ENABLED_KEY } from '../lib/analytics';
 import ManageBabiesSheet from '../components/ManageBabiesSheet';
 import PaywallModal from '../components/PaywallModal';
 import PrepareForVisit from './PrepareForVisit';
@@ -689,6 +690,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   const [showManageBabies, setShowManageBabies] = useState(false);
   const [showPrepareVisit, setShowPrepareVisit] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
+  const [analyticsEnabled, setAnalyticsEnabledState] = useState(true);
 
   async function handleExportReport() {
     setExportingReport(true);
@@ -710,6 +712,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - 90);
       await generateAndShareReport((baby as any).id, (baby as any).name ?? 'Baby', { startDate, endDate });
+      track('data_exported', { type: 'tracker_summary' });
     } catch (err: any) {
       Alert.alert('Export Failed', err?.message ?? 'Could not generate the summary. Please try again.');
     } finally {
@@ -721,6 +724,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
     setExportingData(true);
     try {
       await exportAndShareUserData();
+      track('data_exported', { type: 'full_account' });
     } catch (err: any) {
       Alert.alert('Export Failed', err?.message ?? 'Could not export your data. Please try again.');
     } finally {
@@ -731,12 +735,14 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
   const loadPrefs = useCallback(async () => {
     setLoadingPrefs(true);
     try {
-      const [notifRaw, { data: { user } }] = await Promise.all([
+      const [notifRaw, analyticsRaw, { data: { user } }] = await Promise.all([
         AsyncStorage.getItem('@village_notif_prefs'),
+        AsyncStorage.getItem(ANALYTICS_ENABLED_KEY),
         supabase.auth.getUser(),
       ]);
 
       if (notifRaw) setNotifs(JSON.parse(notifRaw));
+      setAnalyticsEnabledState(analyticsRaw !== 'false');
 
       if (user) {
         const { data: profile } = await supabase
@@ -993,6 +999,31 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
             sublabel="Manage accounts you've blocked"
             onPress={() => setView('blocked')}
           />
+          <SettingsRow
+            icon="📊"
+            label="Share Analytics"
+            sublabel="Help improve Parent Patch by sharing anonymous usage data"
+            chevron={false}
+            toggleValue={analyticsEnabled}
+            onPress={() => {
+              const v = !analyticsEnabled;
+              setAnalyticsEnabledState(v);
+              setAnalyticsEnabled(v);
+            }}
+            right={
+              <Switch
+                value={analyticsEnabled}
+                onValueChange={v => {
+                  setAnalyticsEnabledState(v);
+                  setAnalyticsEnabled(v);
+                }}
+                trackColor={{ false: c.separator, true: c.sage }}
+                thumbColor="#fff"
+                importantForAccessibility="no"
+                accessibilityElementsHidden
+              />
+            }
+          />
         </View>
 
         {/* ── Notifications ───────────────────────────────────────── */}
@@ -1199,6 +1230,7 @@ export default function SettingsScreen({ onBack, onTakeTour }: { onBack: () => v
       <PrepareForVisit visible={showPrepareVisit} onClose={() => setShowPrepareVisit(false)} />
       <PaywallModal
         visible={showPremium}
+        trigger="settings"
         onClose={() => setShowPremium(false)}
         onSubscribe={async () => {
           const subscribed = await purchaseSubscription();

@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { useSubscription } from '../lib/subscriptionContext';
+import { screenView } from '../lib/analytics';
 import SharedCalendar from './SharedCalendar';
 
 export default function CalendarTab() {
@@ -13,6 +14,8 @@ export default function CalendarTab() {
   const { isSubscribed, openPaywall } = useSubscription();
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => { screenView('Calendar'); }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -53,7 +56,7 @@ export default function CalendarTab() {
             <Text style={s.premiumBody}>
               Share schedules, appointments, and reminders with your co-parent or support circle — everyone stays on the same page.
             </Text>
-            <TouchableOpacity style={s.premiumBtn} onPress={openPaywall} activeOpacity={0.85}
+            <TouchableOpacity style={s.premiumBtn} onPress={() => openPaywall('calendar')} activeOpacity={0.85}
               accessibilityRole="button" accessibilityLabel="Unlock calendar">
               <Text style={s.premiumBtnText}>Unlock Calendar</Text>
             </TouchableOpacity>
