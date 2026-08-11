@@ -119,6 +119,7 @@ export default function ResourcesTab({ route }: any) {
   const s = styles(c);
   const initialResourceId = route?.params?.initialResourceId as ResourceId | undefined;
   const [selected, setSelected] = useState<ResourceId | null>(initialResourceId ?? null);
+  const [pendingTermId, setPendingTermId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
 
@@ -164,7 +165,13 @@ export default function ResourcesTab({ route }: any) {
   }
 
   if (selected === 'parenting_az') {
-    return <ParentingAZ onBack={() => setSelected(null)} />;
+    return (
+      <ParentingAZ
+        onBack={() => setSelected(null)}
+        initialTermId={pendingTermId}
+        onTermConsumed={() => setPendingTermId(null)}
+      />
+    );
   }
 
   if (selected === 'qa') {
@@ -208,7 +215,15 @@ export default function ResourcesTab({ route }: any) {
   }
 
   if (selected === 'articles') {
-    return <ArticlesScreen onBack={() => setSelected(null)} />;
+    return (
+      <ArticlesScreen
+        onBack={() => setSelected(null)}
+        onTermPress={(termId) => {
+          setPendingTermId(termId);
+          setSelected('parenting_az');
+        }}
+      />
+    );
   }
 
   if (selected === 'top100') {

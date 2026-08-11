@@ -11,6 +11,7 @@ export const posthog = new PostHog(
     host: 'https://us.i.posthog.com',
     captureAppLifecycleEvents: true,
     enableSessionReplay: true,
+    errorTracking: { autocaptureExceptions: true },
   }
 );
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import * as Sentry from '@sentry/react-native';
+import { posthog } from '../lib/analytics';
 
 interface Props {
   children: React.ReactNode;
@@ -24,6 +25,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     const eventId = Sentry.captureException(error, {
       contexts: { react: { componentStack: errorInfo.componentStack } },
     });
+    posthog?.captureException(error, { componentStack: errorInfo.componentStack });
     this.setState({ eventId });
   }
 
