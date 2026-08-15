@@ -62,6 +62,7 @@ interface MovementLog {
   activity_type: string;
   duration_minutes: number | null;
   intensity: string | null;
+  calories_burned: number | null;
   notes: string | null;
   logged_at: string;
 }
@@ -80,6 +81,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
   const [activity,  setActivity]  = useState('walk');
   const [duration,  setDuration]  = useState('');
   const [intensity, setIntensity] = useState('gentle');
+  const [caloriesBurned, setCaloriesBurned] = useState('');
   const [notes,     setNotes]     = useState('');
 
   const load = useCallback(async () => {
@@ -114,6 +116,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
     setActivity(existing?.activity_type ?? 'walk');
     setDuration(existing?.duration_minutes != null ? String(existing.duration_minutes) : '');
     setIntensity(existing?.intensity ?? 'gentle');
+    setCaloriesBurned(existing?.calories_burned != null ? String(existing.calories_burned) : '');
     setNotes(existing?.notes ?? '');
     setAdding(true);
   }
@@ -125,6 +128,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
       activity_type: activity,
       duration_minutes: parseInt(duration || '0') || null,
       intensity,
+      calories_burned: parseFloat(caloriesBurned) || null,
       notes: notes.trim() || null,
     };
     if (editingId) {
@@ -135,7 +139,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
     setSaving(false);
     setAdding(false);
     setEditingId(null);
-    setActivity('walk'); setDuration(''); setIntensity('gentle'); setNotes('');
+    setActivity('walk'); setDuration(''); setIntensity('gentle'); setCaloriesBurned(''); setNotes('');
     load();
   }
 
@@ -201,6 +205,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 <Text style={s.entryEmoji}>{act?.emoji ?? '✨'}</Text>
                 <Text style={s.entryName}>{act?.label ?? l.activity_type}</Text>
                 {l.duration_minutes ? <Text style={s.entryDur}>{l.duration_minutes} min</Text> : null}
+                {l.calories_burned ? <Text style={s.entryDur}>{l.calories_burned} kcal</Text> : null}
                 {l.intensity ? <Text style={s.entryIntensity}>{INTENSITY.find(i => i.value === l.intensity)?.label}</Text> : null}
                 <Text style={s.entryTime}>{fmtTime(l.logged_at)}</Text>
                 <TouchableOpacity onPress={() => openEditor(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -263,6 +268,18 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                 ))}
               </View>
 
+              <Text style={s.formLabel}>Calories burned <Text style={s.optional}>(optional — auto-estimated if left blank)</Text></Text>
+              <TextInput
+                style={s.durInput}
+                placeholder="e.g. 150"
+                placeholderTextColor={c.textMuted}
+                keyboardType="number-pad"
+                value={caloriesBurned}
+                onChangeText={setCaloriesBurned}
+                maxLength={4}
+                accessibilityLabel="Calories burned"
+              />
+
               <Text style={s.formLabel}>Notes <Text style={s.optional}>(optional)</Text></Text>
               <TextInput style={s.notesInput} placeholder="How did it feel?"
                 placeholderTextColor={c.textMuted} value={notes} onChangeText={setNotes} maxLength={200} />
@@ -294,6 +311,7 @@ export default function MovementTracker({ userId }: { userId: string | null }) {
                       <Text style={s.histMeta}>
                         {fmtDate(l.logged_at)}
                         {l.duration_minutes ? ` · ${l.duration_minutes} min` : ''}
+                        {l.calories_burned ? ` · ${l.calories_burned} kcal` : ''}
                         {l.intensity ? ` · ${INTENSITY.find(i => i.value === l.intensity)?.label}` : ''}
                       </Text>
                     </View>

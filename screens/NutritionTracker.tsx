@@ -1,16 +1,23 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, Modal,
-  Alert, ActivityIndicator, Image, StyleSheet,
+  Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
-import { lookupBarcode, ProductInfo } from '../lib/barcodeProductLookup';
+import FoodPickerModal, { PerUnitNutrition, RecentMealOption } from '../components/FoodPickerModal';
+import NutritionTrendsChart from '../components/NutritionTrendsChart';
+import { estimateCaloriesBurned, bfCalorieBonus } from '../lib/calorieBurn';
+import { getPregnancyProgress, getWeekInfo } from '../lib/pregnancyData';
+import {
+  PREGNANCY_CALORIE_BONUS, PREGNANCY_PROTEIN_BONUS_G, PREGNANCY_WATER_BONUS_OZ,
+  CAFFEINE_LIMIT_MG_PREGNANT, folateGoalMcg, ironGoalMg,
+} from '../lib/pregnancyNutrition';
+import { autoFormatDate, parseDisplayDate, toDisplayDate } from '../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,10 +32,14 @@ interface NutritionProfile {
   calorie_goal: number;
   water_goal_oz: number;
   protein_goal_g: number | null;
+  is_pregnant: boolean;
+  due_date: string | null;
 }
 
 interface NutritionLog {
   id: string;
+  user_id: string;
+  log_date: string;
   meal_type: string;
   description: string | null;
   calories: number | null;
@@ -36,15 +47,18 @@ interface NutritionLog {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  sugar_g: number | null;
+  fiber_g: number | null;
+  sodium_mg: number | null;
+  cholesterol_mg: number | null;
+  folate_mcg: number | null;
+  iron_mg: number | null;
+  caffeine_mg: number | null;
+  serving_qty: number | null;
+  serving_label: string | null;
+  data_source: string | null;
+  barcode: string | null;
   created_at: string;
-}
-
-interface RecentMeal {
-  description: string;
-  calories: number | null;
-  protein_g: number | null;
-  carbs_g: number | null;
-  fat_g: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -76,6 +90,12 @@ const MEAL_EMOJIS: Record<string, string> = {
 };
 
 const COLLAPSED_KEY = 'nutrition_collapsed';
+
+// Static daily reference values (not personalized) for the micronutrient bars —
+// sodium/cholesterol are upper limits, fiber is a target to reach.
+const SODIUM_DV_MG = 2300;
+const FIBER_DV_G = 28;
+const CHOLESTEROL_DV_MG = 300;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,8 +129,7 @@ function calcGoals(
   const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
   const factors: Record<string, number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725 };
   let tdee = bmr * (factors[activity] ?? 1.375);
-  if (bfType === 'exclusive') tdee += 500;
-  else if (bfType === 'combo') tdee += 300;
+  tdee += bfCalorieBonus(bfType);
   let calorieGoal: number;
   if (goal === 'lose') calorieGoal = Math.max(1800, Math.round(tdee - 400));
   else if (goal === 'gain') calorieGoal = Math.round(tdee + 250);
@@ -135,6 +154,17 @@ function ftInToCm(ft: number, inches: number): number {
 function cmToFtIn(cm: number): { ft: number; inches: number } {
   const totalInches = Math.round(cm / 2.54);
   return { ft: Math.floor(totalInches / 12), inches: totalInches % 12 };
+}
+
+function round1(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
+// Used when deriving PER-UNIT values by dividing a stored total by quantity
+// (e.g. a 100g entry) — round1's 1-decimal precision can collapse small
+// per-gram values to 0, which would silently zero them out on re-save.
+function round4(v: number): number {
+  return Math.round(v * 10000) / 10000;
 }
 
 // ─── Style helpers ─────────────────────────────────────────────────────────────
@@ -184,7 +214,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const [profile, setProfile]   = useState<NutritionProfile | null>(null);
   const [logs, setLogs]         = useState<NutritionLog[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [recentMeals, setRecentMeals] = useState<RecentMeal[]>([]);
+  const [recentMeals, setRecentMeals] = useState<RecentMealOption[]>([]);
 
   // Date navigation
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -201,6 +231,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const [age, setAge]             = useState('');
   const [activity, setActivity]   = useState('');
   const [bfType, setBfType]       = useState('');
+  const [pregnant, setPregnant]   = useState(false);
+  const [dueDateInput, setDueDateInput] = useState('');
   const [goalChoice, setGoalChoice] = useState('');
   const [saving, setSaving]       = useState(false);
 
@@ -209,27 +241,42 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   const [waterGoalInput, setWaterGoalInput]     = useState('');
   const [savingWaterGoal, setSavingWaterGoal]   = useState(false);
 
-  // Add/edit meal modal
+  // Add/edit meal modal — per-unit nutrition + quantity model
   const [showMealModal, setShowMealModal] = useState(false);
   const [editingLog, setEditingLog]       = useState<NutritionLog | null>(null);
   const [mealType, setMealType]           = useState<MealType>('breakfast');
   const [mealDesc, setMealDesc]           = useState('');
-  const [mealCal, setMealCal]             = useState('');
-  const [mealProtein, setMealProtein]     = useState('');
-  const [mealCarbs, setMealCarbs]         = useState('');
-  const [mealFat, setMealFat]             = useState('');
+  const [mealPerCal, setMealPerCal]               = useState('');
+  const [mealPerProtein, setMealPerProtein]       = useState('');
+  const [mealPerCarbs, setMealPerCarbs]           = useState('');
+  const [mealPerFat, setMealPerFat]               = useState('');
+  const [mealPerSugar, setMealPerSugar]           = useState('');
+  const [mealPerFiber, setMealPerFiber]           = useState('');
+  const [mealPerSodium, setMealPerSodium]         = useState('');
+  const [mealPerCholesterol, setMealPerCholesterol] = useState('');
+  const [mealPerFolate, setMealPerFolate]         = useState('');
+  const [mealPerIron, setMealPerIron]             = useState('');
+  const [mealPerCaffeine, setMealPerCaffeine]     = useState('');
+  const [mealQty, setMealQty]             = useState('1');
+  const [mealLabel, setMealLabel]         = useState('serving');
+  const [mealDataSource, setMealDataSource] = useState<string | null>(null);
+  const [mealBarcode, setMealBarcode]     = useState<string | null>(null);
+  const [showMealMicros, setShowMealMicros] = useState(false);
+  const [saveMealToMyFoods, setSaveMealToMyFoods] = useState(false);
   const [addingMeal, setAddingMeal]       = useState(false);
+  const [showFoodPicker, setShowFoodPicker] = useState(false);
 
   const [addingWater, setAddingWater]   = useState(false);
   const [customWater, setCustomWater]   = useState('');
 
-  // Barcode scanner
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [showScanner, setShowScanner]       = useState(false);
-  const [scannerLocked, setScannerLocked]   = useState(false);
-  const [lookingUp, setLookingUp]           = useState(false);
-  const [scannedProduct, setScannedProduct] = useState<ProductInfo | null>(null);
-  const [scanQuantity, setScanQuantity]     = useState('1');
+  // Copy previous day's meals
+  const [copyingYesterday, setCopyingYesterday] = useState(false);
+
+  // Weekly trends
+  const [showTrends, setShowTrends] = useState(false);
+
+  // Exercise calorie burn (from the Movement tracker's mom_movement_logs)
+  const [exerciseBurn, setExerciseBurn] = useState(0);
 
   // ─── Persisted collapse state ───────────────────────────────────────────────
 
@@ -278,15 +325,15 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     if (!userId) return;
     const { data } = await supabase
       .from('nutrition_logs')
-      .select('description, calories, protein_g, carbs_g, fat_g')
+      .select('description, calories, protein_g, carbs_g, fat_g, sugar_g, fiber_g, sodium_mg, cholesterol_mg, folate_mcg, iron_mg, caffeine_mg, serving_qty, serving_label')
       .eq('user_id', userId)
       .neq('meal_type', 'water')
       .not('description', 'is', null)
       .order('created_at', { ascending: false })
       .limit(30);
     const seen = new Set<string>();
-    const deduped: RecentMeal[] = [];
-    for (const row of (data ?? []) as RecentMeal[]) {
+    const deduped: RecentMealOption[] = [];
+    for (const row of (data ?? []) as RecentMealOption[]) {
       const key = (row.description ?? '').trim().toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
@@ -297,6 +344,31 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   }, [userId]);
 
   useEffect(() => { loadRecentMeals(); }, [loadRecentMeals]);
+
+  // Exercise logged for the selected day, converted to an estimated calorie
+  // burn via MET values (lib/calorieBurn.ts) — added to the day's calorie
+  // budget below, the same way MyFitnessPal "earns back" exercise calories.
+  useEffect(() => {
+    if (!userId || !profile) { setExerciseBurn(0); return; }
+    const dayStart = new Date(selectedDate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    let cancelled = false;
+    supabase
+      .from('mom_movement_logs')
+      .select('activity_type, intensity, duration_minutes, calories_burned')
+      .eq('user_id', userId)
+      .gte('logged_at', dayStart.toISOString())
+      .lt('logged_at', dayEnd.toISOString())
+      .then(({ data }) => {
+        if (cancelled) return;
+        // A manually-entered calories_burned (or, eventually, a synced Apple
+        // Watch value) takes precedence over the MET-based estimate.
+        const total = (data ?? []).reduce((sum, l: any) =>
+          sum + (l.calories_burned ?? estimateCaloriesBurned(l.activity_type, l.intensity, l.duration_minutes ?? 0, profile.weight_lbs)), 0);
+        setExerciseBurn(Math.round(total));
+      });
+    return () => { cancelled = true; };
+  }, [userId, selectedDate, profile?.weight_lbs]);
 
   // ─── Derived values ───────────────────────────────────────────────────────
 
@@ -311,6 +383,20 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     () => mealLogs.reduce((sum, l) => sum + (l.carbs_g ?? 0), 0), [mealLogs]);
   const totalFat = useMemo(
     () => mealLogs.reduce((sum, l) => sum + (l.fat_g ?? 0), 0), [mealLogs]);
+  const totalSugar = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.sugar_g ?? 0), 0), [mealLogs]);
+  const totalFiber = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.fiber_g ?? 0), 0), [mealLogs]);
+  const totalSodium = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.sodium_mg ?? 0), 0), [mealLogs]);
+  const totalCholesterol = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.cholesterol_mg ?? 0), 0), [mealLogs]);
+  const totalFolate = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.folate_mcg ?? 0), 0), [mealLogs]);
+  const totalIron = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.iron_mg ?? 0), 0), [mealLogs]);
+  const totalCaffeine = useMemo(
+    () => mealLogs.reduce((sum, l) => sum + (l.caffeine_mg ?? 0), 0), [mealLogs]);
 
   const totalWaterOz = useMemo(
     () => waterLogs.reduce((sum, l) => sum + (l.water_oz ?? 0), 0), [waterLogs]);
@@ -321,33 +407,50 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     return g;
   }, [mealLogs]);
 
-  const caloriePercent = profile ? Math.min(1, totalCalories / profile.calorie_goal) : 0;
+  const bfBonus = profile ? bfCalorieBonus(profile.bf_type) : 0;
+  const pregnancyProgress = profile?.is_pregnant && profile.due_date
+    ? getPregnancyProgress(profile.due_date) : null;
+  const pregnancyCalBonus = pregnancyProgress ? PREGNANCY_CALORIE_BONUS[pregnancyProgress.trimester] : 0;
+  const pregnancyProteinBonus = profile?.is_pregnant ? PREGNANCY_PROTEIN_BONUS_G : 0;
+  const pregnancyWaterBonusOz = profile?.is_pregnant ? PREGNANCY_WATER_BONUS_OZ : 0;
+
+  const adjustedCalorieGoal = profile ? profile.calorie_goal + exerciseBurn + pregnancyCalBonus : 0;
+  const adjustedProteinGoal = profile ? (profile.protein_goal_g ?? 0) + pregnancyProteinBonus : 0;
+  const adjustedWaterGoalOz = (profile?.water_goal_oz ?? 80) + pregnancyWaterBonusOz;
+
+  const caloriePercent = profile ? Math.min(1, totalCalories / adjustedCalorieGoal) : 0;
   const waterCups      = totalWaterOz / 8;
-  const waterGoalCups  = (profile?.water_goal_oz ?? 80) / 8;
-  const waterPercent   = profile ? Math.min(1, totalWaterOz / profile.water_goal_oz) : 0;
+  const waterGoalCups  = adjustedWaterGoalOz / 8;
+  const waterPercent   = profile ? Math.min(1, totalWaterOz / adjustedWaterGoalOz) : 0;
+  const hasMicros = totalSugar > 0 || totalFiber > 0 || totalSodium > 0 || totalCholesterol > 0;
+  const isPregnant = !!profile?.is_pregnant;
+  const folateGoal = profile ? folateGoalMcg(isPregnant, profile.bf_type) : 0;
+  const ironGoal = profile ? ironGoalMg(isPregnant, profile.bf_type) : 0;
 
-  // Scanned product: prefer per-serving values, fall back to per-100g (quantity = grams eaten)
-  const scanMode: 'serving' | 'grams' | null = !scannedProduct ? null
-    : scannedProduct.caloriesPerServing != null ? 'serving'
-    : scannedProduct.caloriesPer100g != null ? 'grams'
-    : null;
+  // Live total preview for the meal-entry form (per-unit × quantity)
+  const mealQtyNum = useMemo(() => {
+    const n = parseFloat(mealQty);
+    return !isNaN(n) && n > 0 ? n : 0;
+  }, [mealQty]);
 
-  const scanComputed = useMemo(() => {
-    if (!scannedProduct || !scanMode) return null;
-    const qty = parseFloat(scanQuantity);
-    if (!qty || qty <= 0) return null;
-    const scale = scanMode === 'serving' ? qty : qty / 100;
-    const cal   = scanMode === 'serving' ? scannedProduct.caloriesPerServing : scannedProduct.caloriesPer100g;
-    const prot  = scanMode === 'serving' ? scannedProduct.proteinPerServingG : scannedProduct.proteinPer100g;
-    const carb  = scanMode === 'serving' ? scannedProduct.carbsPerServingG   : scannedProduct.carbsPer100g;
-    const fat   = scanMode === 'serving' ? scannedProduct.fatPerServingG     : scannedProduct.fatPer100g;
+  const mealTotalPreview = useMemo(() => {
+    if (!mealQtyNum) return null;
+    const per = (v: string) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+    const cal = per(mealPerCal);
     return {
-      calories: cal  != null ? Math.round(cal * scale) : null,
-      protein:  prot != null ? Math.round(prot * scale * 10) / 10 : null,
-      carbs:    carb != null ? Math.round(carb * scale * 10) / 10 : null,
-      fat:      fat  != null ? Math.round(fat * scale * 10) / 10 : null,
+      calories: cal != null ? Math.round(cal * mealQtyNum) : null,
+      protein_g: (() => { const v = per(mealPerProtein); return v == null ? null : round1(v * mealQtyNum); })(),
+      carbs_g:   (() => { const v = per(mealPerCarbs);   return v == null ? null : round1(v * mealQtyNum); })(),
+      fat_g:     (() => { const v = per(mealPerFat);     return v == null ? null : round1(v * mealQtyNum); })(),
+      sugar_g:   (() => { const v = per(mealPerSugar);   return v == null ? null : round1(v * mealQtyNum); })(),
+      fiber_g:   (() => { const v = per(mealPerFiber);   return v == null ? null : round1(v * mealQtyNum); })(),
+      sodium_mg: (() => { const v = per(mealPerSodium);  return v == null ? null : round1(v * mealQtyNum); })(),
+      cholesterol_mg: (() => { const v = per(mealPerCholesterol); return v == null ? null : round1(v * mealQtyNum); })(),
+      folate_mcg: (() => { const v = per(mealPerFolate); return v == null ? null : round1(v * mealQtyNum); })(),
+      iron_mg:    (() => { const v = per(mealPerIron);   return v == null ? null : round1(v * mealQtyNum); })(),
+      caffeine_mg: (() => { const v = per(mealPerCaffeine); return v == null ? null : round1(v * mealQtyNum); })(),
     };
-  }, [scannedProduct, scanMode, scanQuantity]);
+  }, [mealQtyNum, mealPerCal, mealPerProtein, mealPerCarbs, mealPerFat, mealPerSugar, mealPerFiber, mealPerSodium, mealPerCholesterol, mealPerFolate, mealPerIron, mealPerCaffeine]);
 
   // ─── Date nav actions ─────────────────────────────────────────────────────
 
@@ -375,13 +478,30 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       setActivity(profile.activity_level);
       setBfType(profile.bf_type);
       setGoalChoice(profile.weight_goal);
+      setPregnant(profile.is_pregnant);
+      setDueDateInput(profile.due_date ? toDisplayDate(profile.due_date) : '');
     } else {
       setHeightFt(''); setHeightIn(''); setHeightCm(''); setWeight(''); setAge('');
       setActivity(''); setBfType(''); setGoalChoice('');
+      setPregnant(false); setDueDateInput('');
     }
     setHeightUnit('ft');
     setSetupStep(0);
     setShowSetup(true);
+    // Best-effort convenience prefill from an expecting baby record — only
+    // when this profile has no pregnancy data of its own yet.
+    if (userId && !profile?.due_date) {
+      (supabase.from('babies') as any).select('due_date')
+        .eq('user_id', userId).eq('is_expecting', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        .then(({ data }: any) => {
+          if (data?.due_date) {
+            setPregnant(true);
+            setDueDateInput(toDisplayDate(data.due_date));
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   function toggleHeightUnit() {
@@ -414,13 +534,20 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       Alert.alert('Missing info', 'Please fill in all fields.');
       return;
     }
+    const dueDateISO = pregnant ? parseDisplayDate(dueDateInput) : null;
+    if (pregnant && !dueDateISO) {
+      Alert.alert('Missing due date', 'Enter a valid due date (MM/DD/YYYY) or turn off "Currently pregnant."');
+      return;
+    }
     setSaving(true);
     try {
       const { calorie_goal, water_goal_oz, protein_goal_g } = calcGoals(hCm, wt, ag, activity, bfType, goalChoice);
       await safeUpsert('nutrition_profiles', {
         user_id: userId, height_cm: hCm, weight_lbs: wt, age_years: ag,
         activity_level: activity, bf_type: bfType, weight_goal: goalChoice,
-        calorie_goal, water_goal_oz, protein_goal_g, updated_at: new Date().toISOString(),
+        calorie_goal, water_goal_oz, protein_goal_g,
+        is_pregnant: pregnant, due_date: dueDateISO,
+        updated_at: new Date().toISOString(),
       }, 'user_id');
       await loadData();
       setShowSetup(false);
@@ -457,52 +584,20 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
 
   // ─── Meal modal actions ───────────────────────────────────────────────────
 
+  function resetMealForm() {
+    setMealDesc('');
+    setMealPerCal(''); setMealPerProtein(''); setMealPerCarbs(''); setMealPerFat('');
+    setMealPerSugar(''); setMealPerFiber(''); setMealPerSodium(''); setMealPerCholesterol('');
+    setMealPerFolate(''); setMealPerIron(''); setMealPerCaffeine('');
+    setMealQty('1'); setMealLabel('serving');
+    setMealDataSource(null); setMealBarcode(null);
+    setShowMealMicros(false); setSaveMealToMyFoods(false);
+  }
+
   function openAddMeal(type: MealType) {
     setEditingLog(null);
     setMealType(type);
-    setMealDesc(''); setMealCal(''); setMealProtein(''); setMealCarbs(''); setMealFat('');
-    setShowMealModal(true);
-  }
-
-  // ─── Barcode scanner ──────────────────────────────────────────────────────
-
-  async function openScanner(type: MealType) {
-    if (!cameraPermission?.granted) {
-      const result = await requestCameraPermission();
-      if (!result.granted) {
-        Alert.alert('Camera access needed', 'Please allow camera access in your device settings to scan barcodes.');
-        return;
-      }
-    }
-    setMealType(type);
-    setEditingLog(null);
-    setScannerLocked(false);
-    setScannedProduct(null);
-    setScanQuantity('1');
-    setShowScanner(true);
-  }
-
-  async function handleBarcode(barcode: string) {
-    if (scannerLocked) return;
-    setScannerLocked(true);
-    setLookingUp(true);
-    const product = await lookupBarcode(barcode);
-    setLookingUp(false);
-    setScannedProduct(product);
-    setScanQuantity(product.caloriesPerServing != null ? '1' : '100');
-  }
-
-  function applyScannedProduct() {
-    if (!scannedProduct || !scanComputed) return;
-    const name = [scannedProduct.brand, scannedProduct.productName].filter(Boolean).join(' – ') || 'Scanned item';
-    setMealDesc(name);
-    if (scanComputed.calories != null) setMealCal(String(scanComputed.calories));
-    if (scanComputed.protein != null) setMealProtein(String(scanComputed.protein));
-    if (scanComputed.carbs != null) setMealCarbs(String(scanComputed.carbs));
-    if (scanComputed.fat != null) setMealFat(String(scanComputed.fat));
-    setShowScanner(false);
-    setScannedProduct(null);
-    setScannerLocked(false);
+    resetMealForm();
     setShowMealModal(true);
   }
 
@@ -510,34 +605,110 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
     setEditingLog(log);
     setMealType((log.meal_type as MealType) ?? 'breakfast');
     setMealDesc(log.description ?? '');
-    setMealCal(log.calories != null ? String(log.calories) : '');
-    setMealProtein(log.protein_g != null ? String(log.protein_g) : '');
-    setMealCarbs(log.carbs_g != null ? String(log.carbs_g) : '');
-    setMealFat(log.fat_g != null ? String(log.fat_g) : '');
+    const qty = log.serving_qty || 1;
+    const per = (total: number | null) => total == null ? '' : String(round4(total / qty));
+    setMealPerCal(log.calories != null ? String(round4(log.calories / qty)) : '');
+    setMealPerProtein(per(log.protein_g));
+    setMealPerCarbs(per(log.carbs_g));
+    setMealPerFat(per(log.fat_g));
+    setMealPerSugar(per(log.sugar_g));
+    setMealPerFiber(per(log.fiber_g));
+    setMealPerSodium(per(log.sodium_mg));
+    setMealPerCholesterol(per(log.cholesterol_mg));
+    setMealPerFolate(per(log.folate_mcg));
+    setMealPerIron(per(log.iron_mg));
+    setMealPerCaffeine(per(log.caffeine_mg));
+    setMealQty(String(qty));
+    setMealLabel(log.serving_label || 'serving');
+    setMealDataSource(log.data_source);
+    setMealBarcode(log.barcode);
+    setShowMealMicros(!!(log.sugar_g || log.fiber_g || log.sodium_mg || log.cholesterol_mg || log.folate_mcg || log.iron_mg || log.caffeine_mg));
+    setSaveMealToMyFoods(false);
     setShowMealModal(true);
   }
 
-  function applyRecentMeal(m: RecentMeal) {
+  function applyRecentMeal(m: RecentMealOption) {
+    const qty = m.serving_qty || 1;
+    const per = (total: number | null) => total == null ? '' : String(round4(total / qty));
     setMealDesc(m.description);
-    if (m.calories != null) setMealCal(String(m.calories));
-    if (m.protein_g != null) setMealProtein(String(m.protein_g));
-    if (m.carbs_g != null) setMealCarbs(String(m.carbs_g));
-    if (m.fat_g != null) setMealFat(String(m.fat_g));
+    setMealPerCal(m.calories != null ? String(round4(m.calories / qty)) : '');
+    setMealPerProtein(per(m.protein_g));
+    setMealPerCarbs(per(m.carbs_g));
+    setMealPerFat(per(m.fat_g));
+    setMealPerSugar(per(m.sugar_g));
+    setMealPerFiber(per(m.fiber_g));
+    setMealPerSodium(per(m.sodium_mg));
+    setMealPerCholesterol(per(m.cholesterol_mg));
+    setMealPerFolate(per(m.folate_mcg));
+    setMealPerIron(per(m.iron_mg));
+    setMealPerCaffeine(per(m.caffeine_mg));
+    setMealQty(String(qty));
+    setMealLabel(m.serving_label || 'serving');
+    setMealDataSource('manual');
+    setMealBarcode(null);
+    setShowMealMicros(!!(m.sugar_g || m.fiber_g || m.sodium_mg || m.cholesterol_mg || m.folate_mcg || m.iron_mg || m.caffeine_mg));
+  }
+
+  function handleFoodPickerApply(
+    perUnit: PerUnitNutrition, qty: number, label: string, desc: string,
+    opts: { source: string; barcode: string | null },
+  ) {
+    setEditingLog(null);
+    setMealDesc(desc);
+    setMealPerCal(perUnit.calories != null ? String(perUnit.calories) : '');
+    setMealPerProtein(perUnit.protein_g != null ? String(perUnit.protein_g) : '');
+    setMealPerCarbs(perUnit.carbs_g != null ? String(perUnit.carbs_g) : '');
+    setMealPerFat(perUnit.fat_g != null ? String(perUnit.fat_g) : '');
+    setMealPerSugar(perUnit.sugar_g != null ? String(perUnit.sugar_g) : '');
+    setMealPerFiber(perUnit.fiber_g != null ? String(perUnit.fiber_g) : '');
+    setMealPerSodium(perUnit.sodium_mg != null ? String(perUnit.sodium_mg) : '');
+    setMealPerCholesterol(perUnit.cholesterol_mg != null ? String(perUnit.cholesterol_mg) : '');
+    setMealPerFolate(perUnit.folate_mcg != null ? String(perUnit.folate_mcg) : '');
+    setMealPerIron(perUnit.iron_mg != null ? String(perUnit.iron_mg) : '');
+    setMealPerCaffeine(perUnit.caffeine_mg != null ? String(perUnit.caffeine_mg) : '');
+    setMealQty(String(qty));
+    setMealLabel(label);
+    setMealDataSource(opts.source);
+    setMealBarcode(opts.barcode);
+    setShowMealMicros(!!(perUnit.sugar_g || perUnit.fiber_g || perUnit.sodium_mg || perUnit.cholesterol_mg || perUnit.folate_mcg || perUnit.iron_mg || perUnit.caffeine_mg));
+    setSaveMealToMyFoods(false);
+    setShowFoodPicker(false);
+    setShowMealModal(true);
   }
 
   async function saveMeal() {
-    if (!userId || !mealCal.trim()) return;
-    const cal = parseInt(mealCal);
-    if (isNaN(cal) || cal <= 0) { Alert.alert('Enter a valid calorie amount'); return; }
+    if (!userId) return;
+    const perCal = parseFloat(mealPerCal);
+    if (isNaN(perCal) || perCal <= 0) { Alert.alert('Enter a valid calorie amount'); return; }
+    if (!mealQtyNum) { Alert.alert('Enter a valid quantity'); return; }
     setAddingMeal(true);
     try {
+      const per = (v: string) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+      const totalInt = (v: number | null) => v == null ? null : Math.round(v * mealQtyNum);
+      const total1 = (v: number | null) => v == null ? null : round1(v * mealQtyNum);
+      const label = mealLabel.trim() || 'serving';
+      const perProtein = per(mealPerProtein), perCarbs = per(mealPerCarbs), perFat = per(mealPerFat);
+      const perSugar = per(mealPerSugar), perFiber = per(mealPerFiber), perSodium = per(mealPerSodium), perCholesterol = per(mealPerCholesterol);
+      const perFolate = per(mealPerFolate), perIron = per(mealPerIron), perCaffeine = per(mealPerCaffeine);
+
       const fields = {
         meal_type: mealType,
         description: mealDesc.trim() || null,
-        calories: cal,
-        protein_g: mealProtein.trim() ? parseFloat(mealProtein) : null,
-        carbs_g:   mealCarbs.trim()   ? parseFloat(mealCarbs)   : null,
-        fat_g:     mealFat.trim()     ? parseFloat(mealFat)     : null,
+        calories: totalInt(perCal),
+        protein_g: total1(perProtein),
+        carbs_g: total1(perCarbs),
+        fat_g: total1(perFat),
+        sugar_g: total1(perSugar),
+        fiber_g: total1(perFiber),
+        sodium_mg: total1(perSodium),
+        cholesterol_mg: total1(perCholesterol),
+        folate_mcg: total1(perFolate),
+        iron_mg: total1(perIron),
+        caffeine_mg: total1(perCaffeine),
+        serving_qty: mealQtyNum,
+        serving_label: label,
+        data_source: mealDataSource ?? 'manual',
+        barcode: mealBarcode,
       };
       if (editingLog) {
         await safeUpdate('nutrition_logs', editingLog.id, fields);
@@ -546,7 +717,17 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           user_id: userId, log_date: dateToISO(selectedDate), ...fields,
         });
       }
-      setMealDesc(''); setMealCal(''); setMealProtein(''); setMealCarbs(''); setMealFat('');
+      if (saveMealToMyFoods && mealDataSource !== 'saved_food') {
+        safeInsert('nutrition_saved_foods', {
+          user_id: userId, name: mealDesc.trim() || 'Food item', serving_label: label,
+          calories: perCal, protein_g: perProtein, carbs_g: perCarbs, fat_g: perFat,
+          sugar_g: perSugar, fiber_g: perFiber, sodium_mg: perSodium, cholesterol_mg: perCholesterol,
+          folate_mcg: perFolate, iron_mg: perIron, caffeine_mg: perCaffeine,
+          source: mealDataSource === 'barcode' ? 'barcode' : mealDataSource === 'search' ? 'search' : 'manual',
+          barcode: mealBarcode,
+        }).catch(() => {});
+      }
+      resetMealForm();
       setEditingLog(null);
       setShowMealModal(false);
       await loadData();
@@ -579,6 +760,40 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
       setLogs(prev => prev.filter(l => l.id !== id));
     } catch (e: any) {
       Alert.alert('Error', e.message);
+    }
+  }
+
+  // ─── Copy previous day's meals ────────────────────────────────────────────
+
+  async function copyYesterdaysMeals() {
+    if (!userId) return;
+    setCopyingYesterday(true);
+    try {
+      const prevDay = new Date(selectedDate);
+      prevDay.setDate(prevDay.getDate() - 1);
+      const { data } = await supabase
+        .from('nutrition_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('log_date', dateToISO(prevDay))
+        .neq('meal_type', 'water');
+      const rows = (data ?? []) as NutritionLog[];
+      if (rows.length === 0) {
+        Alert.alert('Nothing to copy', `No meals logged on ${formatDateLabel(prevDay)}.`);
+        return;
+      }
+      for (const row of rows) {
+        const { id, created_at, user_id, log_date, ...rest } = row;
+        await safeInsert('nutrition_logs', {
+          ...rest, user_id: userId, log_date: dateToISO(selectedDate), data_source: 'copied',
+        });
+      }
+      await loadData();
+      loadRecentMeals();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setCopyingYesterday(false);
     }
   }
 
@@ -704,9 +919,9 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             {/* Step 2: Breastfeeding */}
             {setupStep === 2 && (
               <View>
-                <Text style={{ fontSize: 24, fontWeight: '800', color: c.textPrimary, marginBottom: 6 }}>Breastfeeding 🤱</Text>
+                <Text style={{ fontSize: 24, fontWeight: '800', color: c.textPrimary, marginBottom: 6 }}>Breastfeeding & pregnancy</Text>
                 <Text style={{ fontSize: 14, color: c.textMuted, marginBottom: 28, lineHeight: 20 }}>
-                  Breastfeeding burns extra calories and increases your hydration needs.
+                  Both change your calorie, water, and nutrient needs — we'll factor in whichever apply to you.
                 </Text>
                 {BF_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt.key} onPress={() => setBfType(opt.key)} activeOpacity={0.8}
@@ -719,9 +934,31 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                     {bfType === opt.key && <Text style={{ fontSize: 18, color: c.primary }}>✓</Text>}
                   </TouchableOpacity>
                 ))}
+
+                <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginTop: 12, marginBottom: 8 }}>
+                  Currently pregnant? 🤰
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: pregnant ? 16 : 0 }}>
+                  {[{ v: false, label: 'No' }, { v: true, label: 'Yes' }].map(opt => (
+                    <TouchableOpacity key={String(opt.v)} onPress={() => setPregnant(opt.v)} activeOpacity={0.8}
+                      accessibilityRole="button" accessibilityLabel={opt.label}
+                      style={[optionCard(c), pregnant === opt.v && optionCardSelected(c), { flex: 1, justifyContent: 'center' }]}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {pregnant && (
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Due date</Text>
+                    <TextInput style={inputStyle(c)} placeholder="MM/DD/YYYY" placeholderTextColor={c.textMuted}
+                      value={dueDateInput} onChangeText={t => setDueDateInput(autoFormatDate(t, dueDateInput))}
+                      keyboardType="numeric" maxLength={10} accessibilityLabel="Due date" />
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={[primaryBtn(c), { marginTop: 20, opacity: bfType ? 1 : 0.45 }]}
-                  disabled={!bfType} onPress={() => setSetupStep(3)}
+                  style={[primaryBtn(c), { marginTop: 20, opacity: (bfType && (!pregnant || parseDisplayDate(dueDateInput))) ? 1 : 0.45 }]}
+                  disabled={!bfType || (pregnant && !parseDisplayDate(dueDateInput))} onPress={() => setSetupStep(3)}
                   accessibilityRole="button" accessibilityLabel="Continue"
                 >
                   <Text style={primaryBtnText}>Continue</Text>
@@ -753,6 +990,9 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   const { calorie_goal, water_goal_oz, protein_goal_g } = calcGoals(
                     currentHeightCm(), parseFloat(weight), parseInt(age), activity, bfType, goalChoice,
                   );
+                  const previewDueDate = pregnant ? parseDisplayDate(dueDateInput) : null;
+                  const previewTrimester = previewDueDate ? getPregnancyProgress(previewDueDate).trimester : null;
+                  const previewPregBonus = previewTrimester ? PREGNANCY_CALORIE_BONUS[previewTrimester] : 0;
                   return (
                     <View style={{
                       backgroundColor: c.cardSage, borderRadius: 12, padding: 16,
@@ -762,13 +1002,15 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                         Your personalized goals
                       </Text>
                       <Text style={{ fontSize: 14, color: c.textPrimary, marginBottom: 4 }}>
-                        🍽️  {calorie_goal.toLocaleString()} calories / day
+                        🍽️  {(calorie_goal + previewPregBonus).toLocaleString()} calories / day
+                        {previewPregBonus > 0 ? ` (includes +${previewPregBonus} for trimester ${previewTrimester})` : ''}
                       </Text>
                       <Text style={{ fontSize: 14, color: c.textPrimary, marginBottom: 4 }}>
-                        💧  {water_goal_oz / 8} cups of water / day
+                        💧  {water_goal_oz / 8 + (pregnant ? PREGNANCY_WATER_BONUS_OZ / 8 : 0)} cups of water / day
                       </Text>
                       <Text style={{ fontSize: 14, color: c.textPrimary }}>
-                        🥩  {protein_goal_g}g protein / day{bfType !== 'none' ? ' (includes breastfeeding bump)' : ''}
+                        🥩  {protein_goal_g + (pregnant ? PREGNANCY_PROTEIN_BONUS_G : 0)}g protein / day
+                        {bfType !== 'none' || pregnant ? ' (includes breastfeeding/pregnancy bump)' : ''}
                       </Text>
                     </View>
                   );
@@ -819,6 +1061,7 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   // ─── Dashboard ────────────────────────────────────────────────────────────
 
   const hasMacros = totalProtein > 0 || totalCarbs > 0 || totalFat > 0;
+  const proteinGoalReasons = [profile.bf_type !== 'none' ? 'breastfeeding' : null, isPregnant ? 'pregnancy' : null].filter(Boolean);
 
   return (
     <View style={{ gap: 14, marginBottom: 16 }}>
@@ -864,6 +1107,41 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         </TouchableOpacity>
       </View>
 
+      {/* ── Pregnancy week/size + overdue nudge ── */}
+      {pregnancyProgress && (
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: c.textSecondary }}>
+            🤰 Week {pregnancyProgress.weeksPregnant} · about the size of {getWeekInfo(pregnancyProgress.weeksPregnant).size} {getWeekInfo(pregnancyProgress.weeksPregnant).emoji}
+          </Text>
+          {pregnancyProgress.daysUntilDue < -14 && (
+            <TouchableOpacity onPress={openSetup} accessibilityRole="button" accessibilityLabel="Update pregnancy status">
+              <Text style={{ fontSize: 11, color: c.primary, fontWeight: '600', marginTop: 2 }}>
+                Due date has passed — update your pregnancy status ›
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ── Copy yesterday's meals ── */}
+      {mealLogs.length === 0 && (
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+            backgroundColor: c.cardHoney, borderRadius: 12, borderWidth: 1.5, borderColor: c.honey, paddingVertical: 12,
+          }}
+          onPress={copyYesterdaysMeals}
+          disabled={copyingYesterday}
+          activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Copy yesterday's meals"
+        >
+          {copyingYesterday
+            ? <ActivityIndicator color={c.textSecondary} size="small" />
+            : <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>📋 Copy yesterday's meals</Text>
+          }
+        </TouchableOpacity>
+      )}
+
       {/* ── Calorie card ── */}
       <View style={sectionCard(c)}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
@@ -871,13 +1149,23 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
             <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary, marginBottom: 2 }}>🍽️ Calories</Text>
             <Text style={{ fontSize: 26, fontWeight: '900', color: c.textPrimary }}>
               {totalCalories.toLocaleString()}
-              <Text style={{ fontSize: 14, fontWeight: '500', color: c.textMuted }}> / {profile.calorie_goal.toLocaleString()} kcal</Text>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: c.textMuted }}> / {adjustedCalorieGoal.toLocaleString()} kcal</Text>
             </Text>
           </View>
           <Text style={{ fontSize: 12, fontWeight: '600', color: caloriePercent >= 1 ? c.sage : c.textMuted }}>
-            {caloriePercent >= 1 ? '✓ Goal reached!' : `${(profile.calorie_goal - totalCalories).toLocaleString()} kcal to go`}
+            {caloriePercent >= 1 ? '✓ Goal reached!' : `${(adjustedCalorieGoal - totalCalories).toLocaleString()} kcal to go`}
           </Text>
         </View>
+
+        {(bfBonus > 0 || exerciseBurn > 0 || pregnancyCalBonus > 0) && (
+          <Text style={{ fontSize: 11, color: c.textMuted, marginBottom: 8 }}>
+            Includes {[
+              bfBonus > 0 ? `+${bfBonus} breastfeeding` : null,
+              pregnancyCalBonus > 0 ? `+${pregnancyCalBonus} pregnancy (trimester ${pregnancyProgress!.trimester})` : null,
+              exerciseBurn > 0 ? `+${exerciseBurn} exercise today` : null,
+            ].filter(Boolean).join(' · ')}
+          </Text>
+        )}
 
         {/* Progress bar */}
         <View style={{ height: 8, backgroundColor: c.separator, borderRadius: 4, overflow: 'hidden', marginBottom: hasMacros ? 10 : 16 }}>
@@ -888,15 +1176,15 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           <View style={{ marginBottom: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>
-                🥩 Protein{profile.bf_type !== 'none' ? ' (breastfeeding goal)' : ''}
+                🥩 Protein{proteinGoalReasons.length > 0 ? ` (${proteinGoalReasons.join(' + ')} goal)` : ''}
               </Text>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: totalProtein >= profile.protein_goal_g ? c.sage : c.textMuted }}>
-                {totalProtein.toFixed(0)} / {profile.protein_goal_g}g
+              <Text style={{ fontSize: 12, fontWeight: '600', color: totalProtein >= adjustedProteinGoal ? c.sage : c.textMuted }}>
+                {totalProtein.toFixed(0)} / {adjustedProteinGoal}g
               </Text>
             </View>
             <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
               <View style={{
-                width: `${Math.min(100, (totalProtein / profile.protein_goal_g) * 100)}%`,
+                width: `${Math.min(100, (totalProtein / adjustedProteinGoal) * 100)}%`,
                 height: '100%', backgroundColor: c.sage,
               }} />
             </View>
@@ -910,6 +1198,51 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           <Text style={{ fontSize: 12, color: c.textMuted, marginBottom: 16 }}>
             Protein {totalProtein.toFixed(0)}g · Carbs {totalCarbs.toFixed(0)}g · Fat {totalFat.toFixed(0)}g
           </Text>
+        )}
+
+        {/* Micronutrients — static reference values, not personalized goals */}
+        {hasMicros && (
+          <View style={{ marginBottom: 16, gap: 10 }}>
+            {[
+              { key: 'sodium', label: 'Sodium', value: totalSodium, dv: SODIUM_DV_MG, unit: 'mg', color: c.blush },
+              { key: 'fiber', label: 'Fiber', value: totalFiber, dv: FIBER_DV_G, unit: 'g', color: c.sage },
+              { key: 'cholesterol', label: 'Cholesterol', value: totalCholesterol, dv: CHOLESTEROL_DV_MG, unit: 'mg', color: c.lavender },
+            ].map(m => (
+              <View key={m.key}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
+                  <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
+                </View>
+                <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
+                  <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
+                </View>
+              </View>
+            ))}
+            {totalSugar > 0 && (
+              <Text style={{ fontSize: 11, color: c.textMuted }}>Sugar {totalSugar.toFixed(0)}g</Text>
+            )}
+          </View>
+        )}
+
+        {/* Pregnancy-specific micronutrients — personalized DVs, only shown when pregnant */}
+        {isPregnant && (totalFolate > 0 || totalIron > 0 || totalCaffeine > 0) && (
+          <View style={{ marginBottom: 16, gap: 10 }}>
+            {[
+              { key: 'folate', label: 'Folate', value: totalFolate, dv: folateGoal, unit: 'mcg', color: c.honey },
+              { key: 'iron', label: 'Iron', value: totalIron, dv: ironGoal, unit: 'mg', color: c.blush },
+              { key: 'caffeine', label: 'Caffeine', value: totalCaffeine, dv: CAFFEINE_LIMIT_MG_PREGNANT, unit: 'mg', color: c.lavender },
+            ].map(m => (
+              <View key={m.key}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
+                  <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
+                </View>
+                <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
+                  <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
+                </View>
+              </View>
+            ))}
+          </View>
         )}
 
         {/* Meal rows */}
@@ -926,10 +1259,6 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   {typeCal > 0 && (
                     <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '600' }}>{typeCal} kcal</Text>
                   )}
-                  <TouchableOpacity onPress={() => openScanner(type)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    accessibilityRole="button" accessibilityLabel={`Scan barcode for ${type}`}>
-                    <Text style={{ fontSize: 14 }}>📷</Text>
-                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => openAddMeal(type)}
                     accessibilityRole="button" accessibilityLabel={`Add ${type}`}>
                     <Text style={{ fontSize: 13, color: c.primary, fontWeight: '700' }}>+ Add</Text>
@@ -949,6 +1278,9 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                 >
                   <Text style={{ fontSize: 13, color: c.textPrimary, flex: 1 }} numberOfLines={1}>
                     {entry.description ?? type}
+                    {entry.serving_qty != null && entry.serving_qty !== 1
+                      ? ` · ${entry.serving_qty} × ${entry.serving_label ?? 'serving'}`
+                      : ''}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Text style={{ fontSize: 12, color: c.textMuted }}>{entry.calories} kcal</Text>
@@ -1106,6 +1438,26 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         )}
       </View>
 
+      {/* ── Trends ── */}
+      <TouchableOpacity
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          backgroundColor: c.card, borderRadius: 14, borderWidth: 1.5, borderColor: c.separator,
+          paddingHorizontal: 16, paddingVertical: 13,
+        }}
+        onPress={() => setShowTrends(v => !v)}
+        activeOpacity={0.75}
+        accessibilityRole="button" accessibilityLabel={showTrends ? 'Collapse trends' : 'Expand trends'}
+      >
+        <Text style={{ fontSize: 14, fontWeight: '800', color: c.textPrimary }}>📊 Trends</Text>
+        <Text style={{ fontSize: 18, color: c.textMuted, fontWeight: '700' }}>{showTrends ? '⌄' : '›'}</Text>
+      </TouchableOpacity>
+      {showTrends && (
+        <View style={sectionCard(c)}>
+          <NutritionTrendsChart userId={userId} expanded={showTrends} />
+        </View>
+      )}
+
       {/* ── Add/edit meal modal ── */}
       <Modal visible={showMealModal} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -1152,11 +1504,11 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
                   backgroundColor: c.cardBlue, borderRadius: 12, borderWidth: 1.5, borderColor: c.blue,
                   paddingVertical: 12, marginBottom: 24,
                 }}
-                onPress={() => { setShowMealModal(false); openScanner(mealType); }}
+                onPress={() => { setShowMealModal(false); setShowFoodPicker(true); }}
                 activeOpacity={0.8}
-                accessibilityRole="button" accessibilityLabel="Scan a barcode"
+                accessibilityRole="button" accessibilityLabel="Find a food"
               >
-                <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>📷 Scan a barcode</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: c.blue }}>🔍 Find a food</Text>
               </TouchableOpacity>
             )}
 
@@ -1188,33 +1540,122 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               placeholder="e.g. Oatmeal with berries" placeholderTextColor={c.textMuted}
               value={mealDesc} onChangeText={setMealDesc} accessibilityLabel="What did you eat" />
 
-            <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Calories (kcal)</Text>
-            <TextInput style={[inputStyle(c), { marginBottom: 20 }]}
+            <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>
+              Calories per {mealLabel.trim() || 'serving'}
+            </Text>
+            <TextInput style={[inputStyle(c), { marginBottom: 16 }]}
               placeholder="e.g. 350" placeholderTextColor={c.textMuted}
-              value={mealCal} onChangeText={setMealCal} keyboardType="numeric" accessibilityLabel="Calories" />
+              value={mealPerCal} onChangeText={setMealPerCal} keyboardType="numeric" accessibilityLabel="Calories per serving" />
 
-            <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>Macros (optional)</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 32 }}>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary, marginBottom: 6 }}>Quantity</Text>
+                <TextInput style={inputStyle(c)} value={mealQty} onChangeText={setMealQty}
+                  keyboardType="decimal-pad" accessibilityLabel="Quantity" />
+              </View>
+              <View style={{ flex: 1.4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary, marginBottom: 6 }}>Unit</Text>
+                <TextInput style={inputStyle(c)} value={mealLabel} onChangeText={setMealLabel}
+                  placeholder="serving" placeholderTextColor={c.textMuted} accessibilityLabel="Serving unit" />
+              </View>
+            </View>
+
+            {mealTotalPreview?.calories != null && (
+              <View style={{ backgroundColor: c.cardSage, borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1.5, borderColor: c.sage }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>
+                  Total: {mealTotalPreview.calories.toLocaleString()} kcal{mealQtyNum !== 1 ? ` (${mealQty} × ${mealLabel.trim() || 'serving'})` : ''}
+                </Text>
+              </View>
+            )}
+
+            <Text style={{ fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 8 }}>
+              Macros per {mealLabel.trim() || 'serving'} (optional)
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealProtein} onChangeText={setMealProtein} keyboardType="decimal-pad" accessibilityLabel="Protein in grams" />
+                  value={mealPerProtein} onChangeText={setMealPerProtein} keyboardType="decimal-pad" accessibilityLabel="Protein in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>protein g</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealCarbs} onChangeText={setMealCarbs} keyboardType="decimal-pad" accessibilityLabel="Carbs in grams" />
+                  value={mealPerCarbs} onChangeText={setMealPerCarbs} keyboardType="decimal-pad" accessibilityLabel="Carbs in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>carbs g</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
-                  value={mealFat} onChangeText={setMealFat} keyboardType="decimal-pad" accessibilityLabel="Fat in grams" />
+                  value={mealPerFat} onChangeText={setMealPerFat} keyboardType="decimal-pad" accessibilityLabel="Fat in grams" />
                 <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>fat g</Text>
               </View>
             </View>
 
+            <TouchableOpacity onPress={() => setShowMealMicros(v => !v)} accessibilityRole="button"
+              accessibilityLabel={showMealMicros ? 'Hide nutrition details' : 'Add nutrition details'}
+              style={{ marginBottom: showMealMicros ? 12 : 24 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: c.primary }}>
+                {showMealMicros ? '▾ Hide nutrition details' : '▸ Add nutrition details'}
+              </Text>
+            </TouchableOpacity>
+            {showMealMicros && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerSugar} onChangeText={setMealPerSugar} keyboardType="decimal-pad" accessibilityLabel="Sugar in grams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>sugar g</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerFiber} onChangeText={setMealPerFiber} keyboardType="decimal-pad" accessibilityLabel="Fiber in grams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>fiber g</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerSodium} onChangeText={setMealPerSodium} keyboardType="decimal-pad" accessibilityLabel="Sodium in milligrams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>sodium mg</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerCholesterol} onChangeText={setMealPerCholesterol} keyboardType="decimal-pad" accessibilityLabel="Cholesterol in milligrams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>cholest. mg</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerFolate} onChangeText={setMealPerFolate} keyboardType="decimal-pad" accessibilityLabel="Folate in micrograms" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>folate mcg</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerIron} onChangeText={setMealPerIron} keyboardType="decimal-pad" accessibilityLabel="Iron in milligrams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>iron mg</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <TextInput style={inputStyle(c)} placeholder="0" placeholderTextColor={c.textMuted}
+                    value={mealPerCaffeine} onChangeText={setMealPerCaffeine} keyboardType="decimal-pad" accessibilityLabel="Caffeine in milligrams" />
+                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 4, textAlign: 'center' }}>caffeine mg</Text>
+                </View>
+              </View>
+            )}
+
+            {mealDataSource !== 'saved_food' && (
+              <TouchableOpacity
+                onPress={() => setSaveMealToMyFoods(v => !v)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 }}
+                accessibilityRole="checkbox" accessibilityState={{ checked: saveMealToMyFoods }}
+                accessibilityLabel="Save to My Foods"
+              >
+                <View style={{
+                  width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: c.primary,
+                  backgroundColor: saveMealToMyFoods ? c.primary : 'transparent', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {saveMealToMyFoods && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>✓</Text>}
+                </View>
+                <Text style={{ fontSize: 13, color: c.textSecondary, fontWeight: '600' }}>Save to My Foods for next time</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
-              style={[primaryBtn(c), { opacity: mealCal.trim() ? 1 : 0.45 }]}
-              disabled={addingMeal || !mealCal.trim()}
+              style={[primaryBtn(c), { opacity: mealPerCal.trim() && mealQtyNum > 0 ? 1 : 0.45 }]}
+              disabled={addingMeal || !mealPerCal.trim() || !mealQtyNum}
               onPress={saveMeal}
               accessibilityRole="button" accessibilityLabel={editingLog ? 'Save changes' : 'Save meal'}
             >
@@ -1227,152 +1668,14 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         </SafeAreaView>
       </Modal>
 
-      {/* ── Barcode scanner modal ── */}
-      <Modal
-        visible={showScanner}
-        animationType="slide"
-        onRequestClose={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
-      >
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
-          {!scannedProduct && !lookingUp && (
-            <CameraView
-              style={StyleSheet.absoluteFillObject}
-              facing="back"
-              onBarcodeScanned={({ data }) => handleBarcode(data)}
-              barcodeScannerSettings={{ barcodeTypes: ['upc_a', 'upc_e', 'ean13', 'ean8'] }}
-            />
-          )}
-
-          <View style={{ ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', padding: 20 }}>
-            <TouchableOpacity
-              style={{
-                alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.6)',
-                borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
-              }}
-              onPress={() => { setShowScanner(false); setScannerLocked(false); setScannedProduct(null); }}
-              activeOpacity={0.8}
-              accessibilityRole="button" accessibilityLabel="Close scanner"
-            >
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>✕ Close</Text>
-            </TouchableOpacity>
-
-            {lookingUp ? (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                <ActivityIndicator size="large" color="#fff" />
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Looking up product…</Text>
-              </View>
-            ) : !scannedProduct ? (
-              <View style={{ alignItems: 'center', gap: 20, flex: 1, justifyContent: 'center' }}>
-                <View style={{
-                  width: 260, height: 160, borderRadius: 16,
-                  borderWidth: 3, borderColor: c.blue, backgroundColor: 'transparent',
-                }} />
-                <Text style={{
-                  color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center',
-                  backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20,
-                }}>
-                  Point at a barcode to scan
-                </Text>
-              </View>
-            ) : (
-              <View style={{ backgroundColor: 'rgba(17,24,39,0.92)', borderRadius: 20, padding: 16, gap: 14 }}>
-                <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
-                  {scannedProduct.imageUrl ? (
-                    <Image source={{ uri: scannedProduct.imageUrl }} style={{ width: 70, height: 70, borderRadius: 12 }} resizeMode="contain" />
-                  ) : (
-                    <View style={{
-                      width: 70, height: 70, borderRadius: 12, backgroundColor: '#374151',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Text style={{ fontSize: 32 }}>🍽️</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    {scannedProduct.found ? (
-                      <>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#9CA3AF', marginBottom: 2 }}>
-                          {scannedProduct.brand ?? 'Unknown brand'}
-                        </Text>
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 6 }}>
-                          {scannedProduct.productName ?? 'Unknown product'}
-                        </Text>
-                        {scanMode ? (
-                          <Text style={{ fontSize: 12, color: '#D1D5DB' }}>
-                            {scanMode === 'serving'
-                              ? `Per serving${scannedProduct.servingSize ? ` (${scannedProduct.servingSize})` : ''}: ${scannedProduct.caloriesPerServing ?? '?'} kcal`
-                              : `Per 100g: ${scannedProduct.caloriesPer100g ?? '?'} kcal`}
-                          </Text>
-                        ) : (
-                          <Text style={{ fontSize: 12, color: '#FCA5A5' }}>No nutrition data found for this product.</Text>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#9CA3AF', marginBottom: 2 }}>Product not found</Text>
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff' }}>
-                          This barcode wasn't in the database. Try adding it manually instead.
-                        </Text>
-                      </>
-                    )}
-                  </View>
-                </View>
-
-                {scanMode && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Text style={{ color: '#D1D5DB', fontSize: 13, fontWeight: '600' }}>
-                      {scanMode === 'serving' ? 'Servings eaten' : 'Grams eaten'}
-                    </Text>
-                    <TextInput
-                      style={{
-                        flex: 1, backgroundColor: '#1F2937', borderRadius: 10,
-                        paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: '#fff',
-                      }}
-                      value={scanQuantity}
-                      onChangeText={setScanQuantity}
-                      keyboardType="decimal-pad"
-                      placeholder={scanMode === 'serving' ? '1' : '100'}
-                      placeholderTextColor="#6B7280"
-                      accessibilityLabel={scanMode === 'serving' ? 'Servings eaten' : 'Grams eaten'}
-                    />
-                  </View>
-                )}
-
-                {scanComputed && (
-                  <Text style={{ color: '#D1D5DB', fontSize: 13 }}>
-                    ≈ {scanComputed.calories ?? '?'} kcal
-                    {scanComputed.protein != null ? ` · P ${scanComputed.protein}g` : ''}
-                    {scanComputed.carbs != null ? ` · C ${scanComputed.carbs}g` : ''}
-                    {scanComputed.fat != null ? ` · F ${scanComputed.fat}g` : ''}
-                  </Text>
-                )}
-
-                <View style={{ gap: 8 }}>
-                  {scanMode && scanComputed && (
-                    <TouchableOpacity
-                      style={{ backgroundColor: c.blue, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-                      onPress={applyScannedProduct}
-                      activeOpacity={0.85}
-                      accessibilityRole="button" accessibilityLabel="Use this product"
-                    >
-                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Use this product →</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={{ alignItems: 'center', paddingVertical: 8 }}
-                    onPress={() => { setScannerLocked(false); setScannedProduct(null); }}
-                    activeOpacity={0.7}
-                    accessibilityRole="button" accessibilityLabel="Scan again"
-                  >
-                    <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>
-                      {scanMode ? 'Scan again' : 'Scan again / enter manually'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+      <FoodPickerModal
+        visible={showFoodPicker}
+        onClose={() => { setShowFoodPicker(false); setShowMealModal(true); }}
+        userId={userId}
+        recentMeals={recentMeals}
+        isPregnant={isPregnant}
+        onApply={handleFoodPickerApply}
+      />
 
       </>)}
 

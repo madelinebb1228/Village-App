@@ -53,7 +53,7 @@ export async function exportAndShareUserData(): Promise<void> {
     // Household / logistics
     expenses, budgets, shoppingLists, calendarEvents, handoffNotes,
     patchTasks, supplyItems, pumpingSessions, milkStash, pumpParts,
-    nutritionLogs, nutritionProfiles,
+    nutritionLogs, nutritionProfiles, nutritionSavedFoods,
     // Community content
     posts, comments, stories, directMessages, marketplaceListings,
     marketplaceMessages, qaQuestions, qaAnswers, qaReplies, recipes,
@@ -70,7 +70,7 @@ export async function exportAndShareUserData(): Promise<void> {
     byUser('mom_movement_logs'), byUser('mom_contraction_logs'), byUser('mom_recovery_logs'), byUser('mom_sleep_logs'),
     byUser('expenses'), byUser('budgets'), byUser('shopping_lists'), byUser('calendar_events', 'created_by'), byUser('handoff_notes', 'author_id'),
     byUser('patch_tasks', 'creator_id'), byUser('supply_items'), byUser('pumping_sessions'), byUser('milk_stash'), byUser('pump_parts'),
-    byUser('nutrition_logs'), byUser('nutrition_profiles'),
+    byUser('nutrition_logs'), byUser('nutrition_profiles'), byUser('nutrition_saved_foods'),
     byUser('posts'), byUser('comments'), byUser('stories'), byUser('direct_messages', 'sender_id'), byUser('marketplace_listings'),
     byUser('marketplace_messages', 'sender_id'), byUser('qa_questions'), byUser('qa_answers'), byUser('qa_replies'), byUser('recipes'),
     byUser('saved_posts'), byUser('saved_recipes'),
@@ -96,7 +96,7 @@ export async function exportAndShareUserData(): Promise<void> {
     household: {
       expenses, budgets, shoppingLists, calendarEvents, handoffNotes,
       patchTasks, supplyItems, pumpingSessions, milkStash, pumpParts,
-      nutritionLogs, nutritionProfiles,
+      nutritionLogs, nutritionProfiles, nutritionSavedFoods,
     },
     community: {
       posts, comments, stories, directMessages, marketplaceListings, marketplaceMessages,
