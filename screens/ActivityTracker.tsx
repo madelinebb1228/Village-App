@@ -3,6 +3,8 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, SafeAreaVi
 import { supabase } from '../lib/supabase';
 import { safeInsert } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { getBabyAge } from '../lib/feedUtils';
 import {
   Activity, ActivityTry, ActivityRating, primaryEmoji, cardPalette, ageRangeLabel,
@@ -25,6 +27,8 @@ const RATING_OPTIONS: { value: ActivityRating; label: string; emoji: string }[] 
 export default function ActivityTracker({ userId, babyId, babyName, babyBirthDate }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+
+  const [collapsed, toggleCollapsed] = useCollapsed('activity_tracker_collapsed');
 
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tries, setTries] = useState<ActivityTry[]>([]);
@@ -87,11 +91,20 @@ export default function ActivityTracker({ userId, babyId, babyName, babyBirthDat
     fetchAll();
   }
 
+  const header = (
+    <TrackerHeader
+      emoji="🧩" title="Activities & Play"
+      subtitle={babyBirthDate ? `Personalized picks for ${babyName ?? 'your baby'}, ${ageMonths} mo` : undefined}
+      collapsed={collapsed} onToggle={toggleCollapsed}
+      accentBg={c.cardBlush} accentColor={c.blush}
+    />
+  );
+
   if (loading) {
     return (
       <View style={s.container}>
-        <Text style={s.sectionTitle}>🧩 Activities & Play</Text>
-        <ActivityIndicator color={c.primary} style={{ marginVertical: 20 }} />
+        {header}
+        {!collapsed && <ActivityIndicator color={c.primary} style={{ marginVertical: 20 }} />}
       </View>
     );
   }
@@ -99,23 +112,21 @@ export default function ActivityTracker({ userId, babyId, babyName, babyBirthDat
   if (!babyId || !babyBirthDate) {
     return (
       <View style={s.container}>
-        <Text style={s.sectionTitle}>🧩 Activities & Play</Text>
-        <Text style={s.emptyText}>Add your baby's birthday to get personalized activity picks.</Text>
+        {header}
+        {!collapsed && (
+          <Text style={[s.emptyText, { marginTop: 14 }]}>Add your baby's birthday to get personalized activity picks.</Text>
+        )}
       </View>
     );
   }
 
   return (
     <View style={s.container}>
-      <View style={s.headerRow}>
-        <View>
-          <Text style={s.sectionTitle}>🧩 Activities & Play</Text>
-          <Text style={s.sectionSubtitle}>Personalized picks for {babyName ?? 'your baby'}, {ageMonths} mo</Text>
-        </View>
-      </View>
+      {header}
+      {!collapsed && (<>
 
       {recommended.length > 0 ? (
-        <View style={{ marginBottom: 18 }}>
+        <View style={{ marginTop: 14, marginBottom: 18 }}>
           <Text style={s.groupLabel}>✨ This week for {babyName ?? 'baby'}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.strip}>
             {recommended.map(activity => {
@@ -139,7 +150,7 @@ export default function ActivityTracker({ userId, babyId, babyName, babyBirthDat
           </ScrollView>
         </View>
       ) : (
-        <Text style={s.emptyText}>No age-matched activities right now — check the Activities & Play resource to browse more.</Text>
+        <Text style={[s.emptyText, { marginTop: 14 }]}>No age-matched activities right now — check the Activities & Play resource to browse more.</Text>
       )}
 
       <View>
@@ -165,6 +176,8 @@ export default function ActivityTracker({ userId, babyId, babyName, babyBirthDat
           ))
         )}
       </View>
+
+      </>)}
 
       {/* ── Try / rate modal ─────────────────────────────────────────── */}
       <Modal visible={active !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setActive(null)}>
@@ -213,9 +226,6 @@ export default function ActivityTracker({ userId, babyId, babyName, babyBirthDat
 function makeStyles(c: Colors) {
   return StyleSheet.create({
     container: { marginBottom: 16 },
-    headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
-    sectionTitle: { fontSize: 18, fontWeight: '700', color: c.textPrimary },
-    sectionSubtitle: { fontSize: 12, color: c.textMuted, fontWeight: '500', marginTop: 2 },
     emptyText: { fontSize: 13, color: c.textMuted, fontWeight: '500', lineHeight: 18 },
 
     groupLabel: { fontSize: 13, fontWeight: '700', color: c.textPrimary, marginBottom: 10 },

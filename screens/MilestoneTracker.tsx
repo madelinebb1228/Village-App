@@ -9,6 +9,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
 import {
@@ -202,6 +204,8 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const colors = useMemo(() => CARD_COLORS(c), [c]);
+
+  const [collapsed, toggleCollapsed] = useCollapsed('milestone_tracker_collapsed');
 
   const [entries,     setEntries]     = useState<Record<string, MilestoneEntry>>({});
   const [loading,     setLoading]     = useState(true);
@@ -521,17 +525,15 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
 
   return (
     <View style={s.container}>
-      <View style={s.headerRow}>
-        <View>
-          <Text style={s.sectionTitle}>Development Tracker</Text>
-          <Text style={s.sectionSubtitle}>Tap a milestone to add a photo, video, or memory</Text>
-        </View>
-        <View style={s.progressBadge}>
-          <Text style={s.progressBadgeText}>{capturedCount}/{ALL_MILESTONES.length}</Text>
-        </View>
-      </View>
+      <TrackerHeader
+        emoji="🌟" title="Development Tracker"
+        subtitle={`${capturedCount}/${ALL_MILESTONES.length} milestones captured`}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardSage} accentColor={c.sage}
+      />
+      {!collapsed && (<>
 
-      <View style={s.reminderRow}>
+      <View style={[s.reminderRow, { marginTop: 14 }]}>
         <Text style={s.reminderLabel}>🔔 Remind me when milestones are coming up</Text>
         <TouchableOpacity
           style={[s.toggle, reminderSettings.enabled && { backgroundColor: c.primary }]}
@@ -594,6 +596,8 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
           </View>
         </>
       )}
+
+      </>)}
 
       {/* ── Content moderation blocked modal ──────────────────────────── */}
       {blockedContent && userId && (
@@ -786,16 +790,11 @@ export default function MilestoneTracker({ userId, babyBirthDate }: Props) {
 function makeStyles(c: Colors) {
   return StyleSheet.create({
     container:  { marginBottom: 16 },
-    headerRow:  { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
-    sectionTitle:    { fontSize: 18, fontWeight: '700', color: c.textPrimary },
-    sectionSubtitle: { fontSize: 12, color: c.textMuted, fontWeight: '500', marginTop: 2 },
-    progressBadge:     { backgroundColor: c.cardSage, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginTop: 2 },
 
     reminderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
     reminderLabel: { fontSize: 13, fontWeight: '600', color: c.textPrimary, flex: 1, marginRight: 10 },
     toggle:        { width: 46, height: 26, borderRadius: 13, backgroundColor: c.separator, justifyContent: 'center', paddingHorizontal: 2 },
     toggleThumb:   { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
-    progressBadgeText: { fontSize: 12, fontWeight: '800', color: c.sage },
 
     comingBox:   { backgroundColor: c.cardBlue, borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5, borderColor: c.blue },
     comingTitle: { fontSize: 13, fontWeight: '800', color: c.blue, marginBottom: 10 },

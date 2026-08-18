@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useColors, Colors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
 import { moderateImage } from '../lib/contentModeration';
@@ -598,6 +600,8 @@ export default function HealthTracker({ userId, babyId }: Props) {
   const c = useColors();
   const s = styles(c);
 
+  const [collapsed, toggleCollapsed] = useCollapsed('health_tracker_collapsed');
+
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -633,6 +637,8 @@ export default function HealthTracker({ userId, babyId }: Props) {
     }
   }
 
+  const ongoingCount = episodes.filter(ep => ep.status === 'ongoing').length;
+
   if (!loaded) {
     return (
       <View style={{ paddingVertical: 24, alignItems: 'center' }}>
@@ -643,16 +649,23 @@ export default function HealthTracker({ userId, babyId }: Props) {
 
   return (
     <View style={s.container}>
-      <View style={s.sectionHeader}>
-        <Text style={s.sectionTitle}>🩺 Health Tracker</Text>
-      </View>
+      <TrackerHeader
+        emoji="🩺" title="Health Tracker"
+        subtitle={ongoingCount > 0 ? `${ongoingCount} ongoing` : episodes.length > 0 ? 'No ongoing episodes' : 'No illness episodes logged yet'}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardBlue} accentColor={c.blue}
+      />
+
+      {!collapsed && (<>
 
       {episodes.length === 0 ? (
-        <Text style={s.emptyText}>No illness episodes logged yet.</Text>
+        <Text style={[s.emptyText, { marginTop: 14 }]}>No illness episodes logged yet.</Text>
       ) : (
-        episodes.map(ep => (
-          <EpisodeRow key={ep.id} episode={ep} onPress={() => setSelectedEpisode(ep)} />
-        ))
+        <View style={{ marginTop: 14 }}>
+          {episodes.map(ep => (
+            <EpisodeRow key={ep.id} episode={ep} onPress={() => setSelectedEpisode(ep)} />
+          ))}
+        </View>
       )}
 
       <TouchableOpacity style={s.addBtn} onPress={() => setShowNew(true)} activeOpacity={0.75}
@@ -663,6 +676,8 @@ export default function HealthTracker({ userId, babyId }: Props) {
       {showNew && (
         <NewEpisodeModal onCreate={createEpisode} onClose={() => setShowNew(false)} />
       )}
+
+      </>)}
 
       {selectedEpisode && userId && babyId && (
         <EpisodeDetailModal
@@ -685,8 +700,6 @@ export default function HealthTracker({ userId, babyId }: Props) {
 const styles = (c: Colors) =>
   StyleSheet.create({
     container: { marginBottom: 16 },
-    sectionHeader: { marginBottom: 14 },
-    sectionTitle: { fontSize: 18, fontWeight: '700', color: c.textPrimary },
     emptyText: { fontSize: 13, color: c.textMuted, fontWeight: '500', marginBottom: 10 },
     addBtn: { borderWidth: 1.5, borderColor: c.primary, borderStyle: 'dashed', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
     addBtnText: { fontSize: 14, fontWeight: '700', color: c.primary },

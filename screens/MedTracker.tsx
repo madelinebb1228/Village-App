@@ -5,6 +5,9 @@ import {
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import DisclosureToggle from '../components/DisclosureToggle';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -179,7 +182,7 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
   const [meds,         setMeds]         = useState<Medication[]>([]);
   const [logs,         setLogs]         = useState<MedLog[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [expanded,     setExpanded]     = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed(`med_${type}_collapsed`);
   const [showHistory,  setShowHistory]  = useState(false);
 
   // Give modal
@@ -461,19 +464,12 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
     <View style={s.wrap}>
 
       {/* ── Collapsed header ── */}
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse medications' : 'Expand medications'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>💊</Text>
-          <View>
-            <Text style={s.headerTitle}>
-              {type === 'baby' ? 'Baby Medications' : 'Meds & Supplements'}
-            </Text>
-            <Text style={s.headerSub}>{headerSub}</Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="💊" title={type === 'baby' ? 'Baby Medications' : 'Meds & Supplements'}
+        subtitle={headerSub}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardHoney} accentColor={c.honey}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -643,10 +639,11 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
           </TouchableOpacity>
 
           {/* ── History ── */}
-          <TouchableOpacity style={s.historyToggle} onPress={() => setShowHistory(p => !p)} activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel={showHistory ? 'Hide dose history' : 'Show dose history'}>
-            <Text style={s.historyToggleText}>{showHistory ? '▲' : '▼'}  Dose history (48h)</Text>
-          </TouchableOpacity>
+          <DisclosureToggle
+            label="Dose history (48h)" expanded={showHistory}
+            onPress={() => setShowHistory(p => !p)}
+            style={{ alignItems: 'center', paddingVertical: 6 }}
+          />
 
           {showHistory && (
             <View style={s.historyList}>
@@ -794,10 +791,11 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
                   ))}
                 </View>
 
-                <TouchableOpacity style={s.rxToggle} onPress={() => setShowRx(p => !p)} activeOpacity={0.8}
-                  accessibilityRole="button" accessibilityLabel={showRx ? 'Hide prescription medications' : 'Show prescription medications'}>
-                  <Text style={s.rxToggleText}>{showRx ? '▲' : '▼'}  Show prescription medications (Rx)</Text>
-                </TouchableOpacity>
+                <DisclosureToggle
+                  label="Show prescription medications (Rx)" expanded={showRx}
+                  onPress={() => setShowRx(p => !p)}
+                  style={{ alignItems: 'center', paddingVertical: 10, marginTop: 4 }}
+                />
 
                 {showRx && (
                   <View style={[s.presetGrid, { marginTop: 4 }]}>
@@ -939,14 +937,8 @@ export default function MedTracker({ type, userId, babyId, babyName, babyWeightL
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap:        { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#8878A8' },
-    headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 14, borderTopWidth: 1, borderTopColor: c.separator, gap: 10 },
+    wrap:        { marginBottom: 16 },
+    body:        { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 14, marginTop: 14, gap: 10 },
 
     weightNote:     { backgroundColor: c.cardHoney, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: c.honey },
     weightNoteText: { fontSize: 13, color: c.textSecondary, lineHeight: 18 },
@@ -993,8 +985,6 @@ function makeStyles(c: Colors) {
     addBtn:    { backgroundColor: c.cardSage, borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#A7F3D0' },
     addBtnText:{ fontSize: 14, fontWeight: '700', color: c.sage },
 
-    historyToggle:    { paddingVertical: 6, alignItems: 'center' },
-    historyToggleText:{ fontSize: 13, color: c.textMuted, fontWeight: '600' },
     historyList:      { gap: 8 },
     historyRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
     historyDot:       { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
@@ -1037,8 +1027,6 @@ function makeStyles(c: Colors) {
     presetChipText: { fontSize: 13, fontWeight: '700' },
     presetChipSub:  { fontSize: 11, marginTop: 2 },
 
-    rxToggle:    { paddingVertical: 10, alignItems: 'center', marginTop: 4 },
-    rxToggleText:{ fontSize: 13, color: c.textMuted, fontWeight: '600' },
     presetNote:  { backgroundColor: c.cardHoney, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: c.honey, marginBottom: 4 },
     presetNoteText: { fontSize: 12, color: c.textSecondary },
 

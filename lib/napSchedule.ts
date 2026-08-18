@@ -312,17 +312,16 @@ export async function scheduleWindDownNow(
 
 // Convenience wrapper for callers that only have userId (e.g. SharedCalendar,
 // after a personal-calendar edit) — looks up the baby and current sleep
-// state itself.
-export async function recomputeWindDown(userId: string | null): Promise<void> {
+// state itself. Pass babyId when known (households with more than one
+// child) — otherwise this falls back to an arbitrary owned baby.
+export async function recomputeWindDown(userId: string | null, babyId?: string | null): Promise<void> {
   if (!userId) return;
   const db: any = supabase;
   try {
-    const { data: baby } = await db
-      .from('babies')
-      .select('id, name, birth_date')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+    const babyQuery = db.from('babies').select('id, name, birth_date');
+    const { data: baby } = babyId
+      ? await babyQuery.eq('id', babyId).maybeSingle()
+      : await babyQuery.eq('user_id', userId).limit(1).maybeSingle();
     if (!baby) return;
 
     const { data: active } = await db

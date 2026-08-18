@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 import { computeCycleStats } from '../lib/cycleUtils';
@@ -43,7 +45,7 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
   const [loading,  setLoading]  = useState(true);
   const [adding,   setAdding]   = useState(false);
   const [saving,   setSaving]   = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed('period_return_collapsed');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [flow,     setFlow]     = useState('spotting');
@@ -106,21 +108,14 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Period Return section' : 'Expand Period Return section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🩸</Text>
-          <View>
-            <Text style={s.headerTitle}>Period Return</Text>
-            <Text style={s.headerSub}>
-              {hasReturned
-                ? `Last logged: ${fmtDate(lastEntry.logged_date)} · ${lastEntry.flow_level}`
-                : 'Track when your cycle returns'}
-            </Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="🩸" title="Period Return"
+        subtitle={hasReturned
+          ? `Last logged: ${fmtDate(lastEntry.logged_date)} · ${lastEntry.flow_level}`
+          : 'Track when your cycle returns'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardHoney} accentColor={c.honey}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -239,14 +234,8 @@ export default function PeriodReturnTracker({ userId }: { userId: string | null 
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#DC2626' },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     infoCard:   { backgroundColor: c.cardBlue, borderRadius: 12, padding: 14, marginBottom: 14 },
     infoText:   { fontSize: 13, color: '#1E3A8A', lineHeight: 19 },

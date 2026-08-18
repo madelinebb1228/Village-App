@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -33,7 +35,7 @@ export default function ContractionTimerTracker({ userId }: { userId: string | n
 
   const [history,  setHistory]  = useState<ContractionLog[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded, setExpanded] = useCollapsed('contraction_timer_collapsed');
 
   const [activeId,   setActiveId]   = useState<string | null>(null);
   const [activeStart, setActiveStart] = useState<string | null>(null);
@@ -115,20 +117,13 @@ export default function ContractionTimerTracker({ userId }: { userId: string | n
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Contraction Timer section' : 'Expand Contraction Timer section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>⏱️</Text>
-          <View>
-            <Text style={s.headerTitle}>Contraction Timer</Text>
-            <Text style={s.headerSub}>
-              {activeId ? 'Timing in progress…' :
-                history[0] ? `Last: ${fmtTime(history[0].started_at)}` : 'Tap to start timing'}
-            </Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="⏱️" title="Contraction Timer"
+        subtitle={activeId ? 'Timing in progress…' :
+          history[0] ? `Last: ${fmtTime(history[0].started_at)}` : 'Tap to start timing'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardLavender} accentColor={c.lavender}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -184,14 +179,8 @@ export default function ContractionTimerTracker({ userId }: { userId: string | n
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: c.lavender },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     patternBanner: { backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#FDE68A' },
     patternText: { fontSize: 12, fontWeight: '600', color: '#92400E', lineHeight: 17 },

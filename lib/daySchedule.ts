@@ -35,16 +35,16 @@ function subtractBusyFromSlots(slots: Slot[], busy: BusyBlock[]): Slot[] {
 // falling back to awake gaps if no nap slot fits; non-nap-friendly tasks
 // only ever use awake gaps. Tasks that don't fit anywhere are left pending
 // and reported back so the UI can flag them.
-export async function generateDaySchedule(userId: string, forDate: Date): Promise<ScheduleResult> {
+export async function generateDaySchedule(userId: string, forDate: Date, babyId?: string | null): Promise<ScheduleResult> {
   const db: any = supabase;
   const calendarId = await ensureCalendar(userId, 'personal');
 
-  const { data: baby } = await db
-    .from('babies')
-    .select('id, birth_date')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle();
+  // Prefer the caller's active baby (relevant for households with more than
+  // one child) — only fall back to an arbitrary owned baby if none is given.
+  const babyQuery = db.from('babies').select('id, birth_date');
+  const { data: baby } = babyId
+    ? await babyQuery.eq('id', babyId).maybeSingle()
+    : await babyQuery.eq('user_id', userId).limit(1).maybeSingle();
 
   const dayBoundStart = new Date(forDate); dayBoundStart.setHours(0, 0, 0, 0);
   const dayBoundEnd = new Date(forDate); dayBoundEnd.setHours(23, 59, 59, 999);

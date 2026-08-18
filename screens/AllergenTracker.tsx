@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColors, Colors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeUpsert, safeDelete } from '../lib/syncService';
 import { autoFormatDate, parseDisplayDate, toDisplayDate, todayISO } from '../lib/dateUtils';
@@ -586,7 +588,7 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
   const c = useColors();
   const s = styles(c);
 
-  const [collapsed,     setCollapsed]     = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed('allergen_collapsed');
   const [tab,           setTab]           = useState<TabKey>('food');
   const [statusFilter,  setStatusFilter]  = useState<Status | 'all'>('all');
   const [entries,       setEntries]       = useState<Record<string, AllergenEntry>>({});
@@ -784,11 +786,13 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
   return (
     <View style={s.container}>
       {/* ── Section header ── */}
-      <TouchableOpacity style={s.sectionHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.7}
-        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Allergen Tracker' : 'Collapse Allergen Tracker'}>
-        <Text style={s.sectionTitle}>🚨 Allergen Tracker</Text>
-        <Text style={s.chevron}>{collapsed ? '›' : '⌄'}</Text>
-      </TouchableOpacity>
+      <View style={{ marginBottom: collapsed ? 0 : 14 }}>
+        <TrackerHeader
+          emoji="🚨" title="Allergen Tracker"
+          collapsed={collapsed} onToggle={toggleCollapsed}
+          accentBg={c.cardBlush} accentColor={c.blush}
+        />
+      </View>
 
       {!collapsed && (
         <>
@@ -1007,12 +1011,6 @@ export default function AllergenTracker({ userId, babyId, babyBirthDate }: Props
 const styles = (c: Colors) =>
   StyleSheet.create({
     container: { marginBottom: 16 },
-
-    sectionHeader: {
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14,
-    },
-    sectionTitle: { fontSize: 18, fontWeight: '700', color: c.textPrimary },
-    chevron:      { fontSize: 22, color: c.textMuted, fontWeight: '700' },
 
     summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
     summaryChip: {

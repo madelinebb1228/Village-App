@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LineChart } from 'react-native-chart-kit';
 import * as Notifications from 'expo-notifications';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeDelete } from '../lib/syncService';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -204,9 +206,6 @@ function makeStyles(c: Colors) {
       backgroundColor: c.card, borderRadius: 16, padding: 20,
       marginBottom: 16, borderWidth: 1.5, borderColor: c.separator,
     },
-    headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    headerEmoji: { fontSize: 22, marginRight: 8 },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: c.textPrimary, flex: 1 },
     subtitle: { fontSize: 13, color: c.textMuted, lineHeight: 19, marginBottom: 16 },
     // Last check summary
     summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
@@ -475,6 +474,8 @@ export default function PostpartumMentalHealthTracker({
   const insets = useSafeAreaInsets();
   const chartWidth = Platform.OS === 'web' ? Math.min(SW - 32, 500) : SW - 32;
 
+  const [collapsed, toggleCollapsed] = useCollapsed('postpartum_mh_collapsed');
+
   const [records, setRecords] = useState<CheckRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -679,12 +680,18 @@ export default function PostpartumMentalHealthTracker({
     <>
       {/* ── Card ────────────────────────────────────────────────────────── */}
       <View style={s.card}>
-        <View style={s.headerRow}>
-          <Text style={s.headerEmoji}>🧠</Text>
-          <Text style={s.headerTitle}>Postpartum Mental Health</Text>
-          {loading && <ActivityIndicator size="small" color={c.lavender} />}
-        </View>
-        <Text style={s.subtitle}>
+        <TrackerHeader
+          emoji="🧠" title="Postpartum Mental Health"
+          subtitle={lastRecord
+            ? (overdue ? 'Check-in overdue' : due ? 'Check-in due this week' : `Last check-in: ${daysSinceLast === 0 ? 'today' : daysSinceLast === 1 ? 'yesterday' : `${daysSinceLast}d ago`}`)
+            : 'Take your first check-in'}
+          collapsed={collapsed} onToggle={toggleCollapsed}
+          accentBg={c.cardLavender} accentColor={c.lavender}
+          alert={overdue || lastRecord?.risk_level === 'high' || lastRecord?.risk_level === 'urgent'}
+        />
+
+        {!collapsed && (<>
+        <Text style={[s.subtitle, { marginTop: 14 }]}>
           Regular check-ins screen for postpartum depression (PPD), anxiety (PPA), and psychosis (PPP) — so you can get support early.
         </Text>
 
@@ -814,8 +821,9 @@ export default function PostpartumMentalHealthTracker({
             </TouchableOpacity>
           </>
         )}
+        </>)}
 
-        {/* Always-visible crisis resources */}
+        {/* Always-visible crisis resources — stays visible even when collapsed */}
         <View style={s.crisisBar}>
           <Text style={s.crisisBarEmoji}>💜</Text>
           <Text style={s.crisisBarText}>

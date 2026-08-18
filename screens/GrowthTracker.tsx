@@ -8,6 +8,8 @@ import { Dimensions } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 import { useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { autoFormatDate, parseDisplayDate, toDisplayDate, todayDisplay } from '../lib/dateUtils';
 import {
   GenderKey, WHO_WEIGHT, WHO_HEIGHT, WHO_HEAD,
@@ -83,7 +85,7 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
   const c = useColors();
   const gender: GenderKey = babyGender?.toLowerCase() === 'girl' ? 'girl' : 'boy';
 
-  const [collapsed,  setCollapsed]  = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed('growth_collapsed');
   const [logs,       setLogs]       = useState<GrowthLog[]>([]);
   const [loading,    setLoading]    = useState(false);
   const [loaded,     setLoaded]     = useState(false);
@@ -310,14 +312,13 @@ export default function GrowthTracker({ userId, babyId, babyBirthDate, babyGende
     <View style={{ marginBottom: 16 }}>
 
       {/* Collapse header */}
-      <TouchableOpacity
-        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.cardSage, borderRadius: 14, borderWidth: 2, borderColor: c.sage, paddingHorizontal: 16, paddingVertical: 13, marginBottom: collapsed ? 0 : 14 }}
-        onPress={() => setCollapsed(v => !v)} activeOpacity={0.75}
-        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Growth Tracker' : 'Collapse Growth Tracker'}
-      >
-        <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>📈 Growth Tracker</Text>
-        <Text style={{ fontSize: 20, color: c.sage, fontWeight: '700' }}>{collapsed ? '›' : '⌄'}</Text>
-      </TouchableOpacity>
+      <View style={{ marginBottom: collapsed ? 0 : 14 }}>
+        <TrackerHeader
+          emoji="📈" title="Growth Tracker"
+          collapsed={collapsed} onToggle={toggleCollapsed}
+          accentBg={c.cardSage} accentColor={c.sage}
+        />
+      </View>
 
       {!collapsed && (
         <>

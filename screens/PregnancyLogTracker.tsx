@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -60,7 +62,7 @@ export default function PregnancyLogTracker({ userId }: { userId: string | null 
   const [loading,  setLoading]  = useState(true);
   const [editing,  setEditing]  = useState(false);
   const [saving,   setSaving]   = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed('pregnancy_log_collapsed');
 
   const [weight,   setWeight]   = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
@@ -123,19 +125,12 @@ export default function PregnancyLogTracker({ userId }: { userId: string | null 
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Pregnancy Log section' : 'Expand Pregnancy Log section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>📝</Text>
-          <View>
-            <Text style={s.headerTitle}>Symptoms & Weight</Text>
-            <Text style={s.headerSub}>
-              {todayLog ? `Logged today · ${todayLog.symptoms.length} symptom${todayLog.symptoms.length === 1 ? '' : 's'}` : 'Not logged today'}
-            </Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="📝" title="Symptoms & Weight"
+        subtitle={todayLog ? `Logged today · ${todayLog.symptoms.length} symptom${todayLog.symptoms.length === 1 ? '' : 's'}` : 'Not logged today'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardHoney} accentColor={c.honey}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -223,14 +218,8 @@ export default function PregnancyLogTracker({ userId }: { userId: string | null 
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: c.honey },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     flagBanner: { backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#FDE68A' },
     flagText: { fontSize: 12, fontWeight: '600', color: '#92400E', lineHeight: 17 },

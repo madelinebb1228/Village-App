@@ -15,6 +15,8 @@ import {
 } from '../lib/vaccineNotifications';
 import { useCalendarSyncPrompt } from '../lib/calendarSync';
 import ConfirmModal from '../components/ConfirmModal';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { getBabyAge } from '../lib/feedUtils';
 import PrepareForVisit from './PrepareForVisit';
 
@@ -166,7 +168,7 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
-  const [collapsed,    setCollapsed]    = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed('vaccine_collapsed');
   const [tab,          setTab]          = useState<'vaccines' | 'appointments'>('vaccines');
   const [babyId,       setBabyId]       = useState<string | null>(null);
   const [birthDate,    setBirthDate]    = useState<string | null>(null);
@@ -453,26 +455,23 @@ export default function VaccineTracker({ userId }: { userId: string | null }) {
     <View style={s.container}>
 
       {/* ── Collapsible header with progress ── */}
-      <TouchableOpacity style={s.collapseHeader} onPress={() => setCollapsed(v => !v)} activeOpacity={0.75}
-        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand vaccines and appointments' : 'Collapse vaccines and appointments'}>
-        <View style={{ flex: 1 }}>
-          <View style={s.headerTopRow}>
-            <Text style={s.heading}>💉 Vaccines & Appointments</Text>
-            <Text style={s.collapseChevron}>{collapsed ? '›' : '⌄'}</Text>
-          </View>
-          {!collapsed && (
-            <View style={s.progressWrap}>
-              <View style={s.progressBar}>
-                <View style={[s.progressFill, { width: `${Math.round(progressPct * 100)}%` as any, backgroundColor: progressColor }]} />
-              </View>
-              <Text style={s.progressLabel}>
-                {stats.done}/{stats.total} complete
-                {stats.overdue > 0 ? `  ·  ${stats.overdue} overdue` : stats.due > 0 ? `  ·  ${stats.due} due now` : ''}
-              </Text>
+      <View style={{ marginBottom: 14 }}>
+        <TrackerHeader
+          emoji="💉" title="Vaccines & Appointments"
+          collapsed={collapsed} onToggle={toggleCollapsed}
+          accentBg={c.cardLavender} accentColor={c.lavender}
+        >
+          <View style={s.progressWrap}>
+            <View style={s.progressBar}>
+              <View style={[s.progressFill, { width: `${Math.round(progressPct * 100)}%` as any, backgroundColor: progressColor }]} />
             </View>
-          )}
-        </View>
-      </TouchableOpacity>
+            <Text style={s.progressLabel}>
+              {stats.done}/{stats.total} complete
+              {stats.overdue > 0 ? `  ·  ${stats.overdue} overdue` : stats.due > 0 ? `  ·  ${stats.due} due now` : ''}
+            </Text>
+          </View>
+        </TrackerHeader>
+      </View>
 
       {!collapsed && (
         <>
@@ -909,13 +908,6 @@ function makeStyles(c: Colors) {
   return StyleSheet.create({
     container: { marginBottom: 16 },
 
-    collapseHeader: {
-      backgroundColor: c.cardLavender, borderRadius: 14, borderWidth: 2, borderColor: c.lavender,
-      paddingHorizontal: 16, paddingTop: 13, paddingBottom: 10, marginBottom: 14,
-    },
-    headerTopRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-    collapseChevron:{ fontSize: 20, color: c.lavender, fontWeight: '700' },
-    heading:        { fontSize: 16, fontWeight: '800', color: c.textPrimary },
     progressWrap:   { gap: 4 },
     progressBar:    { height: 6, borderRadius: 3, backgroundColor: c.separator, overflow: 'hidden' },
     progressFill:   { height: 6, borderRadius: 3 },
