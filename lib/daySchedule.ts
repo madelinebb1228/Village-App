@@ -12,7 +12,9 @@ const DAY_END_HOUR = 21;
 const DEFAULT_DURATION_MIN = 30;
 
 interface Slot { start: Date; end: Date; kind: 'nap' | 'awake' }
-interface BusyBlock { start: Date; end: Date }
+interface BusyBlock { id: string; start: Date; end: Date }
+interface MovableBlock extends BusyBlock { durationMs: number; kind: 'nap' | 'awake' }
+interface NapWindow { start: Date; end: Date }
 
 function subtractBusyFromSlots(slots: Slot[], busy: BusyBlock[]): Slot[] {
   let result = slots;
@@ -28,13 +30,23 @@ function subtractBusyFromSlots(slots: Slot[], busy: BusyBlock[]): Slot[] {
   return result.filter(s => s.end.getTime() > s.start.getTime());
 }
 
+function kindAt(time: Date, napWindows: NapWindow[]): 'nap' | 'awake' {
+  return napWindows.some(w => time.getTime() >= w.start.getTime() && time.getTime() < w.end.getTime()) ? 'nap' : 'awake';
+}
+
 // Places today's pending (is_scheduled = false) flexible tasks into the open
-// gaps around already-scheduled events and predicted nap windows. Already-
-// scheduled events (fixed or flexible) are never moved by this pass — only
-// new pending tasks get placed. Nap-friendly tasks prefer nap windows first,
-// falling back to awake gaps if no nap slot fits; non-nap-friendly tasks
-// only ever use awake gaps. Tasks that don't fit anywhere are left pending
-// and reported back so the UI can flag them.
+// gaps around already-scheduled events and predicted nap windows. Nap-friendly
+// tasks prefer nap windows first, falling back to awake gaps if no nap slot
+// fits; non-nap-friendly tasks only ever use awake gaps.
+//
+// A first greedy pass never moves anything already placed. A bounded second
+// pass then tries, for each task that still didn't fit, shifting exactly one
+// already-placed flexible event (that the user hasn't manually dragged) later
+// by the stuck task's own duration — freeing its original slot — as long as
+// the shift keeps that event within the same nap/awake territory it started
+// in and doesn't collide with anything else. Fixed events, shared-calendar
+// events, and anything manually_scheduled are never candidates for this and
+// are never moved by generateDaySchedule.
 export async function generateDaySchedule(userId: string, forDate: Date): Promise<ScheduleResult> {
   const db: any = supabase;
   const calendarId = await ensureCalendar(userId, 'personal');
@@ -51,25 +63,13 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
   const dayStart = new Date(forDate); dayStart.setHours(DAY_START_HOUR, 0, 0, 0);
   const dayEnd = new Date(forDate); dayEnd.setHours(DAY_END_HOUR, 0, 0, 0);
 
-  // Already-scheduled events today are treated as fixed "busy" blocks,
-  // regardless of their own flexible/fixed status — generation only fills
-  // gaps, it never reshuffles what's already placed.
   const { data: busyRows } = await db
     .from('calendar_events')
-    .select('starts_at, ends_at, estimated_minutes, all_day')
+    .select('id, starts_at, ends_at, estimated_minutes, all_day, is_flexible, manually_scheduled')
     .eq('calendar_id', calendarId)
     .eq('is_scheduled', true)
     .gte('starts_at', dayBoundStart.toISOString())
     .lte('starts_at', dayBoundEnd.toISOString());
-
-  const busy: BusyBlock[] = (busyRows ?? [])
-    .filter((r: any) => !r.all_day)
-    .map((r: any) => {
-      const start = new Date(r.starts_at);
-      const end = r.ends_at ? new Date(r.ends_at) : new Date(start.getTime() + (r.estimated_minutes ?? DEFAULT_DURATION_MIN) * 60000);
-      return { start, end };
-    })
-    .sort((a: BusyBlock, b: BusyBlock) => a.start.getTime() - b.start.getTime());
 
   const { data: pendingRows } = await db
     .from('calendar_events')
@@ -81,7 +81,27 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
     .order('created_at', { ascending: true });
   const pending = pendingRows ?? [];
 
-  const napWindows = baby?.id ? await predictDayNapWindows(baby.id, baby.birth_date ?? null, forDate) : [];
+  const napWindows: NapWindow[] = baby?.id ? await predictDayNapWindows(baby.id, baby.birth_date ?? null, forDate) : [];
+
+  const busy: BusyBlock[] = (busyRows ?? [])
+    .filter((r: any) => !r.all_day)
+    .map((r: any) => {
+      const start = new Date(r.starts_at);
+      const end = r.ends_at ? new Date(r.ends_at) : new Date(start.getTime() + (r.estimated_minutes ?? DEFAULT_DURATION_MIN) * 60000);
+      return { id: r.id, start, end };
+    })
+    .sort((a: BusyBlock, b: BusyBlock) => a.start.getTime() - b.start.getTime());
+
+  // Already-placed flexible events the user hasn't manually dragged — the
+  // only rows the bounded rebalancing pass (below) is ever allowed to move.
+  const movable: MovableBlock[] = (busyRows ?? [])
+    .filter((r: any) => !r.all_day && r.is_flexible && !r.manually_scheduled)
+    .map((r: any) => {
+      const start = new Date(r.starts_at);
+      const end = r.ends_at ? new Date(r.ends_at) : new Date(start.getTime() + (r.estimated_minutes ?? DEFAULT_DURATION_MIN) * 60000);
+      return { id: r.id, start, end, durationMs: end.getTime() - start.getTime(), kind: kindAt(start, napWindows) };
+    })
+    .sort((a: MovableBlock, b: MovableBlock) => a.start.getTime() - b.start.getTime());
 
   // Nap slots: nap windows clipped to day bounds, minus any real busy-event
   // overlap.
@@ -96,7 +116,7 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
   // Awake gaps must exclude nap-window time too — otherwise a nap-friendly
   // task placed via a nap slot and a non-nap-friendly task placed via an
   // "awake" gap that happens to cover the same clock time would collide.
-  const unavailableForAwake: BusyBlock[] = [...busy, ...napWindows]
+  const unavailableForAwake: BusyBlock[] = [...busy, ...napWindows.map(w => ({ id: '', start: w.start, end: w.end }))]
     .sort((a, b) => a.start.getTime() - b.start.getTime());
   const awakeSlots: Slot[] = [];
   let cursor = dayStart;
@@ -114,8 +134,13 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
 
   const now = new Date();
   const unplaced: { id: string; title: string }[] = [];
+
+  type PendingUpdate = { kind: 'task' | 'move'; id: string; title?: string; promise: Promise<any> };
+  const updates: PendingUpdate[] = [];
   let placed = 0;
 
+  // ── Pass 1: greedy first-fit, exactly as before — never moves anything
+  // already placed, only decides where pending tasks land. ─────────────────
   for (const task of pending) {
     const duration = task.estimated_minutes ?? DEFAULT_DURATION_MIN;
     const order: Array<'nap' | 'awake'> = task.nap_ok ? ['nap', 'awake'] : ['awake'];
@@ -129,11 +154,16 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
 
         const start = usableStart;
         const end = new Date(start.getTime() + duration * 60000);
-        await db.from('calendar_events').update({
-          starts_at: start.toISOString(),
-          ends_at: end.toISOString(),
-          is_scheduled: true,
-        }).eq('id', task.id);
+        updates.push({
+          kind: 'task',
+          id: task.id,
+          title: task.title,
+          promise: db.from('calendar_events').update({
+            starts_at: start.toISOString(),
+            ends_at: end.toISOString(),
+            is_scheduled: true,
+          }).eq('id', task.id),
+        });
 
         slot.start = end; // consume the slot
         placed++;
@@ -146,5 +176,81 @@ export async function generateDaySchedule(userId: string, forDate: Date): Promis
     if (!didPlace) unplaced.push({ id: task.id, title: task.title });
   }
 
-  return { placed, unplaced };
+  // ── Pass 2: bounded rebalancing. For each task that still doesn't fit,
+  // try shifting exactly one already-placed movable event later by the
+  // task's own duration, freeing its original slot. One swap attempt per
+  // unplaced task — no cascades, no backtracking. ─────────────────────────
+  const stillUnplaced: { id: string; title: string }[] = [];
+  for (const task of unplaced) {
+    const original = pending.find((p: any) => p.id === task.id);
+    const duration = original?.estimated_minutes ?? DEFAULT_DURATION_MIN;
+    const durationMs = duration * 60000;
+    const acceptableKinds: Array<'nap' | 'awake'> = original?.nap_ok !== false ? ['nap', 'awake'] : ['awake'];
+
+    let rebalanced = false;
+    for (const m of movable) {
+      if (!acceptableKinds.includes(m.kind)) continue;
+
+      // The task takes m's original slot (clamped to "now" if that slot is
+      // already in the past); m moves to right after where the task ends.
+      const candidateStart = m.start.getTime() < now.getTime() ? now : m.start;
+      const newStart = new Date(candidateStart.getTime() + durationMs);
+      const newEnd = new Date(newStart.getTime() + m.durationMs);
+      if (newEnd.getTime() > dayEnd.getTime()) continue;
+
+      if (m.kind === 'nap') {
+        const w = napWindows.find(w => m.start.getTime() >= w.start.getTime() && m.start.getTime() < w.end.getTime());
+        if (!w || newEnd.getTime() > w.end.getTime()) continue;
+      }
+
+      // The shifted block must not collide with any other busy block.
+      const collides = busy.some(b => b.id !== m.id && newStart.getTime() < b.end.getTime() && newEnd.getTime() > b.start.getTime());
+      if (collides) continue;
+
+      // Success — move m later, place the task in m's freed original slot.
+      updates.push({
+        kind: 'move',
+        id: m.id,
+        promise: db.from('calendar_events').update({
+          starts_at: newStart.toISOString(),
+          ends_at: newEnd.toISOString(),
+        }).eq('id', m.id),
+      });
+      updates.push({
+        kind: 'task',
+        id: task.id,
+        title: task.title,
+        promise: db.from('calendar_events').update({
+          starts_at: candidateStart.toISOString(),
+          ends_at: new Date(candidateStart.getTime() + durationMs).toISOString(),
+          is_scheduled: true,
+        }).eq('id', task.id),
+      });
+
+      // Reflect the move in-memory so later unplaced tasks in this same
+      // pass see the updated occupancy and don't double-book the same gap.
+      const bIdx = busy.findIndex(b => b.id === m.id);
+      if (bIdx >= 0) { busy[bIdx].start = newStart; busy[bIdx].end = newEnd; }
+      m.start = newStart; m.end = newEnd;
+
+      placed++;
+      rebalanced = true;
+      break;
+    }
+
+    if (!rebalanced) stillUnplaced.push(task);
+  }
+
+  // ── Flush all writes in one batch instead of N sequential round-trips. ──
+  const settled = await Promise.allSettled(updates.map(u => u.promise));
+  settled.forEach((result, i) => {
+    const u = updates[i];
+    const failed = result.status === 'rejected' || (result.status === 'fulfilled' && (result.value as any)?.error);
+    if (failed && u.kind === 'task') {
+      placed--;
+      stillUnplaced.push({ id: u.id, title: u.title ?? '' });
+    }
+  });
+
+  return { placed, unplaced: stillUnplaced };
 }

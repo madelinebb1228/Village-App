@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, Modal,
-  Alert, ActivityIndicator, Switch, Share, Platform,
+  Alert, ActivityIndicator, Switch, Share, Platform, Animated, PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import { autoFormatDate, parseDisplayDate, toDisplayDate } from '../lib/dateUtil
 import { recomputeWindDown } from '../lib/napSchedule';
 import { generateDaySchedule } from '../lib/daySchedule';
 import ConfirmModal from '../components/ConfirmModal';
+import DayTimeline, { DayTimelineHandle, DEFAULT_PX_PER_MINUTE } from '../components/DayTimeline';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ interface Member {
   role: string;
 }
 
-interface CalEvent {
+export interface CalEvent {
   id: string;
   calendar_id: string;
   created_by: string | null;
@@ -51,6 +52,7 @@ interface CalEvent {
   estimated_minutes: number | null;
   nap_ok: boolean;
   recurrence_id: string | null;
+  manually_scheduled: boolean;
 }
 
 const RECURRENCE_DAYS = 90; // how far ahead a "repeat daily" series is materialized
@@ -135,27 +137,6 @@ function buildMonthMatrix(y: number, m: number) {
   return weeks;
 }
 
-function eventTimeLabel(e: CalEvent): string {
-  if (e.all_day) return 'All day';
-  const start = new Date(e.starts_at);
-  const startStr = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  if (e.ends_at) {
-    const end = new Date(e.ends_at);
-    return `${startStr} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  return startStr;
-}
-
-function reminderLabel(min: number | null): string {
-  if (min == null) return '';
-  if (min === 0) return '⏰ At start';
-  if (min < 60) return `⏰ ${min} min before`;
-  if (min === 60) return '⏰ 1 hour before';
-  if (min < 1440) return `⏰ ${min / 60} hours before`;
-  if (min === 1440) return '⏰ 1 day before';
-  return `⏰ ${min / 1440} days before`;
-}
-
 function selectedDateLabel(key: string): string {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
@@ -163,12 +144,78 @@ function selectedDateLabel(key: string): string {
   });
 }
 
+// ─── Draggable "to schedule" pending task card ─────────────────────────────────
+//
+// Same tap-vs-drag PanResponder pattern as DayTimeline's blocks, but the drop
+// target lives in a different component (DayTimeline) — so instead of local
+// pixel math, this reports the raw screen coordinates of the release and lets
+// the parent decide whether that landed inside the timeline's measured bounds.
+
+function PendingTaskCard({
+  task, unfit, colors, onPress, onDelete, onDrop,
+}: {
+  task: CalEvent;
+  unfit: boolean;
+  colors: Colors;
+  onPress: () => void;
+  onDelete: () => void;
+  onDrop: (task: CalEvent, pageX: number, pageY: number) => void;
+}) {
+  const pan = useRef(new Animated.ValueXY()).current;
+  const [dragging, setDragging] = useState(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gesture) => Math.abs(gesture.dy) > 4 || Math.abs(gesture.dx) > 4,
+      onPanResponderGrant: () => setDragging(true),
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
+      onPanResponderRelease: (_evt, gesture) => {
+        setDragging(false);
+        pan.setValue({ x: 0, y: 0 });
+        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6) {
+          onPress();
+          return;
+        }
+        onDrop(task, gesture.moveX, gesture.moveY);
+      },
+      onPanResponderTerminate: () => { setDragging(false); pan.setValue({ x: 0, y: 0 }); },
+    })
+  ).current;
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={{
+        transform: pan.getTranslateTransform(),
+        zIndex: dragging ? 10 : 1,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: colors.card, borderRadius: 10, padding: 10, marginBottom: 8,
+        borderWidth: 1.5, borderColor: unfit ? colors.blush : colors.separator,
+        shadowColor: dragging ? '#000' : undefined, shadowOpacity: dragging ? 0.25 : 0, shadowRadius: 8, elevation: dragging ? 6 : 0,
+      }}
+    >
+      <View style={{ flex: 1, paddingRight: 8 }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{task.title}</Text>
+        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+          {task.estimated_minutes ?? 30} min · {task.nap_ok ? '💤 nap-friendly' : '☀️ awake time'} · ✋ drag onto the timeline
+          {unfit ? '  ·  ⚠️ Couldn\'t fit' : ''}
+        </Text>
+      </View>
+      <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={{ fontSize: 14, color: colors.textMuted }}>🗑</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function SharedCalendar({ userId }: { userId: string | null }) {
+export default function SharedCalendar({ userId, onDragStateChange }: { userId: string | null; onDragStateChange?: (dragging: boolean) => void }) {
   const c = useColors();
   const db: any = supabase;
   const navigation = useNavigation<any>();
+  const timelineRef = useRef<DayTimelineHandle>(null);
 
   const now = new Date();
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -353,6 +400,21 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
   const selectedDayPending = useMemo(() => {
     return (eventsByDay[selectedDate] ?? []).filter(e => e.is_scheduled === false);
   }, [eventsByDay, selectedDate]);
+
+  // The timeline's hour window — 6am-9pm by default (matching the
+  // auto-scheduler's own day bounds), auto-expanding if an event on the
+  // selected day falls outside that range so nothing gets clipped.
+  const timelineHours = useMemo(() => {
+    let minHour = 6, maxHour = 21;
+    for (const e of selectedDayEvents) {
+      if (e.all_day) continue;
+      const start = new Date(e.starts_at);
+      minHour = Math.min(minHour, start.getHours());
+      const endRef = e.ends_at ? new Date(e.ends_at) : start;
+      maxHour = Math.max(maxHour, endRef.getHours() + 1);
+    }
+    return { minHour, maxHour };
+  }, [selectedDayEvents]);
 
   function memberName(uid: string | null): string {
     if (!uid) return 'Someone';
@@ -681,6 +743,86 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
     }
   }
 
+  // ─── Timeline drag-to-reschedule ───────────────────────────────────────────
+
+  async function commitReschedule(e: CalEvent, newStart: Date, newEnd: Date | null) {
+    setEvents(prev => prev.map(ev => (ev.id === e.id
+      ? { ...ev, starts_at: newStart.toISOString(), ends_at: newEnd ? newEnd.toISOString() : null, manually_scheduled: true }
+      : ev)));
+    const { error } = await db.from('calendar_events').update({
+      starts_at: newStart.toISOString(),
+      ends_at: newEnd ? newEnd.toISOString() : null,
+      manually_scheduled: true,
+    }).eq('id', e.id);
+    if (error) {
+      Alert.alert('Could not reschedule', error.message);
+      await loadActive();
+      return;
+    }
+    rescheduleEventReminders(events);
+    if (activeKind === 'personal') recomputeWindDown(userId);
+  }
+
+  function handleTimelineDragEnd(e: CalEvent, newStart: Date, newEnd: Date | null) {
+    if (e.recurrence_id) {
+      // Reuse the existing "Just this day / This and all future" prompt —
+      // a minimal payload here means handleEditScopeChoice's partial update
+      // only ever touches starts_at/ends_at/manually_scheduled, nothing else.
+      setEditScopePrompt({
+        payload: {
+          starts_at: newStart.toISOString(),
+          ends_at: newEnd ? newEnd.toISOString() : null,
+          manually_scheduled: true,
+        },
+        starts: newStart,
+        ends: newEnd,
+        original: e,
+      });
+      return;
+    }
+    commitReschedule(e, newStart, newEnd);
+  }
+
+  async function commitPendingPlacement(task: CalEvent, newStart: Date, newEnd: Date) {
+    setEvents(prev => prev.map(ev => (ev.id === task.id
+      ? { ...ev, starts_at: newStart.toISOString(), ends_at: newEnd.toISOString(), is_scheduled: true, manually_scheduled: true }
+      : ev)));
+    const { error } = await db.from('calendar_events').update({
+      starts_at: newStart.toISOString(),
+      ends_at: newEnd.toISOString(),
+      is_scheduled: true,
+      manually_scheduled: true,
+    }).eq('id', task.id);
+    if (error) {
+      Alert.alert('Could not place task', error.message);
+      await loadActive();
+      return;
+    }
+    setUnfitIds(prev => { const next = new Set(prev); next.delete(task.id); return next; });
+    rescheduleEventReminders(events);
+    if (activeKind === 'personal') recomputeWindDown(userId);
+  }
+
+  // Drop coordinate for dragging a pending task card onto the timeline —
+  // measures the timeline's on-screen bounds and converts the drop's page Y
+  // into a time, using the same minHour/pxPerMinute the timeline itself uses.
+  function handlePendingDrop(task: CalEvent, pageX: number, pageY: number) {
+    const handle = timelineRef.current;
+    if (!handle) return;
+    handle.measure((_x, _y, width, height, pageXOffset, pageYOffset) => {
+      const inBounds = pageX >= pageXOffset && pageX <= pageXOffset + width && pageY >= pageYOffset && pageY <= pageYOffset + height;
+      if (!inBounds) return;
+      const pxPerMinute = DEFAULT_PX_PER_MINUTE;
+      const minutesFromStart = (pageY - pageYOffset) / pxPerMinute;
+      const duration = task.estimated_minutes ?? 30;
+      const [yy, mo, dd] = selectedDate.split('-').map(Number);
+      const newStart = new Date(yy, mo - 1, dd, timelineHours.minHour, 0, 0, 0);
+      newStart.setMinutes(newStart.getMinutes() + Math.round(minutesFromStart / 15) * 15);
+      const newEnd = new Date(newStart.getTime() + duration * 60000);
+      commitPendingPlacement(task, newStart, newEnd);
+    });
+  }
+
   async function handleGenerateSchedule() {
     if (!userId) return;
     setGenerating(true);
@@ -991,105 +1133,38 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
               {generating ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ Generate Schedule</Text>}
             </TouchableOpacity>
           </View>
-          {selectedDayPending.map(t => {
-            const unfit = unfitIds.has(t.id);
-            return (
-              <TouchableOpacity
-                key={t.id}
-                onPress={() => openEdit(t)}
-                activeOpacity={0.8}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  backgroundColor: c.card, borderRadius: 10, padding: 10, marginBottom: 8,
-                  borderWidth: 1.5, borderColor: unfit ? c.blush : c.separator,
-                }}
-              >
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.textPrimary }}>{t.title}</Text>
-                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 2 }}>
-                    {t.estimated_minutes ?? 30} min · {t.nap_ok ? '💤 nap-friendly' : '☀️ awake time'}
-                    {unfit ? '  ·  ⚠️ Couldn\'t fit' : ''}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={() => confirmDeleteEvent(t)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={{ fontSize: 14, color: c.textMuted }}>🗑</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            );
-          })}
+          {selectedDayPending.map(t => (
+            <PendingTaskCard
+              key={t.id}
+              task={t}
+              unfit={unfitIds.has(t.id)}
+              colors={c}
+              onPress={() => openEdit(t)}
+              onDelete={() => confirmDeleteEvent(t)}
+              onDrop={handlePendingDrop}
+            />
+          ))}
         </View>
       )}
 
-      {/* Selected day's events */}
+      {/* Selected day's timeline */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: c.textPrimary }}>{selectedDateLabel(selectedDate)}</Text>
         {eventsLoading ? <ActivityIndicator size="small" color={c.primary} /> : null}
       </View>
 
-      {selectedDayEvents.length === 0 ? (
-        <View style={{ alignItems: 'center', paddingVertical: 28 }}>
-          <Text style={{ fontSize: 34, marginBottom: 8 }}>📅</Text>
-          <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center' }}>
-            Nothing scheduled. Tap “+ Event” to add something.
-          </Text>
-        </View>
-      ) : (
-        selectedDayEvents.map(e => (
-          <TouchableOpacity
-            key={e.id}
-            onPress={() => openEdit(e)}
-            activeOpacity={0.85}
-            style={{
-              backgroundColor: c.card, borderRadius: 14, padding: 14, marginBottom: 10,
-              borderWidth: 1.5, borderColor: c.separator, borderLeftWidth: 4, borderLeftColor: c.primary,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, paddingRight: 8 }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: c.textPrimary }}>{e.title}</Text>
-                {e.is_flexible ? (
-                  <View style={{ backgroundColor: c.cardLavender, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: c.lavender }}>🔀 Flexible</Text>
-                  </View>
-                ) : null}
-                {e.recurrence_id ? (
-                  <View style={{ backgroundColor: c.card, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: c.separator }}>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: c.textMuted }}>🔁 Daily</Text>
-                  </View>
-                ) : null}
-              </View>
-              <TouchableOpacity onPress={() => confirmDeleteEvent(e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 14, color: c.textMuted }}>🗑</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={{ fontSize: 13, color: c.textSecondary, fontWeight: '600', marginTop: 3 }}>🕐 {eventTimeLabel(e)}</Text>
-            {e.location ? <Text style={{ fontSize: 13, color: c.textSecondary, marginTop: 3 }}>📍 {e.location}</Text> : null}
-            {e.notes ? <Text style={{ fontSize: 13, color: c.textMuted, marginTop: 3, lineHeight: 18 }}>{e.notes}</Text> : null}
-            {e.assigned_to ? (
-              <Text style={{ fontSize: 12, color: c.primary, fontWeight: '700', marginTop: 5 }}>
-                🙋 {e.assigned_to === userId ? 'You' : memberName(e.assigned_to)}
-              </Text>
-            ) : null}
-            {e.source_type && SOURCE_NAV[e.source_type] ? (
-              <TouchableOpacity
-                onPress={() => navigation.navigate(SOURCE_NAV[e.source_type!].screen, SOURCE_NAV[e.source_type!].params)}
-                hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
-                style={{ marginTop: 6 }}
-              >
-                <Text style={{ fontSize: 11, color: c.textMuted, fontWeight: '600', textDecorationLine: 'underline' }}>
-                  {SOURCE_LABEL[e.source_type] ?? 'Synced'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-              {e.reminder_minutes != null ? (
-                <Text style={{ fontSize: 11, color: c.primary, fontWeight: '700' }}>{reminderLabel(e.reminder_minutes)}</Text>
-              ) : <View />}
-              <Text style={{ fontSize: 11, color: c.textMuted }}>added by {memberName(e.created_by)}</Text>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
+      <DayTimeline
+        ref={timelineRef}
+        date={selectedDate}
+        events={selectedDayEvents}
+        colors={c}
+        minHour={timelineHours.minHour}
+        maxHour={timelineHours.maxHour}
+        onPressEvent={openEdit}
+        onDeleteEvent={confirmDeleteEvent}
+        onDragEnd={handleTimelineDragEnd}
+        onDragStateChange={onDragStateChange}
+      />
 
       {/* ── Event modal ── */}
       <Modal visible={showEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEventModal(false)}>
@@ -1110,6 +1185,17 @@ export default function SharedCalendar({ userId }: { userId: string | null }) {
           <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
             <Text style={lbl(c)}>Title</Text>
             <TextInput style={inp(c)} placeholder="e.g. Pediatrician appointment" placeholderTextColor={c.textMuted} value={title} onChangeText={setTitle} />
+
+            {editingEvent?.source_type && SOURCE_NAV[editingEvent.source_type] && (
+              <TouchableOpacity
+                onPress={() => { setShowEventModal(false); navigation.navigate(SOURCE_NAV[editingEvent.source_type!].screen, SOURCE_NAV[editingEvent.source_type!].params); }}
+                style={{ marginTop: 8 }}
+              >
+                <Text style={{ fontSize: 12, color: c.textMuted, fontWeight: '600', textDecorationLine: 'underline' }}>
+                  {SOURCE_LABEL[editingEvent.source_type] ?? 'Synced'} — tap to view
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {activeKind === 'personal' && !editingScheduledFlexible && (
               <>

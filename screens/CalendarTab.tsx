@@ -14,6 +14,7 @@ export default function CalendarTab() {
   const { isSubscribed, openPaywall } = useSubscription();
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dragLocked, setDragLocked] = useState(false);
 
   useEffect(() => { screenView('Calendar'); }, []);
 
@@ -44,11 +45,12 @@ export default function CalendarTab() {
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!dragLocked}
       >
         <Text style={s.heading}>Calendar</Text>
 
         {isSubscribed ? (
-          <SharedCalendar userId={userId} />
+          <SharedCalendar userId={userId} onDragStateChange={setDragLocked} />
         ) : (
           <View style={s.premiumCard}>
             <Text style={s.premiumEmoji}>📅</Text>

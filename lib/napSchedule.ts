@@ -175,7 +175,8 @@ export async function predictDayNapWindows(
 // Shifts today's not-yet-started flexible personal-calendar events by
 // deltaMinutes (positive = later, negative = earlier), uniformly and clamped
 // so nothing moves earlier than right now. No collision-avoidance with fixed
-// events in v1.
+// events in v1. Events the user has manually dragged (manually_scheduled)
+// are excluded — a manual reschedule takes precedence over this auto-shift.
 export async function shiftFlexibleEvents(userId: string, deltaMinutes: number): Promise<number> {
   if (Math.abs(deltaMinutes) < NOISE_THRESHOLD_MIN) return 0;
   const db: any = supabase;
@@ -191,6 +192,7 @@ export async function shiftFlexibleEvents(userId: string, deltaMinutes: number):
     .eq('calendar_id', calendarId)
     .eq('is_flexible', true)
     .eq('is_scheduled', true)
+    .eq('manually_scheduled', false)
     .gte('starts_at', now.toISOString())
     .lte('starts_at', endOfDay.toISOString());
 
