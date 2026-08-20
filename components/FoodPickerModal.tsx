@@ -449,7 +449,7 @@ export default function FoodPickerModal({ visible, onClose, userId, recentMeals,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.separator,
         }}>
-          <TouchableOpacity onPress={goBack} style={{ width: 44 }}
+          <TouchableOpacity onPress={goBack} style={{ width: 56 }}
             accessibilityRole="button" accessibilityLabel={step === 'browse' ? 'Close' : 'Back'}>
             <Text style={{ fontSize: 18, color: c.textMuted }}>{step === 'browse' ? '✕' : '‹ Back'}</Text>
           </TouchableOpacity>
@@ -457,11 +457,12 @@ export default function FoodPickerModal({ visible, onClose, userId, recentMeals,
             {titleForStep[step]}
           </Text>
           {step === 'browse' ? (
-            <TouchableOpacity onPress={openScannerMode} style={{ width: 44, alignItems: 'flex-end' }}
+            <TouchableOpacity onPress={openScannerMode} style={{ width: 56, alignItems: 'center' }}
               accessibilityRole="button" accessibilityLabel="Scan a barcode">
               <Text style={{ fontSize: 20 }}>📷</Text>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: c.textMuted, marginTop: 1 }}>Scan</Text>
             </TouchableOpacity>
-          ) : <View style={{ width: 44 }} />}
+          ) : <View style={{ width: 56 }} />}
         </View>
 
         {step === 'browse' && (
