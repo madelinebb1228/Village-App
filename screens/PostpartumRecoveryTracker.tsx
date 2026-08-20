@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -98,7 +100,7 @@ export default function PostpartumRecoveryTracker({
   const [loading,  setLoading]  = useState(true);
   const [editing,  setEditing]  = useState(false);
   const [saving,   setSaving]   = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed('postpartum_recovery_collapsed');
 
   const [pain,       setPain]       = useState(0);
   const [lochia,     setLochia]     = useState('none');
@@ -182,23 +184,13 @@ export default function PostpartumRecoveryTracker({
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Postpartum Recovery section' : 'Expand Postpartum Recovery section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🌸</Text>
-          <View>
-            <Text style={s.headerTitle}>Postpartum Recovery</Text>
-            <Text style={s.headerSub}>
-              {daysPostpartum != null ? `Day ${daysPostpartum} · ` : ''}
-              {todayLog ? `Pain ${todayLog.pain_level ?? 0}/10 · ${todayLog.lochia ?? '—'} flow` : 'Log how you\'re healing'}
-            </Text>
-          </View>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          {todayFlag && <Text style={s.flagDot}>●</Text>}
-          <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-        </View>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="🌸" title="Postpartum Recovery"
+        subtitle={`${daysPostpartum != null ? `Day ${daysPostpartum} · ` : ''}${todayLog ? `Pain ${todayLog.pain_level ?? 0}/10 · ${todayLog.lochia ?? '—'} flow` : 'Log how you\'re healing'}`}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardBlue} accentColor={c.blue}
+        alert={!!todayFlag}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -415,15 +407,8 @@ export default function PostpartumRecoveryTracker({
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#DB2777' },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    flagDot:     { fontSize: 10, color: '#DC2626' },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     flagBanner: { flexDirection: 'row', gap: 10, borderRadius: 12, padding: 12, marginBottom: 12, alignItems: 'flex-start' },
     flagBannerWarn:   { backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey },

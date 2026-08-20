@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -44,7 +46,7 @@ export default function KickCounterTracker({ userId }: { userId: string | null }
 
   const [history,  setHistory]  = useState<KickSession[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded, setExpanded] = useCollapsed('kick_counter_collapsed');
 
   const [activeId, setActiveId]   = useState<string | null>(null);
   const [kicks,    setKicks]      = useState(0);
@@ -115,21 +117,14 @@ export default function KickCounterTracker({ userId }: { userId: string | null }
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Kick Counter section' : 'Expand Kick Counter section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🦶</Text>
-          <View>
-            <Text style={s.headerTitle}>Kick Counter</Text>
-            <Text style={s.headerSub}>
-              {activeId ? `Session in progress · ${kicks} kicks` :
-                lastSession ? `Last: ${lastSession.kick_count} kicks in ${fmtElapsed(lastSession.duration_seconds ?? 0)}` :
-                'Count to 10 method'}
-            </Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="🦶" title="Kick Counter"
+        subtitle={activeId ? `Session in progress · ${kicks} kicks` :
+          lastSession ? `Last: ${lastSession.kick_count} kicks in ${fmtElapsed(lastSession.duration_seconds ?? 0)}` :
+          'Count to 10 method'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardBlush} accentColor={c.blush}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -195,14 +190,8 @@ export default function KickCounterTracker({ userId }: { userId: string | null }
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: c.blush },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     helpText: { fontSize: 13, color: c.textSecondary, marginBottom: 14, lineHeight: 18 },
 

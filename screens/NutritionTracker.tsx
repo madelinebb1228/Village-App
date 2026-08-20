@@ -5,10 +5,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import { useColors, Colors } from '../lib/theme';
+import { useCollapsed } from '../lib/useCollapsed';
+import TrackerHeader from '../components/TrackerHeader';
+import DisclosureToggle from '../components/DisclosureToggle';
 import FoodPickerModal, { PerUnitNutrition, RecentMealOption } from '../components/FoodPickerModal';
 import NutritionTrendsChart from '../components/NutritionTrendsChart';
 import { estimateCaloriesBurned, bfCalorieBonus } from '../lib/calorieBurn';
@@ -88,8 +90,6 @@ type MealType = typeof MEAL_TYPES[number];
 const MEAL_EMOJIS: Record<string, string> = {
   breakfast: '🌅', lunch: '☀️', dinner: '🌙', snack: '🍎',
 };
-
-const COLLAPSED_KEY = 'nutrition_collapsed';
 
 // Static daily reference values (not personalized) for the micronutrient bars —
 // sodium/cholesterol are upper limits, fiber is a target to reach.
@@ -210,7 +210,9 @@ function waterBtn(c: Colors) {
 export default function NutritionTracker({ userId }: { userId: string | null }) {
   const c = useColors();
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed('nutrition_collapsed');
+  const [activeTab, setActiveTab] = useState<'food' | 'water' | 'trends'>('food');
+  const [showNutritionDetails, setShowNutritionDetails] = useState(false);
   const [profile, setProfile]   = useState<NutritionProfile | null>(null);
   const [logs, setLogs]         = useState<NutritionLog[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -272,25 +274,8 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   // Copy previous day's meals
   const [copyingYesterday, setCopyingYesterday] = useState(false);
 
-  // Weekly trends
-  const [showTrends, setShowTrends] = useState(false);
-
   // Exercise calorie burn (from the Movement tracker's mom_movement_logs)
   const [exerciseBurn, setExerciseBurn] = useState(0);
-
-  // ─── Persisted collapse state ───────────────────────────────────────────────
-
-  useEffect(() => {
-    AsyncStorage.getItem(COLLAPSED_KEY).then(v => { if (v != null) setCollapsed(v === '1'); });
-  }, []);
-
-  function toggleCollapsed() {
-    setCollapsed(v => {
-      const next = !v;
-      AsyncStorage.setItem(COLLAPSED_KEY, next ? '1' : '0').catch(() => {});
-      return next;
-    });
-  }
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
@@ -1066,29 +1051,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
   return (
     <View style={{ gap: 14, marginBottom: 16 }}>
       {/* Section header */}
-      <TouchableOpacity
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          backgroundColor: c.cardBlue, borderRadius: 14, borderWidth: 2, borderColor: c.blue,
-          paddingHorizontal: 16, paddingVertical: 13,
-        }}
-        onPress={toggleCollapsed}
-        activeOpacity={0.75}
-        accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand Nutrition and Hydration' : 'Collapse Nutrition and Hydration'}
-      >
-        <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>💧 Nutrition & Hydration</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          {!collapsed && (
-            <TouchableOpacity onPress={e => { e.stopPropagation?.(); openSetup(); }}
-              accessibilityRole="button" accessibilityLabel="Edit goals">
-              <Text style={{ fontSize: 13, color: c.blue, fontWeight: '600' }}>Edit goals ›</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={{ fontSize: 20, color: c.blue, fontWeight: '700' }}>
-            {collapsed ? '›' : '⌄'}
-          </Text>
-        </View>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="💧" title="Nutrition & Hydration"
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardBlue} accentColor={c.blue}
+        rightLabel="Edit goals ›" onRightPress={openSetup} rightAccessibilityLabel="Edit goals"
+      />
 
       {!collapsed && (<>
       {/* ── Date nav ── */}
@@ -1123,6 +1091,28 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
         </View>
       )}
 
+      {/* ── Tabs ── */}
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {([
+          { key: 'food', label: '🍽️ Food' },
+          { key: 'water', label: '💧 Water' },
+          { key: 'trends', label: '📊 Trends' },
+        ] as const).map(t => (
+          <TouchableOpacity key={t.key} onPress={() => setActiveTab(t.key)}
+            accessibilityRole="button" accessibilityLabel={t.label}
+            style={{
+              flex: 1, paddingVertical: 8, borderRadius: 20, alignItems: 'center',
+              backgroundColor: activeTab === t.key ? c.primary : c.card,
+              borderWidth: 1.5, borderColor: activeTab === t.key ? c.primary : c.separator,
+            }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: activeTab === t.key ? '#fff' : c.textSecondary }}>
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {activeTab === 'food' && (<>
       {/* ── Copy yesterday's meals ── */}
       {mealLogs.length === 0 && (
         <TouchableOpacity
@@ -1200,48 +1190,53 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           </Text>
         )}
 
-        {/* Micronutrients — static reference values, not personalized goals */}
-        {hasMicros && (
-          <View style={{ marginBottom: 16, gap: 10 }}>
-            {[
-              { key: 'sodium', label: 'Sodium', value: totalSodium, dv: SODIUM_DV_MG, unit: 'mg', color: c.blush },
-              { key: 'fiber', label: 'Fiber', value: totalFiber, dv: FIBER_DV_G, unit: 'g', color: c.sage },
-              { key: 'cholesterol', label: 'Cholesterol', value: totalCholesterol, dv: CHOLESTEROL_DV_MG, unit: 'mg', color: c.lavender },
-            ].map(m => (
-              <View key={m.key}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
-                  <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
-                </View>
-                <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
-                  <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
-                </View>
+        {/* Micronutrients — collapsed by default to keep the calorie card scannable */}
+        {(hasMicros || (isPregnant && (totalFolate > 0 || totalIron > 0 || totalCaffeine > 0))) && (
+          <View style={{ marginBottom: 16 }}>
+            <DisclosureToggle
+              label={showNutritionDetails ? 'Hide nutrition details' : 'Show nutrition details'}
+              expanded={showNutritionDetails}
+              onPress={() => setShowNutritionDetails(v => !v)}
+              style={{ marginBottom: showNutritionDetails ? 10 : 0 }}
+            />
+            {showNutritionDetails && (
+              <View style={{ gap: 10 }}>
+                {hasMicros && [
+                  { key: 'sodium', label: 'Sodium', value: totalSodium, dv: SODIUM_DV_MG, unit: 'mg', color: c.blush },
+                  { key: 'fiber', label: 'Fiber', value: totalFiber, dv: FIBER_DV_G, unit: 'g', color: c.sage },
+                  { key: 'cholesterol', label: 'Cholesterol', value: totalCholesterol, dv: CHOLESTEROL_DV_MG, unit: 'mg', color: c.lavender },
+                ].map(m => (
+                  <View key={m.key}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
+                      <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
+                      <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
+                    </View>
+                  </View>
+                ))}
+                {hasMicros && totalSugar > 0 && (
+                  <Text style={{ fontSize: 11, color: c.textMuted }}>Sugar {totalSugar.toFixed(0)}g</Text>
+                )}
+                {/* Pregnancy-specific micronutrients — personalized DVs, only shown when pregnant */}
+                {isPregnant && (totalFolate > 0 || totalIron > 0 || totalCaffeine > 0) && [
+                  { key: 'folate', label: 'Folate', value: totalFolate, dv: folateGoal, unit: 'mcg', color: c.honey },
+                  { key: 'iron', label: 'Iron', value: totalIron, dv: ironGoal, unit: 'mg', color: c.blush },
+                  { key: 'caffeine', label: 'Caffeine', value: totalCaffeine, dv: CAFFEINE_LIMIT_MG_PREGNANT, unit: 'mg', color: c.lavender },
+                ].map(m => (
+                  <View key={m.key}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
+                      <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
+                      <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
+                    </View>
+                  </View>
+                ))}
               </View>
-            ))}
-            {totalSugar > 0 && (
-              <Text style={{ fontSize: 11, color: c.textMuted }}>Sugar {totalSugar.toFixed(0)}g</Text>
             )}
-          </View>
-        )}
-
-        {/* Pregnancy-specific micronutrients — personalized DVs, only shown when pregnant */}
-        {isPregnant && (totalFolate > 0 || totalIron > 0 || totalCaffeine > 0) && (
-          <View style={{ marginBottom: 16, gap: 10 }}>
-            {[
-              { key: 'folate', label: 'Folate', value: totalFolate, dv: folateGoal, unit: 'mcg', color: c.honey },
-              { key: 'iron', label: 'Iron', value: totalIron, dv: ironGoal, unit: 'mg', color: c.blush },
-              { key: 'caffeine', label: 'Caffeine', value: totalCaffeine, dv: CAFFEINE_LIMIT_MG_PREGNANT, unit: 'mg', color: c.lavender },
-            ].map(m => (
-              <View key={m.key}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.textSecondary }}>{m.label}</Text>
-                  <Text style={{ fontSize: 12, color: c.textMuted }}>{m.value.toFixed(0)} / {m.dv}{m.unit}</Text>
-                </View>
-                <View style={{ height: 6, backgroundColor: c.separator, borderRadius: 3, overflow: 'hidden' }}>
-                  <View style={{ width: `${Math.min(100, (m.value / m.dv) * 100)}%`, height: '100%', backgroundColor: m.color }} />
-                </View>
-              </View>
-            ))}
           </View>
         )}
 
@@ -1295,8 +1290,10 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           );
         })}
       </View>
+      </>)}
 
-      {/* ── Water card ── */}
+      {activeTab === 'water' && (
+      /* ── Water card ── */
       <View style={sectionCard(c)}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
           <View>
@@ -1437,24 +1434,11 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
           </View>
         )}
       </View>
+      )}
 
-      {/* ── Trends ── */}
-      <TouchableOpacity
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          backgroundColor: c.card, borderRadius: 14, borderWidth: 1.5, borderColor: c.separator,
-          paddingHorizontal: 16, paddingVertical: 13,
-        }}
-        onPress={() => setShowTrends(v => !v)}
-        activeOpacity={0.75}
-        accessibilityRole="button" accessibilityLabel={showTrends ? 'Collapse trends' : 'Expand trends'}
-      >
-        <Text style={{ fontSize: 14, fontWeight: '800', color: c.textPrimary }}>📊 Trends</Text>
-        <Text style={{ fontSize: 18, color: c.textMuted, fontWeight: '700' }}>{showTrends ? '⌄' : '›'}</Text>
-      </TouchableOpacity>
-      {showTrends && (
+      {activeTab === 'trends' && (
         <View style={sectionCard(c)}>
-          <NutritionTrendsChart userId={userId} expanded={showTrends} />
+          <NutritionTrendsChart userId={userId} expanded={true} />
         </View>
       )}
 
@@ -1589,13 +1573,12 @@ export default function NutritionTracker({ userId }: { userId: string | null }) 
               </View>
             </View>
 
-            <TouchableOpacity onPress={() => setShowMealMicros(v => !v)} accessibilityRole="button"
-              accessibilityLabel={showMealMicros ? 'Hide nutrition details' : 'Add nutrition details'}
-              style={{ marginBottom: showMealMicros ? 12 : 24 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: c.primary }}>
-                {showMealMicros ? '▾ Hide nutrition details' : '▸ Add nutrition details'}
-              </Text>
-            </TouchableOpacity>
+            <DisclosureToggle
+              label={showMealMicros ? 'Hide nutrition details' : 'Add nutrition details'}
+              expanded={showMealMicros}
+              onPress={() => setShowMealMicros(v => !v)}
+              style={{ marginBottom: showMealMicros ? 12 : 24 }}
+            />
             {showMealMicros && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
                 <View style={{ flex: 1, minWidth: 120 }}>

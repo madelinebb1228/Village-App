@@ -11,6 +11,7 @@ import { ensureNotificationPermission, rescheduleEventReminders, cancelEventRemi
 import { autoFormatDate, parseDisplayDate, toDisplayDate } from '../lib/dateUtils';
 import { recomputeWindDown } from '../lib/napSchedule';
 import { generateDaySchedule } from '../lib/daySchedule';
+import { useBaby } from '../lib/babyContext';
 import ConfirmModal from '../components/ConfirmModal';
 import DayTimeline, { DayTimelineHandle, DEFAULT_PX_PER_MINUTE } from '../components/DayTimeline';
 
@@ -216,6 +217,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
   const db: any = supabase;
   const navigation = useNavigation<any>();
   const timelineRef = useRef<DayTimelineHandle>(null);
+  const { activeBabyId } = useBaby();
 
   const now = new Date();
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -624,7 +626,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
       setEvents(newList);
       rescheduleEventReminders(newList);
       setShowEventModal(false);
-      if (activeKind === 'personal') recomputeWindDown(userId);
+      if (activeKind === 'personal') recomputeWindDown(userId, activeBabyId);
     } catch (err: any) {
       Alert.alert('Could not save', err?.message ?? 'Please try again.');
     } finally {
@@ -659,7 +661,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
     setEvents(newList);
     for (const id of removedIds) await cancelEventReminder(id);
     rescheduleEventReminders(newList);
-    if (activeKind === 'personal') recomputeWindDown(userId);
+    if (activeKind === 'personal') recomputeWindDown(userId, activeBabyId);
   }
 
   function confirmDeleteEvent(e: CalEvent) {
@@ -734,7 +736,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
       setEvents(newList);
       rescheduleEventReminders(newList);
       setShowEventModal(false);
-      if (activeKind === 'personal') recomputeWindDown(userId);
+      if (activeKind === 'personal') recomputeWindDown(userId, activeBabyId);
       setEditScopePrompt(null);
     } catch (err: any) {
       Alert.alert('Could not save', err?.message ?? 'Please try again.');
@@ -760,7 +762,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
       return;
     }
     rescheduleEventReminders(events);
-    if (activeKind === 'personal') recomputeWindDown(userId);
+    if (activeKind === 'personal') recomputeWindDown(userId, activeBabyId);
   }
 
   function handleTimelineDragEnd(e: CalEvent, newStart: Date, newEnd: Date | null) {
@@ -800,7 +802,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
     }
     setUnfitIds(prev => { const next = new Set(prev); next.delete(task.id); return next; });
     rescheduleEventReminders(events);
-    if (activeKind === 'personal') recomputeWindDown(userId);
+    if (activeKind === 'personal') recomputeWindDown(userId, activeBabyId);
   }
 
   // Drop coordinate for dragging a pending task card onto the timeline —
@@ -829,7 +831,7 @@ export default function SharedCalendar({ userId, onDragStateChange }: { userId: 
     try {
       const [yy, mm, dd] = selectedDate.split('-').map(Number);
       const forDate = new Date(yy, mm - 1, dd);
-      const result = await generateDaySchedule(userId, forDate);
+      const result = await generateDaySchedule(userId, forDate, activeBabyId);
       setUnfitIds(new Set(result.unplaced.map(u => u.id)));
       await loadActive();
       const msg = result.unplaced.length > 0

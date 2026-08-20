@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate } from '../lib/syncService';
 import { getRange, getSleepGoal, scheduleWindDownNow, handleNapEnded, scheduleWakePredictionNow, cancelWakePrediction } from '../lib/napSchedule';
@@ -79,14 +81,11 @@ function parseTimeInput(raw: string, yesterday: boolean): Date | null {
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
+    wrap: { marginBottom: 16 },
     card: {
       backgroundColor: c.card, borderRadius: 16, padding: 20,
-      marginBottom: 16, borderWidth: 1.5, borderColor: c.separator,
+      marginTop: 14, borderWidth: 1.5, borderColor: c.separator,
     },
-    headerRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    headerEmoji:{ fontSize: 22, marginRight: 8 },
-    headerTitle:{ fontSize: 18, fontWeight: '700', color: c.text, flex: 1 },
-    ageText:    { fontSize: 13, color: c.textMuted, marginBottom: 14 },
 
     // Summary
     summaryRow:   { flexDirection: 'row', gap: 10, marginBottom: 10 },
@@ -134,7 +133,6 @@ function makeStyles(c: Colors) {
     sunIconLg:       { width: 16, height: 16 },
     moonIcon:        { width: 14, height: 14 },
     moonIconLg:      { width: 16, height: 16 },
-    moonIconXl:      { width: 22, height: 22 },
     typeBtnTextActive: { color: c.lavender },
 
     // Buttons
@@ -206,6 +204,8 @@ export default function SleepTracker({
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+
+  const [collapsed, toggleCollapsed] = useCollapsed('sleep_tracker_collapsed');
 
   const [mode,           setMode]           = useState<Mode>('idle');
   const [elapsed,        setElapsed]        = useState(0);
@@ -488,13 +488,15 @@ export default function SleepTracker({
   const goalColor   = effectiveTotalMins >= sleepGoal.minHours * 60 ? c.sage : effectiveTotalMins >= sleepGoal.minHours * 45 ? c.honey : c.blush;
 
   return (
-    <View style={s.card}>
-      <View style={s.headerRow}>
-        <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={[s.headerEmoji, s.moonIconXl]} />
-        <Text style={s.headerTitle}>Sleep & Wake</Text>
-        {loading && <ActivityIndicator size="small" color={c.lavender} />}
-      </View>
-      <Text style={s.ageText}>{ageLabel}</Text>
+    <View style={s.wrap}>
+      <TrackerHeader
+        emoji="🌙" title="Sleep & Wake"
+        subtitle={ageLabel}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardLavender} accentColor={c.lavender}
+      />
+      {!collapsed && (
+      <View style={s.card}>
 
       {/* Summary row */}
       <View style={s.summaryRow}>
@@ -854,6 +856,8 @@ export default function SleepTracker({
             <Text style={s.logPastBtnText}>+ Log past sleep</Text>
           </TouchableOpacity>
         )
+      )}
+      </View>
       )}
     </View>
   );

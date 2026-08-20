@@ -9,6 +9,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, generateId, useSyncStatus } from '../lib/syncService';
 import { useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
 
@@ -131,6 +133,8 @@ export default function BabyJournal({
 }) {
   const c = useColors();
   const { pendingCount } = useSyncStatus();
+
+  const [collapsed, toggleCollapsed] = useCollapsed('baby_journal_collapsed');
 
   const [entries, setEntries]   = useState<JournalEntry[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -516,12 +520,18 @@ export default function BabyJournal({
   // ─── Main render ──────────────────────────────────────────────────────────
 
   return (
-    <View>
+    <View style={{ marginBottom: 16 }}>
+      <TrackerHeader
+        emoji="📓" title="Baby Journal"
+        subtitle={babyName ? `${babyName}'s memories` : 'Your memories'}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardHoney} accentColor={c.honey}
+      />
+
+      {!collapsed && (<>
+
       {/* Header row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Text style={{ fontSize: 14, color: c.textMuted }}>
-          {babyName ? `${babyName}'s memories` : 'Your memories'}
-        </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 14, marginBottom: 16 }}>
         <TouchableOpacity
           onPress={openModal}
           style={{
@@ -597,6 +607,8 @@ export default function BabyJournal({
           )}
         </>
       )}
+
+      </>)}
 
       {/* ── New/edit entry modal ── */}
       <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet">

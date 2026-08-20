@@ -11,6 +11,8 @@ import { Dimensions } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeDelete, generateId } from '../lib/syncService';
 import { useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
 
@@ -104,6 +106,8 @@ export default function ExpenseTracker({
   babyName: string | null;
 }) {
   const c = useColors();
+
+  const [collapsed, toggleCollapsed] = useCollapsed('expense_tracker_collapsed');
 
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [expenses, setExpenses]     = useState<Expense[]>([]);
@@ -342,12 +346,18 @@ export default function ExpenseTracker({
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <View>
+    <View style={{ marginBottom: 16 }}>
+      <TrackerHeader
+        emoji="💰" title="Expense Tracker"
+        subtitle={babyName ? `${babyName}'s expenses · ${fmtMoney(thisMonthTotal)} this month` : `${fmtMoney(thisMonthTotal)} this month`}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardSage} accentColor={c.sage}
+      />
+
+      {!collapsed && (<>
+
       {/* Header row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Text style={{ fontSize: 14, color: c.textMuted }}>
-          {babyName ? `${babyName}'s expenses` : 'Baby expenses'}
-        </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 14, marginBottom: 16 }}>
         <TouchableOpacity
           onPress={openModal}
           style={{ backgroundColor: c.sage, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 }}
@@ -456,6 +466,8 @@ export default function ExpenseTracker({
           )}
         </>
       )}
+
+      </>)}
 
       {/* ── Quick-add modal ── */}
       <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet">

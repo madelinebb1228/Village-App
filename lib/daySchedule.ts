@@ -47,16 +47,16 @@ function kindAt(time: Date, napWindows: NapWindow[]): 'nap' | 'awake' {
 // in and doesn't collide with anything else. Fixed events, shared-calendar
 // events, and anything manually_scheduled are never candidates for this and
 // are never moved by generateDaySchedule.
-export async function generateDaySchedule(userId: string, forDate: Date): Promise<ScheduleResult> {
+export async function generateDaySchedule(userId: string, forDate: Date, babyId?: string | null): Promise<ScheduleResult> {
   const db: any = supabase;
   const calendarId = await ensureCalendar(userId, 'personal');
 
-  const { data: baby } = await db
-    .from('babies')
-    .select('id, birth_date')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle();
+  // Prefer the caller's active baby (relevant for households with more than
+  // one child) — only fall back to an arbitrary owned baby if none is given.
+  const babyQuery = db.from('babies').select('id, birth_date');
+  const { data: baby } = babyId
+    ? await babyQuery.eq('id', babyId).maybeSingle()
+    : await babyQuery.eq('user_id', userId).limit(1).maybeSingle();
 
   const dayBoundStart = new Date(forDate); dayBoundStart.setHours(0, 0, 0, 0);
   const dayBoundEnd = new Date(forDate); dayBoundEnd.setHours(23, 59, 59, 999);

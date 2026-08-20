@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import {
@@ -155,6 +157,8 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const insets = useSafeAreaInsets();
+
+  const [collapsed, toggleCollapsed] = useCollapsed('baby_food_collapsed');
 
   // ── Log list ───────────────────────────────────────────────────────────────
   const [logs,       setLogs]       = useState<FoodLog[]>([]);
@@ -467,24 +471,25 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
     <View style={s.wrap}>
 
       {/* ── Header ── */}
-      <View style={s.header}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🍽️</Text>
-          <View>
-            <Text style={s.headerTitle}>Baby Food Tracker</Text>
-            <Text style={s.headerSub}>{logs.length} food{logs.length !== 1 ? 's' : ''} logged</Text>
-          </View>
-        </View>
-        <View style={s.headerActions}>
-          <TouchableOpacity style={s.scanBtn} onPress={openScanner} activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel="Scan barcode">
-            <Text style={s.scanBtnText}>📷 Scan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.addBtn} onPress={openAdd} activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel="Log food">
-            <Text style={s.addBtnText}>+ Log</Text>
-          </TouchableOpacity>
-        </View>
+      <TrackerHeader
+        emoji="🍽️" title="Baby Food Tracker"
+        subtitle={`${logs.length} food${logs.length !== 1 ? 's' : ''} logged`}
+        collapsed={collapsed} onToggle={toggleCollapsed}
+        accentBg={c.cardHoney} accentColor={c.honey}
+      />
+
+      {!collapsed && (<View style={s.body}>
+
+      {/* ── Quick actions ── */}
+      <View style={s.headerActions}>
+        <TouchableOpacity style={s.scanBtn} onPress={openScanner} activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Scan barcode">
+          <Text style={s.scanBtnText}>📷 Scan</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.addBtn} onPress={openAdd} activeOpacity={0.8}
+          accessibilityRole="button" accessibilityLabel="Log food">
+          <Text style={s.addBtnText}>+ Log</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Filter chips ── */}
@@ -618,6 +623,8 @@ export default function BabyFoodTracker({ userId, babyId, babyName, babyBirthDat
           )}
         </>
       )}
+
+      </View>)}
 
       {/* ══════════ ADD / EDIT MODAL ══════════ */}
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => { setShowModal(false); resetModal(); }}>
@@ -1121,17 +1128,13 @@ const NOVA_COLOR: Record<number, string> = {
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: {
-      backgroundColor: c.card, borderRadius: 16, marginBottom: 16,
+    wrap: { marginBottom: 16 },
+    body: {
+      backgroundColor: c.card, borderRadius: 16, marginTop: 14,
       borderWidth: 1.5, borderColor: c.separator, overflow: 'hidden',
     },
 
     // Header
-    header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderLeftWidth: 4, borderLeftColor: c.honey },
-    headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    headerEmoji: { fontSize: 26 },
-    headerTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 1 },
     addBtn:      { backgroundColor: c.cardHoney, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1.5, borderColor: c.honey },
     addBtnText:  { fontSize: 13, fontWeight: '700', color: c.honey },
 
@@ -1290,7 +1293,7 @@ function makeStyles(c: Colors) {
     tryAgainChipTextActive: { color: '#fff' },
 
     // Header actions
-    headerActions: { flexDirection: 'row', gap: 8 },
+    headerActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', paddingHorizontal: 14, paddingTop: 12 },
     scanBtn:       { backgroundColor: '#E0F2FE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1.5, borderColor: '#38BDF8' },
     scanBtnText:   { fontSize: 13, fontWeight: '700', color: '#0284C7' },
 

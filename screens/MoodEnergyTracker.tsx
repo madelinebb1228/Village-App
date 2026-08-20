@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -20,7 +21,6 @@ const EMOTION_CHIPS = [
 // Emotions that, when they show up repeatedly, nudge toward a mental health check-in.
 const CONCERNING_EMOTIONS = ['Anxious', 'Overwhelmed', 'Lonely', 'Numb', 'Weepy'];
 
-const EXPANDED_KEY = 'mood_energy_expanded';
 const SW = Dimensions.get('window').width;
 
 function todayStr(): string {
@@ -69,7 +69,7 @@ export default function MoodEnergyTracker({
   const [entries, setEntries]   = useState<MoodLog[]>([]);
   const [loading, setLoading]   = useState(true);
   const [saving,  setSaving]    = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed('mood_energy_expanded');
   const [showForm, setShowForm] = useState(false);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
@@ -78,18 +78,6 @@ export default function MoodEnergyTracker({
   const [emotions, setEmotions] = useState<string[]>([]);
   const [notes,    setNotes]    = useState('');
   const [customEmotion, setCustomEmotion] = useState('');
-
-  useEffect(() => {
-    AsyncStorage.getItem(EXPANDED_KEY).then(v => { if (v != null) setExpanded(v === '1'); });
-  }, []);
-
-  function toggleExpanded() {
-    setExpanded(v => {
-      const next = !v;
-      AsyncStorage.setItem(EXPANDED_KEY, next ? '1' : '0').catch(() => {});
-      return next;
-    });
-  }
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -178,25 +166,16 @@ export default function MoodEnergyTracker({
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={toggleExpanded} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel="Toggle Mood and Energy section">
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🌈</Text>
-          <View>
-            <Text style={s.headerTitle}>Mood & Energy</Text>
-            {todayEntries.length > 0 ? (
-              <Text style={s.headerSub}>
-                {todayEntries.length > 1
-                  ? `${todayEntries.length} check-ins today`
-                  : `Today: ${MOOD_OPTS[todayEntries[0].mood_score - 1]}  Energy: ${todayEntries[0].energy_score}/5`}
-              </Text>
-            ) : (
-              <Text style={s.headerSub}>How are you feeling today?</Text>
-            )}
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="🌈" title="Mood & Energy"
+        subtitle={todayEntries.length > 0
+          ? (todayEntries.length > 1
+            ? `${todayEntries.length} check-ins today`
+            : `Today: ${MOOD_OPTS[todayEntries[0].mood_score - 1]}  Energy: ${todayEntries[0].energy_score}/5`)
+          : 'How are you feeling today?'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardSage} accentColor={c.sage}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -381,14 +360,8 @@ export default function MoodEnergyTracker({
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#DB2777' },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     nudgeBanner: {
       flexDirection: 'row', alignItems: 'center', gap: 8,

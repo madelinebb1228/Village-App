@@ -45,6 +45,8 @@ import ContractionTimerTracker from './ContractionTimerTracker';
 import PregnancyLogTracker from './PregnancyLogTracker';
 import InsightsSection from '../components/InsightsSection';
 import PaywallGate from '../components/PaywallGate';
+import DisclosureToggle from '../components/DisclosureToggle';
+import { useCollapsed } from '../lib/useCollapsed';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
@@ -867,6 +869,8 @@ export default function Track({ route }: any) {
   const [babyCategory, setBabyCategory] = useState<string>(initialActiveView !== 'you' ? initialCategory ?? 'All' : 'All');
   const [youCategory,  setYouCategory]  = useState<string>(initialActiveView === 'you' ? initialCategory ?? 'All' : 'All');
 
+  const [trendsCollapsed, toggleTrendsCollapsed] = useCollapsed('daily_logging_trends_collapsed', true);
+
   // Category filter row — tap arrows for paging through chips that overflow
   // the screen width, since showsHorizontalScrollIndicator is off on web/iOS.
   const categoryScrollRef = useRef<ScrollView>(null);
@@ -1032,7 +1036,7 @@ export default function Track({ route }: any) {
   // Source the current baby from the shared BabyContext (multi-child +
   // multi-caregiver aware) rather than an independent single-baby query —
   // every tracker below reads babyId/babyName/etc. from this screen's state.
-  const { activeBaby } = useBaby();
+  const { activeBaby, babies, setActiveBabyId } = useBaby();
   useEffect(() => {
     setBabyId(activeBaby?.id ?? null);
     setBabyName(activeBaby?.name ?? null);
@@ -1738,6 +1742,33 @@ export default function Track({ route }: any) {
           </TouchableOpacity>
         </View>
 
+        {/* ── Baby switcher — only shown for households with more than one child ── */}
+        {babies.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 16 }} contentContainerStyle={{ flexDirection: 'row', gap: 8 }}>
+            {babies.map(b => {
+              const active = b.id === activeBaby?.id;
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  onPress={() => setActiveBabyId(b.id)}
+                  style={[
+                    styles.categoryChip,
+                    active && { backgroundColor: c.primary, borderColor: c.primary },
+                  ]}
+                  activeOpacity={0.75}
+                  accessibilityRole="button" accessibilityLabel={`Switch to ${b.name}`}
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.categoryChipText, active && { color: '#fff' }]}>
+                    👶 {b.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
         {/* ── Category filter ── */}
         <View style={styles.categoryRowWrap}>
           {canScrollCategoryLeft && (
@@ -1859,6 +1890,23 @@ export default function Track({ route }: any) {
           ))}
         </View>
 
+        {/* ── Trends — collapsed by default, right next to the log buttons ── */}
+        <View style={{ overflow: 'visible' }}>
+          <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
+            <DisclosureToggle
+              label={trendsCollapsed ? 'Show feeding, diaper & pumping trends' : 'Hide trends'}
+              expanded={!trendsCollapsed}
+              onPress={toggleTrendsCollapsed}
+              style={{ marginBottom: trendsCollapsed ? 8 : 12 }}
+            />
+            {!trendsCollapsed && (<>
+              <FeedChartCard babyId={babyId} />
+              <DiaperChartCard babyId={babyId} />
+              <PumpingChartCard key={pumpChartKey} userId={userId} />
+            </>)}
+          </PaywallGate>
+        </View>
+
         {/* ── Feed reminder & last feed summary */}
         <FeedReminderCard
           userId={userId}
@@ -1877,15 +1925,6 @@ export default function Track({ route }: any) {
 
         {/* ── Tummy time tracker */}
         <TummyTimeCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
-
-        {/* ── Charts */}
-        <View style={{ overflow: 'visible' }}>
-          <PaywallGate feature="trend_charts" title="Trend Charts" description="See feeding, diaper, and pumping patterns over time." emoji="📊">
-            <FeedChartCard babyId={babyId} />
-            <DiaperChartCard babyId={babyId} />
-            <PumpingChartCard key={pumpChartKey} userId={userId} />
-          </PaywallGate>
-        </View>
 
         {/* ── Timeline */}
         <View style={styles.timelineHeader}>

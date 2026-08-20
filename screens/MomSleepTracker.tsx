@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Dimensions, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { Colors, useColors } from '../lib/theme';
+import TrackerHeader from '../components/TrackerHeader';
+import { useCollapsed } from '../lib/useCollapsed';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete } from '../lib/syncService';
 
@@ -65,7 +67,7 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
   const [loading,  setLoading]  = useState(true);
   const [adding,   setAdding]   = useState(false);
   const [saving,   setSaving]   = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useCollapsed('mom_sleep_collapsed');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [sleepType,    setSleepType]    = useState<'night' | 'nap'>('night');
@@ -260,21 +262,14 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
 
   return (
     <View style={s.wrap}>
-      <TouchableOpacity style={s.header} onPress={() => setExpanded(p => !p)} activeOpacity={0.8}
-        accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse Sleep section' : 'Expand Sleep section'}>
-        <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🌙</Text>
-          <View>
-            <Text style={s.headerTitle}>Your Sleep</Text>
-            <Text style={s.headerSub}>
-              {timerRunning
-                ? `${timerType === 'night' ? 'Night sleep' : 'Nap'} in progress · ${fmtElapsed(elapsed)}`
-                : todayTotal > 0 ? `Today: ${fmtDuration(todayTotal)} total` : 'Track your rest'}
-            </Text>
-          </View>
-        </View>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      <TrackerHeader
+        emoji="🌙" title="Your Sleep"
+        subtitle={timerRunning
+          ? `${timerType === 'night' ? 'Night sleep' : 'Nap'} in progress · ${fmtElapsed(elapsed)}`
+          : todayTotal > 0 ? `Today: ${fmtDuration(todayTotal)} total` : 'Track your rest'}
+        collapsed={!expanded} onToggle={toggleExpanded}
+        accentBg={c.cardLavender} accentColor={c.lavender}
+      />
 
       {expanded && (
         <View style={s.body}>
@@ -506,14 +501,8 @@ export default function MomSleepTracker({ userId }: { userId: string | null }) {
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    wrap: { backgroundColor: c.card, borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: c.separator },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderLeftWidth: 4, borderLeftColor: '#7C3AED' },
-    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    headerEmoji: { fontSize: 28 },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
-    headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
-    chevron:     { fontSize: 12, color: c.textMuted },
-    body:        { padding: 16, borderTopWidth: 1, borderTopColor: c.separator },
+    wrap: { marginBottom: 16 },
+    body: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1.5, borderColor: c.separator, padding: 16, marginTop: 14 },
 
     summaryRow:    { flexDirection: 'row', backgroundColor: c.cardLavender, borderRadius: 12, padding: 14, marginBottom: 14, alignItems: 'center' },
     summaryItem:   { flex: 1, alignItems: 'center' },
