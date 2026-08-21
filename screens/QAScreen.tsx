@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, TextInput, Modal, KeyboardAvoidingView,
@@ -7,6 +7,8 @@ import {
 import { supabase } from '../lib/supabase';
 import UserAvatar from '../components/UserAvatar';
 import { useColors, Colors } from '../lib/theme';
+import { TOP_QUESTIONS, TopQuestion } from '../lib/topQuestionsData';
+import CommonQuestionDetail from './CommonQuestionDetail';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,8 @@ export const QA_TOPICS = [
   { id: 'general',      label: 'General',      emoji: '💬' },
 ];
 
+const CQ_CATEGORIES = ['All', ...Array.from(new Set(TOP_QUESTIONS.map(q => q.category)))];
+
 function topicMeta(id: string) {
   return QA_TOPICS.find(t => t.id === id) ?? QA_TOPICS[QA_TOPICS.length - 1];
 }
@@ -71,7 +75,7 @@ function topicColor(id: string, c: Colors) {
   return map[id] ?? { bg: c.cardLavender, border: c.lavender };
 }
 
-function timeAgo(dateString: string): string {
+export function timeAgo(dateString: string): string {
   const s = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
   const sec = Math.floor((Date.now() - new Date(s).getTime()) / 1000);
   if (sec < 60) return 'just now';
@@ -96,6 +100,12 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
   // ── view state
   const [view, setView] = useState<'list' | 'detail'>(initialQuestionId ? 'detail' : 'list');
   const [selectedQ, setSelectedQ] = useState<QAQuestion | null>(null);
+
+  // ── tab: community forum vs. curated common-questions list
+  const [mode, setMode] = useState<'community' | 'common'>('community');
+  const [cqQuery, setCqQuery] = useState('');
+  const [cqCategory, setCqCategory] = useState('All');
+  const [selectedCommonQ, setSelectedCommonQ] = useState<TopQuestion | null>(null);
 
   // ── list state
   const [questions, setQuestions] = useState<QAQuestion[]>([]);
@@ -208,6 +218,14 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
       setMyFollows(new Set(followRows.map((f: any) => f.question_id)));
     }
   }
+
+  const filteredCommonQuestions = useMemo(() => {
+    const q = cqQuery.trim().toLowerCase();
+    return TOP_QUESTIONS.filter(item =>
+      (cqCategory === 'All' || item.category === cqCategory) &&
+      (!q || item.question.toLowerCase().includes(q) || item.answer.toLowerCase().includes(q)),
+    );
+  }, [cqQuery, cqCategory]);
 
   async function fetchQuestions() {
     setLoadingList(true);
@@ -379,6 +397,14 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Render: Common Question Detail (curated FAQ + comments)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (selectedCommonQ) {
+    return <CommonQuestionDetail question={selectedCommonQ} onBack={() => setSelectedCommonQ(null)} />;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Render: Question List
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -393,20 +419,98 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
             </TouchableOpacity>
           )}
           <Text style={s.headerTitle}>Parenting Q+A</Text>
+          {mode === 'community' && (
+            <>
+              <TouchableOpacity
+                onPress={() => { setShowListSearch(true); setListSearchQuery(''); setListSearchResults([]); }}
+                style={s.headerIconBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={s.headerIconBtnText}>🔍</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.askBtn} onPress={openAskModal} activeOpacity={0.8}>
+                <Text style={s.askBtnText}>+ Ask</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* Mode switcher: community forum vs. curated quick-answers list */}
+        <View style={s.modeRow}>
           <TouchableOpacity
-            onPress={() => { setShowListSearch(true); setListSearchQuery(''); setListSearchResults([]); }}
-            style={s.headerIconBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={[s.modeBtn, mode === 'community' && s.modeBtnActive]}
+            onPress={() => setMode('community')}
+            activeOpacity={0.8}
           >
-            <Text style={s.headerIconBtnText}>🔍</Text>
+            <Text style={[s.modeBtnText, mode === 'community' && s.modeBtnTextActive]}>💬 Community</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.askBtn} onPress={openAskModal} activeOpacity={0.8}>
-            <Text style={s.askBtnText}>+ Ask</Text>
+          <TouchableOpacity
+            style={[s.modeBtn, mode === 'common' && s.modeBtnActive]}
+            onPress={() => setMode('common')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.modeBtnText, mode === 'common' && s.modeBtnTextActive]}>🔢 Common Questions</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Search bar (replaces topic filter when active) */}
-        {showListSearch ? (
+        {mode === 'common' ? (
+          <>
+            <View style={s.cqSearchWrap}>
+              <TextInput
+                style={s.cqSearchInput}
+                placeholder="Search questions…"
+                placeholderTextColor={c.textMuted}
+                value={cqQuery}
+                onChangeText={setCqQuery}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.cqCatScroll}
+              contentContainerStyle={s.cqCatRow}
+            >
+              {CQ_CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[s.cqCatChip, cqCategory === cat && s.cqCatChipActive]}
+                  onPress={() => setCqCategory(cat)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Filter by ${cat}`}
+                >
+                  <Text style={[s.cqCatChipText, cqCategory === cat && s.cqCatChipTextActive]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <ScrollView style={s.cqBodyScroll} contentContainerStyle={s.cqBody} showsVerticalScrollIndicator={false}>
+              <Text style={s.cqPageSub}>The most common parenting questions — answered briefly.</Text>
+              {filteredCommonQuestions.length === 0 ? (
+                <Text style={s.cqEmptyText}>No questions match "{cqQuery}"</Text>
+              ) : (
+                filteredCommonQuestions.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={s.cqCard}
+                    onPress={() => setSelectedCommonQ(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.question}
+                  >
+                    <View style={s.cqCardHeaderRow}>
+                      <Text style={s.cqQuestion}>{item.question}</Text>
+                      <Text style={s.cqChevron}>›</Text>
+                    </View>
+                    <Text style={s.cqPreview} numberOfLines={2}>{item.answer}</Text>
+                  </TouchableOpacity>
+                ))
+              )}
+              <View style={{ height: 32 }} />
+            </ScrollView>
+          </>
+        ) : showListSearch ? (
           <View style={s.listSearchBar}>
             <View style={s.listSearchInputWrap}>
               <Text style={s.searchInputIcon}>🔍</Text>
@@ -471,7 +575,7 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
         )}
 
         {/* Question list */}
-        {(loadingList && !showListSearch) ? (
+        {mode === 'community' && ((loadingList && !showListSearch) ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={c.primary} />
         ) : (
           <ScrollView contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
@@ -548,7 +652,7 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
             })}
             <View style={{ height: 32 }} />
           </ScrollView>
-        )}
+        ))}
 
         {/* Ask question modal — two steps */}
         <Modal visible={showAsk} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeAskModal}>
@@ -905,6 +1009,46 @@ function makeStyles(c: Colors) {
     topicChipEmoji: { fontSize: 14 },
     topicChipLabel: { fontSize: 12, fontWeight: '600', color: c.textMuted },
     topicChipLabelActive: { color: c.textPrimary },
+
+    // ── mode switcher (Community vs. Common Questions)
+    modeRow: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+    modeBtn: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 8,
+      borderRadius: 14,
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.cardBorder,
+    },
+    modeBtnActive: { backgroundColor: c.cardLavender, borderColor: c.lavender },
+    modeBtnText: { fontSize: 13, fontWeight: '700', color: c.textMuted },
+    modeBtnTextActive: { color: c.textPrimary },
+
+    // ── common questions tab
+    cqSearchWrap: { paddingHorizontal: 16, paddingBottom: 10 },
+    cqSearchInput: {
+      backgroundColor: c.inputBg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+      fontSize: 14, color: c.textPrimary, borderWidth: 1.5, borderColor: c.inputBorder,
+    },
+    cqCatScroll: { flexGrow: 0, flexShrink: 0 },
+    cqCatRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+    cqCatChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: c.card, borderWidth: 1.5, borderColor: c.cardBorder },
+    cqCatChipActive: { backgroundColor: c.cardBlush, borderColor: c.blush },
+    cqCatChipText: { fontSize: 13, fontWeight: '600', color: c.textMuted },
+    cqCatChipTextActive: { color: c.textPrimary },
+    cqBodyScroll: { flex: 1 },
+    cqBody: { paddingHorizontal: 16, paddingBottom: 48 },
+    cqPageSub: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
+    cqEmptyText: { fontSize: 14, color: c.textMuted, textAlign: 'center', marginTop: 24 },
+    cqCard: {
+      backgroundColor: c.card, borderRadius: 14, padding: 14, marginBottom: 8,
+      borderWidth: 1, borderColor: c.cardBorder,
+    },
+    cqCardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    cqQuestion: { flex: 1, fontSize: 14, fontWeight: '700', color: c.textPrimary },
+    cqChevron: { fontSize: 20, fontWeight: '700', color: c.primary },
+    cqPreview: { fontSize: 13, color: c.textMuted, lineHeight: 18, marginTop: 6 },
 
     // ── sort row
     sortRow: {

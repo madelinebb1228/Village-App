@@ -26,7 +26,6 @@ import WaterSafety from './WaterSafety';
 import ChokingSafety from './ChokingSafety';
 import EmergencyContacts from './EmergencyContacts';
 import ArticlesScreen from './ArticlesScreen';
-import TopQuestionsScreen from './TopQuestionsScreen';
 import VideoGuidesScreen from './VideoGuidesScreen';
 import ActivitiesScreen from './ActivitiesScreen';
 
@@ -50,7 +49,7 @@ export const RESOURCES = [
   { id: 'marketplace',       emoji: '🛍️',  title: 'Parent Marketplace',            description: 'Buy and sell gently used baby gear with parents in your city', category: 'Shopping & Gear' },
   { id: 'mom_groups',        emoji: '👨‍👩‍👧', title: 'Parent Groups',                  description: 'Find local meetups, online communities, and support groups near you', category: 'Community' },
   { id: 'parenting_az',      emoji: '📖',  title: 'Parenting A–Z',                 description: 'Plain-English explanations of methods, terms, and techniques every parent should know', category: 'Guides & Learning' },
-  { id: 'qa',                emoji: '💬',  title: 'Parenting Q+A',                 description: 'Ask questions and get answers from other parents', category: 'Community' },
+  { id: 'qa',                emoji: '💬',  title: 'Parenting Q+A',                 description: 'Ask questions and get answers from other parents, plus 100+ common questions answered', category: 'Community' },
   { id: 'articles',          emoji: '📰',  title: 'Articles',                      description: 'Expert tips, guides, and parenting reads', category: 'Guides & Learning' },
   { id: 'local',             emoji: '📍',  title: 'Local Services',                description: 'Find pediatricians, lactation consultants, and more near you', category: 'Local & Reviews' },
   { id: 'product_reviews',   emoji: '⭐',  title: 'Product Reviews',               description: 'Community-rated strollers, car seats, pumps, monitors, and more', category: 'Shopping & Gear' },
@@ -63,7 +62,6 @@ export const RESOURCES = [
   { id: 'choking_safety',    emoji: '🫁',  title: 'Choking Safety',                description: 'Prevention, recognizing it, and how to clear it for infants and older kids', category: 'Safety' },
   { id: 'videos',            emoji: '🎬',  title: 'Video Guides',                  description: 'How-to videos for feeding, sleep, soothing, and more', category: 'Guides & Learning' },
   { id: 'activities',        emoji: '🧩',  title: 'Activities & Play',             description: 'Age-appropriate activities and developmental play ideas for your baby', category: 'Guides & Learning' },
-  { id: 'top100',            emoji: '🔢',  title: '100 Questions Every Parent Asks', description: 'The most common parenting questions — answered', category: 'Guides & Learning' },
 ] as const satisfies ReadonlyArray<{ id: string; emoji: string; title: string; description: string; category: Category }>;
 
 type ResourceId = typeof RESOURCES[number]['id'];
@@ -224,10 +222,6 @@ export default function ResourcesTab({ route }: any) {
         }}
       />
     );
-  }
-
-  if (selected === 'top100') {
-    return <TopQuestionsScreen onBack={() => setSelected(null)} />;
   }
 
   if (selected === 'videos') {
