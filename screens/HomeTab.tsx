@@ -16,7 +16,6 @@ import {
   Linking,
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
-import { getPregnancyProgress, getWeekInfo } from '../lib/pregnancyData';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -36,41 +35,34 @@ import HandoffNotesSheet from '../components/HandoffNotesSheet';
 import { useBaby } from '../lib/babyContext';
 import { VILLAGE_MAP } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
-import { hitSlopFor, MAX_FONT_SCALE } from '../lib/accessibility';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
 import StreakCard from '../components/StreakCard';
+import TodaySummaryCard from '../components/home/TodaySummaryCard';
+import HomeIconRow from '../components/home/HomeIconRow';
+import RemindersCard from '../components/home/RemindersCard';
+import UpcomingEventsCard from '../components/home/UpcomingEventsCard';
+import SuppliesSnapshotCard from '../components/home/SuppliesSnapshotCard';
+import BabyProfileCard from '../components/home/BabyProfileCard';
+import HandoffNotesCard from '../components/home/HandoffNotesCard';
 import StoryViewer from '../components/StoryViewer';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 
 import {
-  Post, Comment, Stats, ReminderUrgency, Reminder,
+  Post, Comment, Stats, Reminder,
   POST_TAGS, MENTAL_HEALTH_KEYWORDS, PART_LIMITS, PART_LABELS,
-  getReminderColors,
 } from '../types/feed';
 import {
-  todayRange, greetingFor, mlToOz, babyAgeLabel, getBabyAge, getTimeAgo, resolveAuthorName, attachAuthorProfiles,
+  todayRange, greetingFor, getBabyAge, getTimeAgo, resolveAuthorName, attachAuthorProfiles,
   showSourcePicker, uploadPostImage, uploadPostVideo,
   extractMentions, sendMentionNotifications, renderTextWithMentions,
 } from '../lib/feedUtils.tsx';
 import { VideoPostPlayer } from '../components/feed/VideoPostPlayer';
-import PaywallGate from '../components/PaywallGate';
 import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
 import TipOfTheDayCard from '../components/TipOfTheDayCard';
 import { track, screenView } from '../lib/analytics';
-
-function formatUpcomingWhen(startsAt: string, allDay: boolean): string {
-  const d = new Date(startsAt);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
-  const isTomorrow = d.toDateString() === tomorrow.toDateString();
-  const day = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  if (allDay) return day;
-  return `${day}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-}
 
 async function fetchLatestHandoffNote(babyId: string): Promise<string | null> {
   const { data } = await (supabase as any)
@@ -91,7 +83,6 @@ export default function HomeTab() {
   const styles = useMemo(() => makeStyles(c), [c]);
   const { isOneHanded } = useOneHanded();
   const insets = useSafeAreaInsets();
-  const REMINDER_COLORS = useMemo(() => getReminderColors(c), [c]);
 
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
@@ -1397,12 +1388,6 @@ export default function HomeTab() {
     }, [])
   );
 
-  const statCards = [
-    { label: 'Feeds\nToday',   value: String(stats.feeds),           accent: c.statFeeds.accent,   bg: c.statFeeds.bg },
-    { label: 'Diapers\nToday', value: String(stats.diapers),          accent: c.statDiapers.accent, bg: c.statDiapers.bg },
-    { label: 'Pumped\nToday',  value: `${mlToOz(stats.pumpedMl)} oz`, accent: c.statPumped.accent,  bg: c.statPumped.bg },
-  ];
-
   const tourSteps = useMemo<CoachMarkStep[]>(() => {
     const arr: CoachMarkStep[] = [
       { ref: iconRowRef, title: 'Stay connected', body: 'Notifications, messages, your calendar, and search — all one tap away up here.' },
@@ -1464,21 +1449,6 @@ export default function HomeTab() {
     return () => { cancelled = true; };
   }, [currentUserId, loading, tourSeenKey]);
 
-  const coloredReminders = (() => {
-    const allKeys: ReminderUrgency[] = ['info', 'warning', 'alert', 'milestone', 'streak'];
-    const result: ReminderUrgency[] = [];
-    for (let i = 0; i < reminders.length; i++) {
-      const preferred = reminders[i].urgency;
-      if (i === 0 || REMINDER_COLORS[preferred].bg !== REMINDER_COLORS[result[i - 1]].bg) {
-        result.push(preferred);
-      } else {
-        const alt = allKeys.find(k => REMINDER_COLORS[k].bg !== REMINDER_COLORS[result[i - 1]].bg) ?? preferred;
-        result.push(alt);
-      }
-    }
-    return result;
-  })();
-
   const greeting = greetingFor(new Date().getHours(), displayName ?? undefined);
 
   return (
@@ -1500,76 +1470,15 @@ export default function HomeTab() {
               ? <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={styles.headingIcon} />
               : '🌸'}
           </Text>
-          <View ref={iconRowRef} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => setShowNotifications(true)}
-              activeOpacity={0.75}
-              style={styles.notifBtn}
-              hitSlop={hitSlopFor(40)}
-              accessibilityRole="button"
-              accessibilityLabel={unreadNotifCount > 0 ? `Notifications, ${unreadNotifCount} unread` : 'Notifications'}
-            >
-              <View style={styles.notifBtnClip}>
-                <Image source={require('../assets/notification-bell.png')} style={styles.notifBtnImage} resizeMode="cover" />
-              </View>
-              {unreadNotifCount > 0 && (
-                <View style={{
-                  position: 'absolute', top: 2, right: 2,
-                  backgroundColor: c.blush, borderRadius: 6,
-                  minWidth: 14, height: 14, justifyContent: 'center', alignItems: 'center',
-                  paddingHorizontal: 2,
-                }}>
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>
-                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setMessageTargetUserId(null); setShowMessages(true); }}
-              activeOpacity={0.75}
-              style={styles.searchBtn}
-              hitSlop={hitSlopFor(40)}
-              accessibilityRole="button"
-              accessibilityLabel={unreadCount > 0 ? `Messages, ${unreadCount} unread` : 'Messages'}
-            >
-              <Text style={styles.searchBtnIcon}>💬</Text>
-              {unreadCount > 0 && (
-                <View style={{
-                  position: 'absolute', top: 2, right: 2,
-                  backgroundColor: c.primary, borderRadius: 6,
-                  minWidth: 14, height: 14, justifyContent: 'center', alignItems: 'center',
-                  paddingHorizontal: 2,
-                }}>
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={() => setShowEvents(true)}
-              activeOpacity={0.75}
-              hitSlop={hitSlopFor(40)}
-              accessibilityRole="button" accessibilityLabel="Events"
-            >
-              <View style={styles.notifBtnClip}>
-                <Image source={require('../assets/events-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={() => setShowSearch(true)}
-              activeOpacity={0.75}
-              hitSlop={hitSlopFor(40)}
-              accessibilityRole="button" accessibilityLabel="Search"
-            >
-              <View style={styles.notifBtnClip}>
-                <Image source={require('../assets/search-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-              </View>
-            </TouchableOpacity>
-          </View>
+          <HomeIconRow
+            containerRef={iconRowRef}
+            unreadNotifCount={unreadNotifCount}
+            unreadMessageCount={unreadCount}
+            onPressNotifications={() => setShowNotifications(true)}
+            onPressMessages={() => { setMessageTargetUserId(null); setShowMessages(true); }}
+            onPressEvents={() => setShowEvents(true)}
+            onPressSearch={() => setShowSearch(true)}
+          />
         </View>
 
         {/* Stories */}
@@ -1588,187 +1497,25 @@ export default function HomeTab() {
 
         {/* Baby profile card */}
         {baby && (
-          <TouchableOpacity
-            ref={babyCardRef}
-            style={[
-              styles.babyCard,
-              {
-                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBg
-                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBg
-                  : c.cardBlush,
-                borderLeftColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBorder
-                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBorder
-                  : c.girlBorder,
-              },
-            ]}
-            onPress={() => setShowProfileSheet(true)}
-            activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel="Open baby profile"
-          >
-            <View style={[
-              styles.babyAvatar,
-              {
-                backgroundColor: baby.gender?.toLowerCase() === 'girl' ? c.girlBorder
-                  : baby.gender?.toLowerCase() === 'boy' ? c.boyBorder
-                  : c.girlBg,
-              },
-            ]}>
-              {baby.photo_url ? (
-                <Image source={{ uri: baby.photo_url }} style={styles.babyAvatarPhoto} />
-              ) : (
-                <Text style={styles.babyAvatarText}>
-                  {baby.is_expecting ? '🤰' : baby.name ? baby.name.charAt(0).toUpperCase() : '👶'}
-                </Text>
-              )}
-            </View>
-            <View style={styles.babyInfo}>
-              <Text style={styles.babyName}>{baby.name || 'Your Baby'}</Text>
-              {baby.is_expecting && baby.due_date ? (() => {
-                const { weeksPregnant, daysUntilDue } = getPregnancyProgress(baby.due_date);
-                const { size, emoji } = getWeekInfo(weeksPregnant);
-                return (
-                  <Text style={styles.babyAge}>
-                    Week {weeksPregnant} · about the size of {emoji} {size}
-                    {daysUntilDue > 0 ? ` · ${daysUntilDue}d to go` : ''}
-                  </Text>
-                );
-              })() : baby.is_expecting ? (
-                <Text style={styles.babyAge}>Expecting</Text>
-              ) : baby.birth_date ? (
-                <Text style={styles.babyAge}>{babyAgeLabel(baby.birth_date)}</Text>
-              ) : null}
-            </View>
-            <Text style={styles.babyCardChevron}>›</Text>
-          </TouchableOpacity>
+          <BabyProfileCard baby={baby} onPress={() => setShowProfileSheet(true)} containerRef={babyCardRef} />
         )}
 
         {/* Stat cards */}
-        <View ref={statRowRef} style={styles.statRow}>
-          {statCards.map(card => (
-            <View
-              key={card.label}
-              style={[styles.statCard, { borderTopColor: card.accent, backgroundColor: card.bg }]}
-              accessible
-              accessibilityLabel={loading ? `${card.label}, loading` : `${card.label}: ${card.value}`}
-            >
-              {loading ? (
-                <ActivityIndicator
-                  color={card.accent}
-                  style={styles.statSpinner}
-                />
-              ) : (
-                <Text
-                  allowFontScaling
-                  maxFontSizeMultiplier={MAX_FONT_SCALE}
-                  style={[styles.statValue, { color: card.accent }]}
-                >
-                  {card.value}
-                </Text>
-              )}
-              <Text style={styles.statLabel}>{card.label}</Text>
-            </View>
-          ))}
-        </View>
+        <TodaySummaryCard stats={stats} loading={loading} containerRef={statRowRef} />
 
         {/* Handoff notes */}
         {activeBaby && (
-          <TouchableOpacity
-            style={styles.handoffCard}
-            onPress={() => setShowHandoffNotes(true)}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="Handoff notes"
-          >
-            <Text style={styles.handoffLabel}>📝 Handoff Notes</Text>
-            <Text style={styles.handoffText} numberOfLines={2}>
-              {latestHandoffNote ?? 'No notes yet — leave one for your co-parent.'}
-            </Text>
-          </TouchableOpacity>
+          <HandoffNotesCard latestNote={latestHandoffNote} onPress={() => setShowHandoffNotes(true)} />
         )}
 
         {/* Reminders */}
-        {reminders.length > 0 && (
-          <View style={styles.remindersSection}>
-            <Text style={styles.sectionTitle}>Reminders</Text>
-            {reminders.map((r, idx) => {
-              const rc = REMINDER_COLORS[coloredReminders[idx]];
-              return (
-                <View key={r.id} style={[styles.reminderCard, { backgroundColor: rc.bg, borderLeftColor: rc.border }]}>
-                  <Text style={styles.reminderEmoji}>{r.emoji}</Text>
-                  <Text style={[styles.reminderText, { color: rc.text }]}>{r.text}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
+        <RemindersCard reminders={reminders} />
 
         {/* Upcoming calendar events */}
-        <PaywallGate feature="shared_calendar" title="Upcoming" description="See what's coming up from your calendar." emoji="📅">
-        {upcomingEvents.length > 0 && (
-          <TouchableOpacity
-            style={styles.upcomingCard}
-            onPress={() => navigation.navigate('Calendar')}
-            activeOpacity={0.85}
-            accessibilityRole="button" accessibilityLabel="Open calendar"
-          >
-            <Text style={styles.sectionTitle}>Upcoming</Text>
-            {upcomingEvents.map(e => (
-              <View key={e.id} style={styles.upcomingRow}>
-                <Text style={styles.upcomingEmoji}>{e.calendar_type === 'personal' ? '🔒' : '👥'}</Text>
-                <Text style={styles.upcomingTitle} numberOfLines={1}>{e.title}</Text>
-                <Text style={styles.upcomingWhen}>{formatUpcomingWhen(e.starts_at, e.all_day)}</Text>
-              </View>
-            ))}
-          </TouchableOpacity>
-        )}
-        </PaywallGate>
+        <UpcomingEventsCard events={upcomingEvents} onPress={() => navigation.navigate('Calendar')} />
 
         {/* Supplies overview card */}
-        <PaywallGate feature="supplies" title="Supplies Overview" description="Track formula, diapers, and milk stash with low-stock alerts." emoji="🧴">
-        {suppliesSnap && (
-          <View style={styles.suppliesCard}>
-            <Text style={styles.sectionTitle}>Supplies</Text>
-            <View style={styles.suppliesGrid}>
-              <View
-                style={[styles.supplyChip, { backgroundColor: suppliesSnap.formulaLow ? c.supplyLowBg : c.cardHoney }]}
-                accessible
-                accessibilityLabel={`Formula: ${suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} ounces` : 'no data'}${suppliesSnap.formulaLow ? ', low' : ''}`}
-              >
-                <Text style={styles.supplyChipEmoji}>🍼</Text>
-                <Text style={[styles.supplyChipValue, suppliesSnap.formulaLow && styles.supplyChipValueLow]}>
-                  {suppliesSnap.formula !== null ? `${suppliesSnap.formula.toFixed(1)} oz` : '–'}
-                </Text>
-                <Text style={styles.supplyChipLabel}>Formula</Text>
-              </View>
-              <View
-                style={[styles.supplyChip, { backgroundColor: suppliesSnap.diapersLow ? c.supplyLowBg : c.cardSage }]}
-                accessible
-                accessibilityLabel={`Diapers: ${suppliesSnap.diapers !== null ? Math.round(suppliesSnap.diapers) : 'no data'}${suppliesSnap.diapersLow ? ', low' : ''}`}
-              >
-                <Text style={styles.supplyChipEmoji}>👶</Text>
-                <Text style={[styles.supplyChipValue, suppliesSnap.diapersLow && styles.supplyChipValueLow]}>
-                  {suppliesSnap.diapers !== null ? String(Math.round(suppliesSnap.diapers)) : '–'}
-                </Text>
-                <Text style={styles.supplyChipLabel}>Diapers</Text>
-              </View>
-              <View
-                style={[styles.supplyChip, { backgroundColor: c.cardBlush }]}
-                accessible
-                accessibilityLabel={`Milk Stash: ${suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} ounces` : 'no data'}`}
-              >
-                <Text style={styles.supplyChipEmoji}>🤱</Text>
-                <Text style={styles.supplyChipValue}>
-                  {suppliesSnap.milkOz > 0 ? `${suppliesSnap.milkOz.toFixed(1)} oz` : '–'}
-                </Text>
-                <Text style={styles.supplyChipLabel}>Milk Stash</Text>
-              </View>
-            </View>
-            {suppliesSnap.formula === null && suppliesSnap.diapers === null && suppliesSnap.milkOz === 0 && (
-              <Text style={styles.suppliesEmptyHint}>Track formula, diapers & milk in the Supplies tab</Text>
-            )}
-          </View>
-        )}
-        </PaywallGate>
+        <SuppliesSnapshotCard snapshot={suppliesSnap} />
 
         {/* Tip of the day */}
         <View ref={tipRef}>
@@ -3191,141 +2938,12 @@ function makeStyles(c: Colors) {
       fontWeight: '800',
       color: c.textSecondary,
     },
-    searchBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: c.card,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    searchBtnIcon: { fontSize: 24 },
-    notifBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    notifBtnClip: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      overflow: 'hidden',
-      backgroundColor: c.card,
-    },
-    notifBtnImage: { width: 40, height: 40 },
-    statRow: {
-      flexDirection: 'row',
-      gap: 12,
-      marginBottom: 36,
-      overflow: 'visible',
-    },
-    statCard: {
-      flex: 1,
-      backgroundColor: c.card,
-      borderRadius: 14,
-      padding: 14,
-      alignItems: 'center',
-      borderTopWidth: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
-      shadowRadius: 6,
-      elevation: 2,
-      minHeight: 80,
-      justifyContent: 'center',
-    },
-    statSpinner: {
-      marginBottom: 6,
-    },
-    statValue: {
-      fontSize: 24,
-      fontWeight: '800',
-      marginBottom: 6,
-      color: c.textPrimary,
-    },
-    statLabel: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: c.textSecondary,
-      textAlign: 'center',
-      lineHeight: 16,
-    },
     sectionTitle: {
       fontSize: 18,
       fontWeight: '700',
       color: c.textSecondary,
       marginBottom: 14,
     },
-    remindersSection: {
-      marginBottom: 28,
-    },
-    handoffCard: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      borderWidth: 1.5,
-      borderColor: c.separator,
-      padding: 16,
-      marginBottom: 20,
-    },
-    handoffLabel: {
-      fontSize: 13,
-      fontWeight: '700',
-      color: c.textSecondary,
-      marginBottom: 4,
-    },
-    handoffText: {
-      fontSize: 14,
-      color: c.textPrimary,
-      lineHeight: 19,
-    },
-    reminderCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderLeftWidth: 4,
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      marginBottom: 8,
-      gap: 10,
-    },
-    reminderEmoji: {
-      fontSize: 18,
-    },
-    reminderText: {
-      flex: 1,
-      fontSize: 14,
-      fontWeight: '500',
-      lineHeight: 20,
-    },
-    upcomingCard: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 28,
-      borderWidth: 1.5,
-      borderColor: c.separator,
-    },
-    upcomingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingVertical: 8,
-      borderTopWidth: 1,
-      borderTopColor: c.separator,
-    },
-    upcomingEmoji: { fontSize: 14 },
-    upcomingTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: c.textPrimary },
-    upcomingWhen: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
     feedHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -3731,113 +3349,6 @@ function makeStyles(c: Colors) {
       fontSize: 18,
       fontWeight: '700',
       color: c.textSecondary,
-    },
-    // ── Baby profile card ───────────────────────────────────────────────────────
-    babyCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: c.cardBlush,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 20,
-      gap: 14,
-      borderLeftWidth: 5,
-      borderLeftColor: c.girlBorder,
-    },
-    babyAvatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      backgroundColor: c.girlBg,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    babyAvatarText: {
-      fontSize: 22,
-      fontWeight: '800',
-      color: '#fff',
-    },
-    babyInfo: {
-      flex: 1,
-    },
-    babyName: {
-      fontSize: 20,
-      fontWeight: '800',
-      color: c.textPrimary,
-    },
-    babyAge: {
-      fontSize: 13,
-      color: '#fff',
-      marginTop: 2,
-      fontWeight: '600',
-      textShadowColor: 'rgba(0,0,0,0.75)',
-      textShadowOffset: { width: 0, height: 0 },
-      textShadowRadius: 5,
-    },
-    babyAvatarPhoto: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-    },
-    babyCardChevron: {
-      fontSize: 22,
-      color: '#AEBCB1',
-      fontWeight: '300',
-      marginLeft: 4,
-    },
-    // ── Supplies overview card ──────────────────────────────────────────────────
-    suppliesCard: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 28,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
-      shadowRadius: 6,
-      elevation: 2,
-    },
-    suppliesGrid: {
-      flexDirection: 'row',
-      gap: 10,
-    },
-    supplyChip: {
-      flex: 1,
-      backgroundColor: c.bgAlt,
-      borderRadius: 12,
-      padding: 12,
-      alignItems: 'center',
-    },
-    supplyChipLow: {
-      backgroundColor: c.supplyLowBg,
-    },
-    supplyChipEmoji: {
-      fontSize: 22,
-      marginBottom: 6,
-    },
-    supplyChipValue: {
-      fontSize: 15,
-      fontWeight: '800',
-      color: c.textSecondary,
-      marginBottom: 3,
-    },
-    supplyChipValueLow: {
-      color: c.supplyLowText,
-    },
-    supplyChipLabel: {
-      fontSize: 9,
-      fontWeight: '600',
-      color: c.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.4,
-      textAlign: 'center',
-    },
-    suppliesEmptyHint: {
-      fontSize: 12,
-      color: c.textMuted,
-      textAlign: 'center',
-      marginTop: 10,
-      fontStyle: 'italic',
     },
     // ── Report modal ────────────────────────────────────────────────────────────
     reportPrompt: {
