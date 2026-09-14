@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor } from '../lib/accessibility';
 import { Village, VILLAGES } from '../lib/villageData';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -311,7 +312,9 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
       <SafeAreaView style={s.safe}>
         {/* ── Header ── */}
         <View style={s.header}>
-          <TouchableOpacity onPress={view === 'create' ? () => setView('feed') : onClose} style={s.headerLeft}>
+          <TouchableOpacity onPress={view === 'create' ? () => setView('feed') : onClose} style={s.headerLeft}
+            hitSlop={hitSlopFor(20)} accessibilityRole="button"
+            accessibilityLabel={view === 'create' ? 'Back' : 'Close'}>
             <Text style={s.headerBackText}>{view === 'create' ? '← Back' : '✕'}</Text>
           </TouchableOpacity>
           <Text style={s.headerTitle}>

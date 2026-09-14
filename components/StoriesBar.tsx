@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import UserAvatar from './UserAvatar';
@@ -93,7 +94,7 @@ export default function StoriesBar({ currentUserId, myName, onAddStory, onViewSt
             </View>
             {!myGroup && (
               <View style={s.plusBadge}>
-                <Text style={s.plusText}>+</Text>
+                <Ionicons name="add" size={14} color="#fff" />
               </View>
             )}
           </View>
@@ -127,7 +128,7 @@ export default function StoriesBar({ currentUserId, myName, onAddStory, onViewSt
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
-    container: { marginBottom: 20 },
+    container: { marginBottom: 10 },
     scroll: { paddingHorizontal: 2, gap: 12, paddingVertical: 4 },
     item: { alignItems: 'center', width: 70 },
     ring: {
@@ -147,7 +148,6 @@ function makeStyles(c: Colors) {
       justifyContent: 'center', alignItems: 'center',
       borderWidth: 1.5, borderColor: c.bg,
     },
-    plusText: { color: '#fff', fontSize: 15, fontWeight: '800', lineHeight: 18 },
     label: { fontSize: 11, color: c.textSecondary, fontWeight: '600', textAlign: 'center', width: 70 },
   });
 }

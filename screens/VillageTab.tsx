@@ -27,6 +27,7 @@ import { suggestVillages, getNextVisibleStep, getPrevVisibleStep } from '../lib/
 import { VillageCard } from '../components/village/VillageCard';
 import { LocationPicker } from '../components/village/LocationPicker';
 import { track, screenView } from '../lib/analytics';
+import { joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT } from '../lib/discoverData';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,6 @@ export default function VillageTab() {
   const s = useMemo(() => makeStyles(c), [c]);
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
-  const FREE_VILLAGE_LIMIT = 5;
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
@@ -69,17 +69,14 @@ export default function VillageTab() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: { user } }, done] = await Promise.all([
+      const [{ data: { user } }, done, joinedPatchIds] = await Promise.all([
         supabase.auth.getUser(),
         AsyncStorage.getItem('village_quiz_done'),
+        fetchJoinedPatchIds(),
       ]);
       if (!user) return;
       setQuizDone(done === 'true');
-      const { data } = await supabase
-        .from('user_villages')
-        .select('village_id')
-        .eq('user_id', user.id);
-      if (data) setJoinedIds(new Set(data.map((r: any) => r.village_id)));
+      setJoinedIds(joinedPatchIds);
     } finally {
       setLoading(false);
     }
@@ -108,21 +105,21 @@ export default function VillageTab() {
   }
 
   async function toggleJoin(villageId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const wasJoined = joinedIds.has(villageId);
 
-    if (!joinedIds.has(villageId) && !isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT) {
+    if (!wasJoined && !isSubscribed && joinedIds.size >= FREE_PATCH_LIMIT) {
       openPaywall('village_limit');
       return;
     }
 
     setJoining(villageId);
-    if (joinedIds.has(villageId)) {
-      await supabase.from('user_villages').delete().eq('user_id', user.id).eq('village_id', villageId);
+    const { error } = wasJoined ? await leavePatch(villageId) : await joinPatch(villageId);
+    if (error) {
+      Alert.alert('Something went wrong', wasJoined ? "Couldn't leave this patch. Please try again." : "Couldn't join this patch. Please try again.");
+    } else if (wasJoined) {
       setJoinedIds(prev => { const next = new Set(prev); next.delete(villageId); return next; });
       track('patch_left', { patch_id: villageId });
     } else {
-      await supabase.from('user_villages').insert({ user_id: user.id, village_id: villageId });
       setJoinedIds(prev => new Set([...prev, villageId]));
       track('patch_joined', { patch_id: villageId });
     }
@@ -195,7 +192,7 @@ export default function VillageTab() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const toJoin = suggestions.filter(id => !joinedIds.has(id));
-    const slotsLeft = isSubscribed ? toJoin.length : Math.max(0, FREE_VILLAGE_LIMIT - joinedIds.size);
+    const slotsLeft = isSubscribed ? toJoin.length : Math.max(0, FREE_PATCH_LIMIT - joinedIds.size);
     const limited = toJoin.slice(0, slotsLeft);
     if (limited.length > 0) {
       await supabase.from('user_villages').insert(
@@ -542,16 +539,16 @@ export default function VillageTab() {
               </TouchableOpacity>
             </View>
 
-            {!isSubscribed && joinedIds.size >= FREE_VILLAGE_LIMIT && (
+            {!isSubscribed && joinedIds.size >= FREE_PATCH_LIMIT && (
               <TouchableOpacity
                 style={s.limitBanner}
                 onPress={() => openPaywall('village_limit')}
                 activeOpacity={0.8}
                 accessibilityRole="button"
-                accessibilityLabel={`You've joined ${FREE_VILLAGE_LIMIT} free patches. Upgrade to join more.`}
+                accessibilityLabel={`You've joined ${FREE_PATCH_LIMIT} free patches. Upgrade to join more.`}
               >
                 <Text style={s.limitBannerText}>
-                  You've joined {FREE_VILLAGE_LIMIT} free patches. <Text style={s.limitBannerLink}>Upgrade</Text> to join more.
+                  You've joined {FREE_PATCH_LIMIT} free patches. <Text style={s.limitBannerLink}>Upgrade</Text> to join more.
                 </Text>
               </TouchableOpacity>
             )}

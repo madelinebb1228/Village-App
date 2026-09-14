@@ -59,6 +59,7 @@ export interface Colors {
   postMilestone: string;
   postQuestion: string;
   postText: string;
+  postPoll: string;
 
   // Interactive
   primary: string;
@@ -154,6 +155,7 @@ export const lightColors: Colors = {
   postMilestone:   '#D97706',
   postQuestion:    '#2563EB',
   postText:        '#7C3AED',
+  postPoll:        '#059669',
 
   primary:         '#7C3AED',
   primaryText:     '#FFFFFF',
@@ -242,6 +244,7 @@ export const darkColors: Colors = {
   postMilestone:   '#B8904A',
   postQuestion:    '#7BA7BC',
   postText:        '#8878A8',
+  postPoll:        '#6A9A84',
 
   primary:         '#7BA7BC',
   primaryText:     '#E8EEF4',

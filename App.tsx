@@ -23,8 +23,9 @@ Sentry.init({
 import { PostHogProvider } from 'posthog-react-native';
 
 import React from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image, Modal } from 'react-native';
 import { useColors } from './lib/theme';
+import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { SyncProvider } from './lib/syncService';
 import OfflineBanner from './components/OfflineBanner';
@@ -37,21 +38,27 @@ import { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
 import { posthog, identifyUser, setUserProperties, resetAnalytics, restoreAnalyticsOptOut } from './lib/analytics';
-import { AppContext } from './lib/AppContext';
+import { AppContext, CreateAction } from './lib/AppContext';
 import { SubscriptionProvider } from './lib/subscriptionContext';
 import { BabyProvider } from './lib/babyContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ErrorBoundary from './components/ErrorBoundary';
+import CreateOptionsSheet, { CreateOption } from './components/CreateOptionsSheet';
+import { restoreScrollFocus, installWebKeyboardScrollFallback } from './lib/webFocus';
 
 import AuthScreen from './screens/Auth';
 import OnboardingEntry from './screens/OnboardingEntry';
 import HomeScreen from './screens/HomeTab';
 import TrackScreen from './screens/Track';
 import CalendarScreen from './screens/CalendarTab';
-import ResourcesScreen from './screens/ResourcesTab';
+import DiscoverScreen from './screens/DiscoverTab';
 import VillageScreen from './screens/VillageTab';
 import ProfileScreen from './screens/Profile';
+import EventsScreen from './screens/EventsScreen';
+import PatchTasksSheet from './screens/PatchTasksSheet';
+import PostDetailScreen from './screens/PostDetailScreen';
+import MoreTrackersScreen from './screens/MoreTrackersScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -82,17 +89,25 @@ function withErrorBoundary<T extends object>(
   };
 }
 
+// The five tabs that occupy a permanent nav slot. Calendar and Patch remain
+// registered as sibling routes on the same navigator (so every existing
+// `navigation.navigate('Calendar' | 'Patch')` call and deep link keeps working
+// unchanged) — they're just excluded from both the mobile tab bar and the web
+// sidebar below. Future phases can surface them from Home/Discover/Profile.
 const NAV_TABS = [
-  { name: 'Home',      emoji: '🏡', label: 'Home' },
-  { name: 'Track',     emoji: '📋', label: 'Track' },
-  { name: 'Calendar',  emoji: '📅', label: 'Calendar' },
-  { name: 'Resources', emoji: '📚', label: 'Resources' },
-  { name: 'Patch',     emoji: '🌿', label: 'Patch' },
-  { name: 'Profile',   emoji: '🌸', label: 'Profile' },
-];
+  { name: 'Home',     label: 'Home',     icon: 'home',           iconOutline: 'home-outline' },
+  { name: 'Discover', label: 'Discover', icon: 'compass',        iconOutline: 'compass-outline' },
+  { name: 'Track',    label: 'Track',    icon: 'clipboard',      iconOutline: 'clipboard-outline' },
+  { name: 'Profile',  label: 'Profile',  icon: 'person-circle',  iconOutline: 'person-circle-outline' },
+] as const;
+
+const VISIBLE_TAB_NAMES = ['Home', 'Discover', 'Create', 'Track', 'Profile'];
 
 function WebSidebar({ state, navigation }: BottomTabBarProps) {
   const c = useColors();
+  const { requestCreate } = React.useContext(AppContext);
+  const visibleRoutes = state.routes.filter(r => VISIBLE_TAB_NAMES.includes(r.name));
+
   return (
     <View style={{
       position: 'fixed' as any,
@@ -115,8 +130,37 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
         />
       </View>
 
-      {state.routes.map((route, index) => {
-        const focused = state.index === index;
+      {visibleRoutes.map((route) => {
+        if (route.name === 'Create') {
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={requestCreate}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Create"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 13,
+                paddingHorizontal: 16,
+                borderRadius: 30,
+                marginBottom: 4,
+                backgroundColor: c.primary,
+              }}
+            >
+              <Ionicons name="add" size={22} color="#fff" />
+              <Text
+                allowFontScaling
+                maxFontSizeMultiplier={MAX_FONT_SCALE}
+                style={{ marginLeft: 14, fontSize: 16, fontWeight: '700', color: '#fff' }}
+              >
+                Create
+              </Text>
+            </TouchableOpacity>
+          );
+        }
+        const focused = state.index === state.routes.findIndex(r => r.key === route.key);
         const tab = NAV_TABS.find(t => t.name === route.name) ?? NAV_TABS[0];
         return (
           <TouchableOpacity
@@ -133,16 +177,14 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
               paddingHorizontal: 16,
               borderRadius: 30,
               marginBottom: 4,
-              backgroundColor: focused ? c.cardBlush : 'transparent',
+              backgroundColor: focused ? c.cardLavender : 'transparent',
             }}
           >
-            <Text
-              style={{ fontSize: 22 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >
-              {tab.emoji}
-            </Text>
+            <Ionicons
+              name={(focused ? tab.icon : tab.iconOutline) as any}
+              size={22}
+              color={focused ? c.primary : c.textMuted}
+            />
             <Text
               allowFontScaling
               maxFontSizeMultiplier={MAX_FONT_SCALE}
@@ -150,7 +192,7 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
                 marginLeft: 14,
                 fontSize: 16,
                 fontWeight: focused ? '700' : '500',
-                color: focused ? c.textPrimary : c.textMuted,
+                color: focused ? c.primary : c.textMuted,
               }}
             >
               {tab.label}
@@ -160,6 +202,47 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
       })}
     </View>
   );
+}
+
+// Center "Create" tab button — never navigates, just asks Home (via AppContext)
+// to present its create-options sheet. Visually a raised, filled circle so it
+// reads as the primary action, the way Instagram/TikTok/X treat their post button.
+function CreateTabButton() {
+  const c = useColors();
+  const { requestCreate } = React.useContext(AppContext);
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <TouchableOpacity
+        onPress={requestCreate}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Create"
+        style={{
+          width: 46,
+          height: 46,
+          borderRadius: 23,
+          marginTop: -18,
+          backgroundColor: c.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: c.heroShadow,
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.25,
+          shadowRadius: 6,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Placeholder route component for the "Create" tab. It's never actually shown —
+// pressing it always calls requestCreate() instead of navigating — but the
+// navigator requires every Tab.Screen to have a component.
+function CreateTabPlaceholder() {
+  return null;
 }
 
 function OneHandedIndicator() {
@@ -185,6 +268,12 @@ function OneHandedIndicator() {
         <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700', letterSpacing: 0.3 }}>1H</Text>
       </View>
     </View>
+  );
+}
+
+function tabIcon(name: string, outline: string) {
+  return ({ focused, color }: { focused: boolean; color: string }) => (
+    <Ionicons name={(focused ? name : outline) as any} size={focused ? 25 : 22} color={color} />
   );
 }
 
@@ -226,14 +315,22 @@ function MainTabs() {
         component={sidebarAware(withErrorBoundary(HomeScreen, 'The Home feed ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Home',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >🏡</Text>
-          ),
+          tabBarIcon: tabIcon('home', 'home-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="Discover"
+        component={sidebarAware(withErrorBoundary(DiscoverScreen, 'Discover ran into a hiccup.'))}
+        options={{
+          tabBarLabel: 'Discover',
+          tabBarIcon: tabIcon('compass', 'compass-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="Create"
+        component={CreateTabPlaceholder}
+        options={{
+          tabBarButton: () => <CreateTabButton />,
         }}
       />
       <Tab.Screen
@@ -241,59 +338,7 @@ function MainTabs() {
         component={sidebarAware(withErrorBoundary(TrackScreen, 'Track ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Track',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >📋</Text>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Calendar"
-        component={sidebarAware(withErrorBoundary(CalendarScreen, 'Calendar ran into a hiccup.'))}
-        options={{
-          tabBarLabel: 'Calendar',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >📅</Text>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Resources"
-        component={sidebarAware(withErrorBoundary(ResourcesScreen, 'Resources ran into a hiccup.'))}
-        options={{
-          tabBarLabel: 'Resources',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >📚</Text>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Patch"
-        component={sidebarAware(withErrorBoundary(VillageScreen, 'Patch ran into a hiccup.'))}
-        options={{
-          tabBarLabel: 'Patch',
-          tabBarItemStyle: { borderRightWidth: 1, borderRightColor: c.separator },
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >🏘️</Text>
-          ),
+          tabBarIcon: tabIcon('clipboard', 'clipboard-outline'),
         }}
       />
       <Tab.Screen
@@ -301,14 +346,32 @@ function MainTabs() {
         component={sidebarAware(withErrorBoundary(ProfileScreen, 'Profile ran into a hiccup.'))}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ focused }) => (
-            <Text
-              style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.45 }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >🌸</Text>
-          ),
+          tabBarIcon: tabIcon('person-circle', 'person-circle-outline'),
         }}
+      />
+
+      {/* Not shown in the tab bar — still registered so existing internal
+          navigation (navigate('Calendar' | 'Patch')) and deep links keep working.
+          Phase 2 will surface these from Home/Discover/Profile instead. */}
+      <Tab.Screen
+        name="Calendar"
+        component={sidebarAware(withErrorBoundary(CalendarScreen, 'Calendar ran into a hiccup.'))}
+        options={{ tabBarButton: () => null }}
+      />
+      <Tab.Screen
+        name="Patch"
+        component={sidebarAware(withErrorBoundary(VillageScreen, 'Patch ran into a hiccup.'))}
+        options={{ tabBarButton: () => null }}
+      />
+      <Tab.Screen
+        name="PostDetail"
+        component={sidebarAware(withErrorBoundary(PostDetailScreen, 'This post ran into a hiccup.'))}
+        options={{ tabBarButton: () => null }}
+      />
+      <Tab.Screen
+        name="MoreTrackers"
+        component={sidebarAware(withErrorBoundary(MoreTrackersScreen, 'More Trackers ran into a hiccup.'))}
+        options={{ tabBarButton: () => null }}
       />
     </Tab.Navigator>
   );
@@ -346,6 +409,7 @@ function App() {
     registerNotificationCategories();
     registerNotificationResponseListener();
     restoreAnalyticsOptOut();
+    installWebKeyboardScrollFallback();
   }, []);
 
   React.useEffect(() => {
@@ -400,6 +464,29 @@ function App() {
   const [tourRequestId, setTourRequestId] = React.useState(0);
   const requestTour = React.useCallback(() => setTourRequestId(id => id + 1), []);
 
+  // Global create-options sheet and the two fully self-contained flows it can
+  // open directly (Event, Ask for Help) — all owned here at the app root so
+  // they're visually independent of whichever tab is active. Post/Question/
+  // Photo·Video/Story still reuse Home's existing composers via createAction.
+  const [showCreateSheet, setShowCreateSheet] = React.useState(false);
+  const requestCreate = React.useCallback(() => setShowCreateSheet(true), []);
+  const [showEvents, setShowEvents] = React.useState(false);
+  const [showPatchTasks, setShowPatchTasks] = React.useState(false);
+
+  const [createAction, setCreateAction] = React.useState<{ action: CreateAction; requestId: number } | null>(null);
+  const createActionSeq = React.useRef(0);
+  const requestCreateAction = React.useCallback((action: CreateAction) => {
+    createActionSeq.current += 1;
+    setCreateAction({ action, requestId: createActionSeq.current });
+  }, []);
+
+  const handleCreateSelect = React.useCallback((option: CreateOption) => {
+    setShowCreateSheet(false);
+    if (option === 'event') { setShowEvents(true); return; }
+    if (option === 'help') { setShowPatchTasks(true); return; }
+    requestCreateAction(option);
+  }, [requestCreateAction]);
+
   if (onboardingDone === null) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FEFCF8', justifyContent: 'center', alignItems: 'center' }}>
@@ -411,7 +498,7 @@ function App() {
   return (
     <PostHogProvider client={posthog} autocapture={{ captureTouches: true, captureScreens: false }}>
     <SafeAreaProvider>
-    <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour }}>
+    <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour, requestCreate, createAction, requestCreateAction }}>
       <OneHandedProvider>
       <SyncProvider>
       <SubscriptionProvider>
@@ -427,6 +514,19 @@ function App() {
             <Stack.Screen name="Main" component={MainTabs} />
           )}
         </Stack.Navigator>
+
+        {/* Global create surfaces — siblings of the tab navigator, not owned by
+            any single tab, so they show reliably above whichever tab is active
+            regardless of tab mount/focus lifecycle. See lib/AppContext.ts. */}
+        <CreateOptionsSheet
+          visible={showCreateSheet}
+          onClose={() => { setShowCreateSheet(false); restoreScrollFocus(); }}
+          onSelect={handleCreateSelect}
+        />
+        <Modal visible={showEvents} animationType="slide" presentationStyle="fullScreen">
+          <EventsScreen onBack={() => { setShowEvents(false); restoreScrollFocus(); }} autoOpenCreate />
+        </Modal>
+        <PatchTasksSheet visible={showPatchTasks} onClose={() => { setShowPatchTasks(false); restoreScrollFocus(); }} />
       </NavigationContainer>
       <OneHandedIndicator />
       </BabyProvider>

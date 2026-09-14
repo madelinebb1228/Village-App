@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 
 interface HandoffNotesCardProps {
@@ -19,7 +20,10 @@ function HandoffNotesCard({ latestNote, onPress }: HandoffNotesCardProps) {
       accessibilityRole="button"
       accessibilityLabel="Handoff notes"
     >
-      <Text style={styles.handoffLabel}>📝 Handoff Notes</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <Ionicons name="document-text-outline" size={14} color={c.textSecondary} />
+        <Text style={[styles.handoffLabel, { marginBottom: 0 }]}>Handoff Notes</Text>
+      </View>
       <Text style={styles.handoffText} numberOfLines={2}>
         {latestNote ?? 'No notes yet — leave one for your co-parent.'}
       </Text>

@@ -25,7 +25,9 @@
       "Bash(curl -s \"http://localhost:8081/index.bundle?platform=web&dev=true\" -o /tmp/bundle-check6.js -w \"HTTP %{http_code}\\\\n\")",
       "Bash(curl *)",
       "Bash(npm run *)",
-      "Bash(tee /tmp/expo-web2.log)"
+      "Bash(tee /tmp/expo-web2.log)",
+      "Bash(npx supabase *)",
+      "Bash(break)"
     ]
   }
 }

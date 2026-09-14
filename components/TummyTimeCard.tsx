@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, useColors } from '../lib/theme';
 import { getTummyTimeSummary, logTummyTime, checkTummyTimeReminder } from '../lib/tummyTimeUtil';
 
@@ -63,7 +64,7 @@ export default function TummyTimeCard({ userId, babyId, babyName, refreshKey }: 
     <View style={s.wrap}>
       <View style={s.headerRow}>
         <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🤸</Text>
+          <Ionicons name="fitness-outline" size={22} color={c.sage} />
           <View>
             <Text style={s.headerTitle}>Tummy Time</Text>
             {loading ? (
@@ -110,7 +111,6 @@ function makeStyles(c: Colors) {
     },
     headerRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderLeftWidth: 4, borderLeftColor: c.sage },
     headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    headerEmoji: { fontSize: 26 },
     headerTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary },
     subText:     { fontSize: 12, color: c.textMuted, marginTop: 2 },
 

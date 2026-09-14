@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import { Reminder, ReminderUrgency, getReminderColors } from '../../types/feed';
 
@@ -36,7 +37,7 @@ function RemindersCard({ reminders }: RemindersCardProps) {
         const rc = REMINDER_COLORS[coloredReminders[idx]];
         return (
           <View key={r.id} style={[styles.reminderCard, { backgroundColor: rc.bg, borderLeftColor: rc.border }]}>
-            <Text style={styles.reminderEmoji}>{r.emoji}</Text>
+            <Ionicons name={r.icon} size={18} color={rc.text} />
             <Text style={[styles.reminderText, { color: rc.text }]}>{r.text}</Text>
           </View>
         );
@@ -67,9 +68,6 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 14,
       marginBottom: 8,
       gap: 10,
-    },
-    reminderEmoji: {
-      fontSize: 18,
     },
     reminderText: {
       flex: 1,

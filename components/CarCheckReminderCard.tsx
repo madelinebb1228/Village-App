@@ -4,6 +4,7 @@ import {
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, useColors } from '../lib/theme';
 import { ensureNotificationPermission } from '../lib/notifications';
 import {
@@ -127,7 +128,7 @@ export default function CarCheckReminderCard({ userId, babyId, babyName }: Props
         accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide car check settings' : 'Show car check settings'}
       >
         <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🚗</Text>
+          <Ionicons name="car-outline" size={22} color={c.honey} />
           <View>
             <Text style={s.headerTitle}>Car Check</Text>
             {loading ? (
@@ -241,7 +242,6 @@ function makeStyles(c: Colors) {
       padding: 14, borderLeftWidth: 4, borderLeftColor: c.honey,
     },
     headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    headerEmoji: { fontSize: 26 },
     headerTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary },
     headerSub:   { fontSize: 12, color: c.textMuted, marginTop: 2 },
     chevron:     { fontSize: 11, color: c.textMuted },

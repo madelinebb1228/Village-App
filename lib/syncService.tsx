@@ -1,7 +1,7 @@
 import React, {
   createContext, useCallback, useContext, useEffect, useRef, useState,
 } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
@@ -59,6 +59,18 @@ function isNetworkError(err: any): boolean {
 }
 
 async function checkConnectivity(): Promise<boolean> {
+  // On web, fetch() is subject to the page's CORS policy, and Google's
+  // generate_204 doesn't send Access-Control-Allow-Origin for arbitrary
+  // origins — every single request here failed as a CORS error, not a real
+  // connectivity failure, permanently pinning the app in "Offline" on web
+  // and logging one console error every 30s for the life of the session.
+  // navigator.onLine has no such restriction (it's a browser API, not a
+  // network request) — it isn't a perfect "can I actually reach the
+  // internet" signal, but it's real and doesn't misreport a working
+  // connection as offline the way the blocked fetch always did.
+  if (Platform.OS === 'web') {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  }
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);

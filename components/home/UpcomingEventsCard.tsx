@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import PaywallGate from '../PaywallGate';
 
@@ -43,7 +44,7 @@ function UpcomingEventsCard({ events, onPress }: UpcomingEventsCardProps) {
           <Text style={styles.sectionTitle}>Upcoming</Text>
           {events.map(e => (
             <View key={e.id} style={styles.upcomingRow}>
-              <Text style={styles.upcomingEmoji}>{e.calendar_type === 'personal' ? '🔒' : '👥'}</Text>
+              <Ionicons name={e.calendar_type === 'personal' ? 'lock-closed-outline' : 'people-outline'} size={13} color={c.textMuted} />
               <Text style={styles.upcomingTitle} numberOfLines={1}>{e.title}</Text>
               <Text style={styles.upcomingWhen}>{formatUpcomingWhen(e.starts_at, e.all_day)}</Text>
             </View>
@@ -80,7 +81,6 @@ function makeStyles(c: Colors) {
       borderTopWidth: 1,
       borderTopColor: c.separator,
     },
-    upcomingEmoji: { fontSize: 14 },
     upcomingTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: c.textPrimary },
     upcomingWhen: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
   });

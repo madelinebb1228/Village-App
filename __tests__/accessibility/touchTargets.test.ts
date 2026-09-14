@@ -14,7 +14,6 @@ describe('Track.tsx touch target hitSlop guard', () => {
   const knownSmallTargets = [
     'cp.circle',
     'st.btn',
-    'categoryArrowBtn',
     'dateNavBtn',
     'cal.headerBtn',
     'cal.cell',

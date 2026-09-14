@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert, Text } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
-import { AuthorProfile } from '../types/feed';
+import { AuthorProfile, Comment } from '../types/feed';
 
 // ─── Date / formatting helpers ────────────────────────────────────────────────
 
@@ -210,4 +210,66 @@ export function renderTextWithMentions(
       })}
     </Text>
   );
+}
+
+// Nests a flat `comments` query result (ordered by created_at) into
+// top-level comments with their replies attached via parent_id. Shared by
+// HomeTab's in-feed comment sheet and PostDetailScreen so both build the
+// exact same thread shape from the same table.
+export function buildCommentTree(flat: Comment[]): Comment[] {
+  const map = new Map<string, Comment>();
+  flat.forEach(c => map.set(c.id, { ...c, replies: [] }));
+  const roots: Comment[] = [];
+  map.forEach(c => {
+    if (c.parent_id && map.has(c.parent_id)) {
+      map.get(c.parent_id)!.replies!.push(c);
+    } else {
+      roots.push(c);
+    }
+  });
+  return roots;
+}
+
+// ─── Shared post-interaction mutations ─────────────────────────────────────────
+// Home tracks these across many posts at once (Map/Set-keyed by post id) while
+// PostDetail tracks a single post's values directly — too different a shape to
+// share the state itself. What both screens genuinely share is the write to
+// Supabase, so these do only that: perform the mutation and report success or
+// failure, leaving each screen's own optimistic local-state update untouched.
+
+// Pass `type: null` to remove the caller's existing reaction; otherwise upserts
+// the given reaction type (switching from a different one if they already had one).
+export async function toggleReactionMutation(
+  postId: string, userId: string, type: string | null,
+): Promise<{ error: string | null }> {
+  if (type === null) {
+    const { error } = await supabase.from('post_reactions').delete().eq('post_id', postId).eq('user_id', userId);
+    return { error: error?.message ?? null };
+  }
+  const { error } = await (supabase as any).from('post_reactions').upsert(
+    { post_id: postId, user_id: userId, type },
+    { onConflict: 'post_id,user_id' },
+  );
+  return { error: error?.message ?? null };
+}
+
+export async function toggleRepostMutation(
+  postId: string, userId: string, isReposting: boolean,
+): Promise<{ error: string | null }> {
+  if (isReposting) {
+    const { error } = await (supabase as any).from('reposts').insert({ user_id: userId, post_id: postId });
+    return { error: error?.message ?? null };
+  }
+  const { error } = await (supabase as any).from('reposts').delete().eq('user_id', userId).eq('post_id', postId);
+  return { error: error?.message ?? null };
+}
+
+export async function castPollVoteMutation(
+  postId: string, userId: string, optionId: string,
+): Promise<{ error: string | null }> {
+  const { error } = await (supabase as any).from('poll_votes').upsert(
+    { post_id: postId, user_id: userId, option_id: optionId },
+    { onConflict: 'post_id,user_id' },
+  );
+  return { error: error?.message ?? null };
 }

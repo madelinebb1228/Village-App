@@ -4,29 +4,14 @@ import {
   Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import OneHandedTray from '../components/OneHandedTray';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, safeQuery, generateId, useSyncStatus } from '../lib/syncService';
 import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import SuppliesSection, { addToSupply, addToMilkStash, deductFromSupply, incrementPumpPartSessions } from './SuppliesSection';
-import MilestoneTracker from './MilestoneTracker';
-import ActivityTracker from './ActivityTracker';
-import VaccineTracker from './VaccineTracker';
-import GrowthTracker from './GrowthTracker';
-import AllergenTracker from './AllergenTracker';
-import HealthTracker from './HealthTracker';
-import SleepTracker from './SleepTracker';
-import BabyJournal from './BabyJournal';
 import BabyFoodChart from './BabyFoodChart';
-import NutritionTracker from './NutritionTracker';
-import PostpartumMentalHealthTracker from './PostpartumMentalHealthTracker';
-import MoodEnergyTracker from './MoodEnergyTracker';
-import MomSleepTracker from './MomSleepTracker';
-import MedTracker from './MedTracker';
-import ExpenseTracker from './ExpenseTracker';
-import KudosTracker from './KudosTracker';
-import UsTimeTracker from './UsTimeTracker';
 import DiaperReminderCard from '../components/DiaperReminderCard';
 import TummyTimeCard from '../components/TummyTimeCard';
 import { checkDiaperSupplyForecast } from '../lib/predictiveNotifications';
@@ -36,13 +21,6 @@ import { getDiaperReminderSettings, scheduleNextDiaperReminder } from '../lib/di
 import FeedReminderCard from '../components/FeedReminderCard';
 import NursingReminderCard from '../components/NursingReminderCard';
 import { getFeedReminderSettings, scheduleNextFeedReminder } from '../lib/feedNotifications';
-import BabyFoodTracker from './BabyFoodTracker';
-import PostpartumRecoveryTracker from './PostpartumRecoveryTracker';
-import PeriodReturnTracker from './PeriodReturnTracker';
-import MovementTracker from './MovementTracker';
-import KickCounterTracker from './KickCounterTracker';
-import ContractionTimerTracker from './ContractionTimerTracker';
-import PregnancyLogTracker from './PregnancyLogTracker';
 import InsightsSection from '../components/InsightsSection';
 import PaywallGate from '../components/PaywallGate';
 import DisclosureToggle from '../components/DisclosureToggle';
@@ -50,12 +28,16 @@ import { useCollapsed } from '../lib/useCollapsed';
 import PostLogCelebration from '../components/PostLogCelebration';
 import { recordLog } from '../lib/streakService';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
 import { hitSlopFor, MAX_FONT_SCALE } from '../lib/accessibility';
 import * as Sentry from '@sentry/react-native';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useBaby } from '../lib/babyContext';
-import { useSubscription } from '../lib/subscriptionContext';
+import { useSubscription, MAX_FREE_TRACKER_PICKS } from '../lib/subscriptionContext';
+import { TRACKER_CATALOG, sortByDefaultOrder } from '../lib/trackerCatalog';
 import { track, screenView } from '../lib/analytics';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { Ionicons } from '@expo/vector-icons';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -179,30 +161,6 @@ const MILK_COLORS: ColorOption[] = [
   { value: 'blue',   color: '#AED6F1', label: 'Blue'   },
   { value: 'pink',   color: '#F1AEB5', label: 'Pink'   },
 ];
-
-// ─── Category filter groups ─────────────────────────────────────────────────
-// Each group gets one accent color in the filter bar; selecting a category
-// shows only the matching page sections below (or everything, for "All").
-
-interface TrackNavGroup { emoji: string; category: string }
-
-const BABY_NAV_GROUPS: TrackNavGroup[] = [
-  { emoji: '📋', category: 'Daily Logging' },
-  { emoji: '✨', category: 'Insights & Supplies' },
-  { emoji: '🍽️', category: 'Feeding' },
-  { emoji: '🌙', category: 'Sleep & Development' },
-  { emoji: '🏥', category: 'Health' },
-  { emoji: '💰', category: 'Expenses' },
-];
-
-const YOU_NAV_GROUPS: TrackNavGroup[] = [
-  { emoji: '💧', category: 'Daily Care' },
-  { emoji: '🌈', category: 'Wellness Check-ins' },
-  { emoji: '🌸', category: 'Body & Recovery' },
-  { emoji: '💞', category: 'Relationship' },
-];
-
-const PREGNANCY_NAV_GROUP: TrackNavGroup = { emoji: '🤰', category: 'Pregnancy' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -838,9 +796,11 @@ const PumpingChartCard = ({ userId }: { userId: string | null }) => {
   );
 };
 
-export default function Track({ route }: any) {
+export default function Track({ route, navigation }: any) {
   const c = useColors();
-  const { isSubscribed, openPaywall } = useSubscription();
+  const { isSubscribed, freeTrackerPicks, openPaywall } = useSubscription();
+  const { width: windowWidth } = useResponsive();
+  const trackMaxWidth = maxWidthFor(windowWidth, 'track');
   const styles = useMemo(() => makeStyles(c), [c]);
   const cal = useMemo(() => makeCalStyles(c), [c]);
   const det = useMemo(() => makeDetStyles(c), [c]);
@@ -862,61 +822,45 @@ export default function Track({ route }: any) {
   const [userName,       setUserName]       = useState<string | null>(null);
   const [showFoodChart, setShowFoodChart] = useState(false);
   const [activeView,    setActiveView]    = useState<'baby' | 'you'>(initialActiveView ?? 'baby');
-  const [mentalHealthAlert, setMentalHealthAlert] = useState(false);
   const [celebration, setCelebration] = useState<{ streak: number; milestone: number | null; usedFreeze: boolean } | null>(null);
 
   const scrollRef       = useRef<ScrollView>(null);
-  const [babyCategory, setBabyCategory] = useState<string>(initialActiveView !== 'you' ? initialCategory ?? 'All' : 'All');
-  const [youCategory,  setYouCategory]  = useState<string>(initialActiveView === 'you' ? initialCategory ?? 'All' : 'All');
+
+  // Web: restore keyboard focus to this screen's ScrollView whenever Track
+  // regains focus (mount, tab switch) so arrow/PageUp/PageDown scrolling
+  // works — see lib/webFocus.ts for why this is needed on web.
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== 'web') return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    (scrollRef.current as any)?.getScrollableNode?.()?.focus?.();
+  }, []));
 
   const [trendsCollapsed, toggleTrendsCollapsed] = useCollapsed('daily_logging_trends_collapsed', true);
 
-  // Category filter row — tap arrows for paging through chips that overflow
-  // the screen width, since showsHorizontalScrollIndicator is off on web/iOS.
-  const categoryScrollRef = useRef<ScrollView>(null);
-  const categoryScrollX = useRef(0);
-  const categoryContainerWidth = useRef(0);
-  const categoryContentWidth = useRef(0);
-  const [canScrollCategoryLeft, setCanScrollCategoryLeft] = useState(false);
-  const [canScrollCategoryRight, setCanScrollCategoryRight] = useState(false);
-
-  const updateCategoryScrollArrows = useCallback(() => {
-    // >12px rather than >0 — Chrome's scroll anchoring nudges scrollLeft by a
-    // few px on its own when the chip row's content changes underneath it
-    // (e.g. switching Baby/You), which would otherwise leave the left arrow
-    // stuck on at a "reset" scroll position.
-    setCanScrollCategoryLeft(categoryScrollX.current > 12);
-    setCanScrollCategoryRight(
-      categoryContentWidth.current > categoryContainerWidth.current + categoryScrollX.current + 4,
-    );
-  }, []);
-
-  const scrollCategoryBy = useCallback((delta: number) => {
-    const nextX = Math.max(0, categoryScrollX.current + delta);
-    categoryScrollRef.current?.scrollTo({ x: nextX, animated: true });
-  }, []);
-
-  // Re-assert scroll-to-start after the Baby/You toggle swaps in a
-  // differently-sized chip row — runs after the new content has actually
-  // mounted, which is what scroll anchoring needs to have already happened
-  // for our reset to stick.
+  // Track mounts far more data-fetching sections at once than any other
+  // screen (trend charts, Insights, Supplies, on top of the reminder cards
+  // and Timeline). Deferring the heaviest, furthest-down sections by one
+  // tick lets the first paint (Quick Log + reminder cards) land and its own
+  // fetches start before these below-the-fold ones pile on — same visible
+  // layout and data, just spread out instead of one big burst on mount.
+  const [belowFoldReady, setBelowFoldReady] = useState(false);
   useEffect(() => {
-    categoryScrollRef.current?.scrollTo({ x: 0, animated: false });
-    categoryScrollX.current = 0;
-    setCanScrollCategoryLeft(false);
-  }, [activeView]);
+    // A 0ms defer doesn't actually separate the two request waves on a fast
+    // connection — both still fire within the same ~50ms window. A short,
+    // still-imperceptible delay gives the reminder cards' requests a real
+    // head start on the browser's shared per-origin connection pool before
+    // Insights/Supplies (each ~8-9 additional queries) join the queue.
+    const t = setTimeout(() => setBelowFoldReady(true), 200);
+    return () => clearTimeout(t);
+  }, []);
 
-  // Jump to the category a synced calendar event points back to, e.g. Health
-  // for a vaccine appointment, whenever the Calendar tab navigates here.
+  // Jump to the Baby/You view a synced calendar event points back to, e.g.
+  // the You view for a vaccine appointment, whenever the Calendar tab
+  // navigates here.
   useEffect(() => {
     if (!initialCategory) return;
-    if (initialActiveView === 'you') {
-      setActiveView('you');
-      setYouCategory(initialCategory);
-    } else {
-      setActiveView('baby');
-      setBabyCategory(initialCategory);
-    }
+    setActiveView(initialActiveView === 'you' ? 'you' : 'baby');
   }, [initialCategory, initialActiveView]);
   const [suppliesRefreshKey,  setSuppliesRefreshKey]  = useState(0);
   const [pumpChartKey,       setPumpChartKey]        = useState(0);
@@ -1024,7 +968,14 @@ export default function Track({ route }: any) {
   // ── Data ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    // getSession() reads the already-persisted local session — no network
+    // round trip — unlike getUser(), which re-validates the JWT against the
+    // server on every call. That round trip (worse, and slower to fail, when
+    // offline/degraded) was gating every child component's userId prop, so
+    // all of them sat idle until it resolved, then fired their fetches at
+    // once. Track doesn't need server-side re-validation here, just the id.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user;
       if (!user) return;
       setUserId(user.id);
       setUserName(user.user_metadata?.name ?? user.email?.split('@')[0] ?? null);
@@ -1055,15 +1006,28 @@ export default function Track({ route }: any) {
   }, [userId, babyId]);
 
   // Baby logging (feed/diaper/sleep) doesn't apply before birth — default
-  // expecting parents straight to the You tab's Pregnancy category, unless
-  // a Calendar deep link already asked for a specific view.
+  // expecting parents straight to the You view, unless a Calendar deep link
+  // already asked for a specific view.
   const isExpecting = !!activeBaby?.is_expecting;
   useEffect(() => {
     if (isExpecting && !initialCategory) {
       setActiveView('you');
-      setYouCategory('Pregnancy');
     }
   }, [isExpecting, initialCategory]);
+
+  // Compact "Your Trackers" grid on the landing page — only trackers the
+  // user can actually open right now (always-free, subscribed, or one of
+  // their chosen free premium picks) for whichever view is active.
+  const yourTrackers = useMemo(() => {
+    const section = activeView === 'baby' ? 'Baby' : 'You';
+    return sortByDefaultOrder(
+      TRACKER_CATALOG.filter(t => {
+        if (t.section !== section) return false;
+        if (t.category === 'Pregnancy' && !isExpecting) return false;
+        return t.access === 'free' || isSubscribed || freeTrackerPicks.includes(t.id);
+      })
+    );
+  }, [activeView, isExpecting, isSubscribed, freeTrackerPicks]);
 
   const fetchTimeline = useCallback(async () => {
     setRefreshing(true);
@@ -1701,15 +1665,17 @@ export default function Track({ route }: any) {
   const pumpTotal = (parseFloat(leftBreast) || 0) + (parseFloat(rightBreast) || 0);
 
   const mainButtons = [
-    { type: 'feed'    as EntryType, emoji: '🍼', label: 'Log Feed',    bgColor: c.cardLavender, accent: c.lavender },
-    { type: 'diaper'  as EntryType, emoji: '💩', label: 'Log Diaper',  bgColor: c.cardSage,     accent: c.sage },
-    { type: 'pumping' as EntryType, emoji: '🤱', label: 'Log Pumping', bgColor: c.cardBlush,    accent: c.blush },
+    { type: 'feed'    as EntryType, icon: 'nutrition-outline' as const, label: 'Feed',     bgColor: c.cardLavender, accent: c.lavender },
+    { type: 'diaper'  as EntryType, icon: 'shirt-outline'     as const, label: 'Diaper',   bgColor: c.cardSage,     accent: c.sage },
+    { type: 'pumping' as EntryType, icon: 'water-outline'     as const, label: 'Pumping',  bgColor: c.cardBlush,    accent: c.blush },
   ];
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <View style={{ flex: 1, width: '100%', maxWidth: trackMaxWidth, alignSelf: 'center' }}>
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        {...(Platform.OS === 'web' ? { tabIndex: 0, dataSet: { scrollRoot: 'true' } } : {})}>
         <Text style={styles.heading}>Track</Text>
 
         {/* ── Baby / You toggle */}
@@ -1723,8 +1689,9 @@ export default function Track({ route }: any) {
             activeOpacity={0.8}
             accessibilityRole="button" accessibilityLabel="Show baby tracking"
           >
+            <Ionicons name="body-outline" size={16} color={activeView === 'baby' ? styles.viewToggleTextActive.color : styles.viewToggleText.color} style={{ marginRight: 6 }} />
             <Text style={[styles.viewToggleText, activeView === 'baby' && styles.viewToggleTextActive]}>
-              👶  Baby
+              Baby
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -1736,8 +1703,9 @@ export default function Track({ route }: any) {
             activeOpacity={0.8}
             accessibilityRole="button" accessibilityLabel="Show your tracking"
           >
+            <Ionicons name="person-outline" size={16} color={activeView === 'you' ? styles.viewToggleTextActive.color : styles.viewToggleText.color} style={{ marginRight: 6 }} />
             <Text style={[styles.viewToggleText, activeView === 'you' && styles.viewToggleTextActive]}>
-              🌷  You
+              You
             </Text>
           </TouchableOpacity>
         </View>
@@ -1769,125 +1737,37 @@ export default function Track({ route }: any) {
           </ScrollView>
         )}
 
-        {/* ── Category filter ── */}
-        <View style={styles.categoryRowWrap}>
-          {canScrollCategoryLeft && (
-            <TouchableOpacity
-              onPress={() => scrollCategoryBy(-160)}
-              style={styles.categoryArrowBtn}
-              activeOpacity={0.7}
-              hitSlop={hitSlopFor(26)}
-              accessibilityRole="button" accessibilityLabel="Scroll categories left"
-            >
-              <Text style={styles.categoryArrowText}>‹</Text>
-            </TouchableOpacity>
-          )}
-          <ScrollView
-          ref={categoryScrollRef}
-          style={styles.categoryScrollView}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          onLayout={(e) => {
-            categoryContainerWidth.current = e.nativeEvent.layout.width;
-            updateCategoryScrollArrows();
-          }}
-          onContentSizeChange={(w) => {
-            categoryContentWidth.current = w;
-            updateCategoryScrollArrows();
-          }}
-          onScroll={(e) => {
-            categoryScrollX.current = e.nativeEvent.contentOffset.x;
-            updateCategoryScrollArrows();
-          }}
-          scrollEventThrottle={32}
-          contentContainerStyle={styles.categoryRow}
-        >
-          {(() => {
-            const palette = [
-              { bg: c.cardHoney,    border: c.honey,    text: c.honey    },
-              { bg: c.cardBlush,    border: c.blush,    text: c.blush    },
-              { bg: c.cardBlue,     border: c.blue,     text: c.blue     },
-              { bg: c.cardSage,     border: c.sage,     text: c.sage     },
-              { bg: c.cardLavender, border: c.lavender, text: c.lavender },
-            ];
-            const groups = activeView === 'baby' ? BABY_NAV_GROUPS
-              : isExpecting ? [PREGNANCY_NAV_GROUP, ...YOU_NAV_GROUPS] : YOU_NAV_GROUPS;
-            const category = activeView === 'baby' ? babyCategory : youCategory;
-            const setCategory = activeView === 'baby' ? setBabyCategory : setYouCategory;
-            return (
-              <>
-                <TouchableOpacity
-                  onPress={() => setCategory('All')}
-                  style={[styles.categoryChip, category === 'All' && { backgroundColor: c.primary, borderColor: c.primary }]}
-                  activeOpacity={0.75}
-                  accessibilityRole="button" accessibilityLabel="Show all categories"
-                  accessibilityState={{ selected: category === 'All' }}
-                >
-                  <Text style={[styles.categoryChipText, category === 'All' && styles.categoryChipTextActive]}>All</Text>
-                </TouchableOpacity>
-                {groups.map((group, gi) => {
-                  const col = palette[gi % palette.length];
-                  const active = category === group.category;
-                  return (
-                    <TouchableOpacity
-                      key={group.category}
-                      onPress={() => setCategory(group.category)}
-                      style={[
-                        styles.categoryChip,
-                        { backgroundColor: active ? col.border : col.bg, borderColor: col.border },
-                      ]}
-                      activeOpacity={0.75}
-                      accessibilityRole="button" accessibilityLabel={`Filter by ${group.category}`}
-                      accessibilityState={{ selected: active }}
-                    >
-                      <Text style={[styles.categoryChipText, { color: active ? '#fff' : col.text }]}>
-                        {group.emoji} {group.category}
-                      </Text>
-                      {group.category === 'Wellness Check-ins' && mentalHealthAlert && (
-                        <View style={{
-                          position: 'absolute', top: -3, right: -3,
-                          width: 10, height: 10, borderRadius: 5,
-                          backgroundColor: c.blush, borderWidth: 1.5, borderColor: c.bg,
-                        }} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            );
-          })()}
-          </ScrollView>
-          {canScrollCategoryRight && (
-            <TouchableOpacity
-              onPress={() => scrollCategoryBy(160)}
-              style={styles.categoryArrowBtn}
-              activeOpacity={0.7}
-              hitSlop={hitSlopFor(26)}
-              accessibilityRole="button" accessibilityLabel="Scroll categories right"
-            >
-              <Text style={styles.categoryArrowText}>›</Text>
-            </TouchableOpacity>
-          )}
-        </View>
 
-        {activeView === 'baby' ? (<>
+        {activeView === 'baby' && (<>
 
-        {(babyCategory === 'All' || babyCategory === 'Daily Logging') && (<>
-        {/* ═══ Group: Daily Logging ═══ */}
-        <Text style={styles.groupHeading}>📋 Daily Logging</Text>
+        {/* ═══ Group: Quick Log ═══ */}
+        <Text style={styles.groupHeading}>Quick Log</Text>
 
-        {/* ── Main buttons */}
-        <View style={styles.buttonGroup}>
-          {mainButtons.map((btn, idx) => (
+        {/* ── Compact quick-log grid — one-tap logging for the four most
+             common entries. Sleep routes to the existing Sleep tracker
+             (via MoreTrackers) rather than a modal here, same as any other
+             non-inline tracker. */}
+        <View style={styles.quickLogGrid}>
+          {mainButtons.map(btn => (
             <TouchableOpacity key={btn.type}
-              style={[styles.button, { backgroundColor: btn.bgColor, borderWidth: 2, borderColor: btn.accent }]}
+              style={[styles.quickLogTile, { backgroundColor: btn.bgColor, borderColor: btn.accent }]}
               activeOpacity={0.8} onPress={() => openModal(btn.type)}
-              accessibilityRole="button" accessibilityLabel={btn.label}>
-              <Text style={styles.buttonEmoji}>{btn.emoji}</Text>
-              <Text style={[styles.buttonLabel, { color: btn.accent }]}>{btn.label}</Text>
-              <Text style={[styles.buttonArrow, { color: btn.accent }]}>›</Text>
+              hitSlop={hitSlopFor(64)}
+              accessibilityRole="button" accessibilityLabel={`Log ${btn.label}`}>
+              <Ionicons name={btn.icon} size={22} color={btn.accent} />
+              <Text style={[styles.quickLogLabel, { color: btn.accent }]}>{btn.label}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            style={[styles.quickLogTile, { backgroundColor: c.cardHoney, borderColor: c.honey }]}
+            activeOpacity={0.8}
+            onPress={() => navigation?.navigate?.('MoreTrackers', { openTracker: 'sleep_tracker', origin: 'Track' })}
+            hitSlop={hitSlopFor(64)}
+            accessibilityRole="button" accessibilityLabel="Log Sleep"
+          >
+            <Ionicons name="moon-outline" size={22} color={c.honey} />
+            <Text style={[styles.quickLogLabel, { color: c.honey }]}>Sleep</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Trends — collapsed by default, right next to the log buttons ── */}
@@ -1899,7 +1779,7 @@ export default function Track({ route }: any) {
               onPress={toggleTrendsCollapsed}
               style={{ marginBottom: trendsCollapsed ? 8 : 12 }}
             />
-            {!trendsCollapsed && (<>
+            {!trendsCollapsed && belowFoldReady && (<>
               <FeedChartCard babyId={babyId} />
               <DiaperChartCard babyId={babyId} />
               <PumpingChartCard key={pumpChartKey} userId={userId} />
@@ -1907,26 +1787,7 @@ export default function Track({ route }: any) {
           </PaywallGate>
         </View>
 
-        {/* ── Feed reminder & last feed summary */}
-        <FeedReminderCard
-          userId={userId}
-          babyId={babyId}
-          babyName={babyName}
-          onLastFeedLoaded={setLastFeedLog}
-          refreshKey={insightsRefreshKey}
-        />
-        <NursingReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
-
-        {/* ── Diaper reminder & color guide */}
-        <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
-
-        {/* ── Car check reminder */}
-        <CarCheckReminderCard userId={userId} babyId={babyId} babyName={babyName} />
-
-        {/* ── Tummy time tracker */}
-        <TummyTimeCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
-
-        {/* ── Timeline */}
+        {/* ── Timeline — directly below Quick Log */}
         <View style={styles.timelineHeader}>
           <Text style={styles.sectionTitle}>Timeline</Text>
           {refreshing && <ActivityIndicator size="small" color={c.trackFeed} />}
@@ -1975,7 +1836,9 @@ export default function Track({ route }: any) {
             entries.map((entry, i) => (
               <TouchableOpacity key={entry.id} activeOpacity={0.75} onPress={() => openDetail(entry)}
                 style={[styles.entry, i < entries.length - 1 && styles.entryBorder,
-                  { backgroundColor: entry.type === 'feed' ? c.cardLavender : entry.type === 'diaper' ? c.cardSage : c.cardBlush }]}
+                  { backgroundColor: entry.type === 'feed' ? c.cardLavender : entry.type === 'diaper' ? c.cardSage : c.cardBlush,
+                    borderLeftWidth: 3,
+                    borderLeftColor: entry.type === 'feed' ? c.trackFeed : entry.type === 'diaper' ? c.trackDiaper : c.trackPump }]}
                 accessibilityRole="button" accessibilityLabel={`${entry.label} at ${formatTime(entry.logged_at)}`}>
                 <Text style={styles.entryEmoji}>{entry.emoji}</Text>
                 <View style={styles.entryBody}>
@@ -1985,267 +1848,98 @@ export default function Track({ route }: any) {
                 <Text style={styles.entryTime}>{formatTime(entry.logged_at)}</Text>
                 <TouchableOpacity style={styles.deleteBtn}
                   onPress={() => handleDeleteEntry(entry)} activeOpacity={0.7}
+                  hitSlop={hitSlopFor(28)}
                   accessibilityRole="button" accessibilityLabel={`Delete ${entry.label.toLowerCase()} entry`}>
-                  <Text style={styles.deleteIcon}>🗑</Text>
+                  <Ionicons name="trash-outline" size={17} color={c.textMuted} />
                 </TouchableOpacity>
               </TouchableOpacity>
             ))
           )}
         </View>
-        </>)}
 
-        {(babyCategory === 'All' || babyCategory === 'Insights & Supplies') && (<>
+        {/* ── Last activity + reminder/status widgets — right after Timeline */}
+        <FeedReminderCard
+          userId={userId}
+          babyId={babyId}
+          babyName={babyName}
+          onLastFeedLoaded={setLastFeedLog}
+          refreshKey={insightsRefreshKey}
+        />
+        <NursingReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
+
+        {/* ── Diaper reminder & color guide */}
+        <DiaperReminderCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
+
+        {/* ── Car check reminder */}
+        <CarCheckReminderCard userId={userId} babyId={babyId} babyName={babyName} />
+
+        {/* ── Tummy time tracker */}
+        <TummyTimeCard userId={userId} babyId={babyId} babyName={babyName} refreshKey={insightsRefreshKey} />
+
         {/* ═══ Group: Insights & Supplies ═══ */}
-        <Text style={styles.groupHeading}>✨ Insights & Supplies</Text>
+        <Text style={styles.groupHeading}>Insights & Supplies</Text>
 
         {/* ── Insights */}
         <View>
           <PaywallGate feature="smart_insights" title="Smart Insights" description="Pattern detection and personalized tips based on your tracking data." emoji="✨">
-            <InsightsSection babyId={babyId} userId={userId} refreshKey={insightsRefreshKey} />
+            {belowFoldReady && <InsightsSection babyId={babyId} userId={userId} refreshKey={insightsRefreshKey} />}
           </PaywallGate>
         </View>
 
         {/* ── Supplies */}
         <View>
           <PaywallGate feature="supplies" title="Smart Supplies" description="Track formula, diapers, and milk stash with low-stock alerts and usage insights." emoji="🧴">
-            <SuppliesSection userId={userId} babyId={babyId} refreshKey={suppliesRefreshKey} />
+            {belowFoldReady && <SuppliesSection userId={userId} babyId={babyId} refreshKey={suppliesRefreshKey} />}
           </PaywallGate>
         </View>
         </>)}
 
-        {(babyCategory === 'All' || babyCategory === 'Feeding') && (<>
-        {/* ═══ Group: Feeding ═══ */}
-        <Text style={styles.groupHeading}>🍽️ Feeding</Text>
-
-        {/* ── Baby Food Tracker */}
-        <View>
-          <BabyFoodTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} autoOpenKey={foodTrackerOpenKey} />
+        {/* ── Your Trackers ── */}
+        <View style={styles.yourTrackersSection}>
+          <Text style={styles.sectionHeading}>Your Trackers</Text>
+          <View style={styles.trackerGrid}>
+            {yourTrackers.map(entry => (
+              <TouchableOpacity
+                key={entry.id}
+                style={styles.trackerGridCard}
+                onPress={() => navigation?.navigate?.('MoreTrackers', { openTracker: entry.id, origin: 'Track' })}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${entry.label}`}
+              >
+                <Text style={styles.trackerGridEmoji}>{entry.emoji}</Text>
+                <Text style={styles.trackerGridLabel} numberOfLines={2}>{entry.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {/* ── Baby Food Chart (reference guide) */}
-        <View>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: c.cardHoney, borderWidth: 2, borderColor: c.honey }]}
-            activeOpacity={0.8}
-            onPress={() => setShowFoodChart(true)}
-            accessibilityRole="button" accessibilityLabel="Open baby food guide"
-          >
-            <Text style={styles.buttonEmoji}>🍽️</Text>
-            <Text style={[styles.buttonLabel, { color: c.honey }]}>Baby Food Guide</Text>
-            <Text style={[styles.buttonArrow, { color: c.honey }]}>›</Text>
-          </TouchableOpacity>
-        </View>
-        </>)}
-
-        {(babyCategory === 'All' || babyCategory === 'Sleep & Development') && (<>
-        {/* ═══ Group: Sleep & Development ═══ */}
-        <Text style={styles.groupHeading}>🌙 Sleep & Development</Text>
-
-        {/* ── Sleep Tracker */}
-        <View>
-          <PaywallGate feature="sleep_tracker" isTracker title="Sleep Tracker" description="Log and review your baby's naps and night sleep." emoji="🌙">
-            <SleepTracker babyId={babyId} babyBirthDate={babyBirthDate} userId={userId} babyName={babyName} userName={userName} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Development Tracker */}
-        <View>
-          <MilestoneTracker userId={userId} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── Activities & Play Tracker */}
-        <View>
-          <ActivityTracker userId={userId} babyId={babyId} babyName={babyName} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── Baby Journal */}
-        <View>
-          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
-            <BabyJournal userId={userId} babyId={babyId} babyName={babyName} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(babyCategory === 'All' || babyCategory === 'Health') && (<>
-        {/* ═══ Group: Health ═══ */}
-        <Text style={styles.groupHeading}>🏥 Health</Text>
-
-        {/* ── Vaccines & Appointments */}
-        <View>
-          <PaywallGate feature="vaccines" isTracker title="Vaccines & Appointments" description="Track your baby's vaccine schedule and upcoming appointments." emoji="💉">
-            <VaccineTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── Baby Medications */}
-        <View>
-          <MedTracker
-            type="baby"
-            userId={userId}
-            babyId={babyId}
-            babyName={babyName}
-            babyWeightLbs={babyWeightLbs}
-            userName={userName}
-          />
-        </View>
-
-        {/* ── Growth Tracker */}
-        <View>
-          <PaywallGate feature="growth_tracker" isTracker title="Growth Tracker" description="Track weight and height over time with WHO growth curve percentiles." emoji="📈">
-            <GrowthTracker
-              userId={userId}
-              babyId={babyId}
-              babyBirthDate={babyBirthDate}
-              babyGender={babyGender}
-            />
-          </PaywallGate>
-        </View>
-
-        {/* ── Allergen Tracker */}
-        <View>
-          <AllergenTracker userId={userId} babyId={babyId} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── Health Tracker */}
-        <View>
-          <PaywallGate feature="health_tracker" isTracker title="Health Tracker" description="Log fevers, symptoms, and illness episodes." emoji="🩺">
-            <HealthTracker userId={userId} babyId={babyId} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(babyCategory === 'All' || babyCategory === 'Expenses') && (<>
-        {/* ═══ Group: Expenses ═══ */}
-        <Text style={styles.groupHeading}>💰 Expenses</Text>
-
-        {/* ── Expense Tracker */}
-        <View>
-          <PaywallGate feature="expense_tracker" isTracker title="Expense Tracker" description="Log baby expenses and see spending insights by category." emoji="💰">
-            <ExpenseTracker userId={userId} babyId={babyId} babyName={babyName} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        </>) : (<>
-
-        {isExpecting && (youCategory === 'All' || youCategory === 'Pregnancy') && (<>
-        {/* ═══ Group: Pregnancy ═══ */}
-        <Text style={styles.groupHeading}>🤰 Pregnancy</Text>
-
-        {/* ── Kick Counter ── */}
-        <View>
-          <KickCounterTracker userId={userId} />
-        </View>
-
-        {/* ── Contraction Timer ── */}
-        <View>
-          <ContractionTimerTracker userId={userId} />
-        </View>
-
-        {/* ── Symptoms & Weight ── */}
-        <View>
-          <PaywallGate feature="pregnancy_log" isTracker title="Symptoms & Weight" description="Track weight and symptoms throughout your pregnancy." emoji="📝">
-            <PregnancyLogTracker userId={userId} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(youCategory === 'All' || youCategory === 'Daily Care') && (<>
-        {/* ═══ Group: Daily Care ═══ */}
-        <Text style={styles.groupHeading}>💧 Daily Care</Text>
-
-        {/* ── You: Nutrition & Hydration */}
-        <View>
-          <PaywallGate feature="nutrition_tracker" isTracker title="Nutrition & Hydration" description="Track your water intake, meals, and vitamins each day." emoji="💧">
-            <NutritionTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── You: Meds & Supplements */}
-        <View>
-          <PaywallGate feature="meds_tracker" isTracker title="Meds & Supplements" description="Log medications, vitamins, and supplements with dosage reminders." emoji="💊">
-            <MedTracker
-              type="parent"
-              userId={userId}
-              babyId={babyId}
-              babyName={babyName}
-              userName={userName}
-            />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(youCategory === 'All' || youCategory === 'Wellness Check-ins') && (<>
-        {/* ═══ Group: Wellness Check-ins ═══ */}
-        <Text style={styles.groupHeading}>🌈 Wellness Check-ins</Text>
-
-        {/* ── You: Mental Health */}
-        <View>
-          <PostpartumMentalHealthTracker userId={userId} onStatusChange={setMentalHealthAlert} />
-        </View>
-
-        {/* ── You: Mood & Energy */}
-        <View>
-          <PaywallGate feature="mood_energy_tracker" isTracker title="Mood & Energy" description="Log your daily mood and energy levels to spot patterns over time." emoji="🌈">
-            <MoodEnergyTracker userId={userId} onSuggestCheckIn={() => setYouCategory('Wellness Check-ins')} />
-          </PaywallGate>
-        </View>
-
-        {/* ── You: Sleep */}
-        <View>
-          <PaywallGate feature="mom_sleep_tracker" isTracker title="Your Sleep" description="Track how much sleep you're getting and how rested you feel." emoji="🌙">
-            <MomSleepTracker userId={userId} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(youCategory === 'All' || youCategory === 'Body & Recovery') && (<>
-        {/* ═══ Group: Body & Recovery ═══ */}
-        <Text style={styles.groupHeading}>🌸 Body & Recovery</Text>
-
-        {/* ── You: Postpartum Recovery */}
-        <View>
-          <PostpartumRecoveryTracker userId={userId} babyBirthDate={babyBirthDate} />
-        </View>
-
-        {/* ── You: Period Return */}
-        <View>
-          <PaywallGate feature="period_tracker" isTracker title="Period Return" description="Track the return of your menstrual cycle after birth." emoji="🩸">
-            <PeriodReturnTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── You: Movement */}
-        <View>
-          <PaywallGate feature="movement_tracker" isTracker title="Movement" description="Log exercise, walks, and physical activity during your recovery." emoji="🏃">
-            <MovementTracker userId={userId} />
-          </PaywallGate>
-        </View>
-        </>)}
-
-        {(youCategory === 'All' || youCategory === 'Relationship') && (<>
-        {/* ═══ Group: Relationship ═══ */}
-        <Text style={styles.groupHeading}>💞 Relationship</Text>
-
-        {/* ── You: Send Kudos */}
-        <View>
-          <PaywallGate feature="kudos_tracker" isTracker title="Send Kudos" description="Send your partner appreciation for the little things." emoji="💌">
-            <KudosTracker userId={userId} />
-          </PaywallGate>
-        </View>
-
-        {/* ── You: Us Time */}
-        <View>
-          <PaywallGate feature="us_time_tracker" isTracker title="Us Time" description="Log time together and get gentle nudges to reconnect." emoji="💞">
-            <UsTimeTracker userId={userId} />
-          </PaywallGate>
-        </View>
-        </>)}
+        {/* ── More Trackers entry point ── */}
+        <TouchableOpacity
+          style={styles.moreTrackersCard}
+          onPress={() => navigation?.navigate?.('MoreTrackers', { openTracker: undefined, origin: 'Track' })}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Browse more trackers"
+        >
+          <Text style={styles.moreTrackersEmoji}>➕</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.moreTrackersTitle}>More Trackers</Text>
+            <Text style={styles.moreTrackersBody}>
+              {isSubscribed
+                ? 'Browse the full tracker catalog.'
+                : freeTrackerPicks.length < MAX_FREE_TRACKER_PICKS
+                  ? `Browse the full catalog — you have ${MAX_FREE_TRACKER_PICKS - freeTrackerPicks.length} free premium pick${MAX_FREE_TRACKER_PICKS - freeTrackerPicks.length === 1 ? '' : 's'} left.`
+                  : 'Browse the full tracker catalog.'}
+            </Text>
+          </View>
+          <Text style={styles.moreTrackersChevron}>›</Text>
+        </TouchableOpacity>
 
         {/* ── Patch Premium upsell (bottom of page, non-subscribers only) ── */}
         {!isSubscribed && (
           <View style={styles.premiumCard}>
-            <Text style={styles.premiumEmoji}>✨</Text>
+            <Ionicons name="sparkles" size={30} color={c.lavender} />
             <Text style={styles.premiumTitle}>Patch Premium</Text>
             <Text style={styles.premiumBody}>
               Unlock all trackers, your journal & calendar, unlimited patches, community sharing, and more — for $5.99/mo.
@@ -2256,9 +1950,8 @@ export default function Track({ route }: any) {
             </TouchableOpacity>
           </View>
         )}
-
-        </>)}
       </ScrollView>
+      </View>
 
       {/* ══════════ DETAIL MODAL ══════════ */}
       <Modal visible={detailEntry !== null} animationType="slide" transparent
@@ -2289,15 +1982,17 @@ export default function Track({ route }: any) {
                     <Text style={det.rowValue}>{row.value}</Text>
                   </View>
                 ))}
-                <TouchableOpacity style={det.editBtn} activeOpacity={0.8}
+                <TouchableOpacity style={[det.editBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]} activeOpacity={0.8}
                   onPress={() => { if (detailEntry) openEdit(detailEntry); }}
                   accessibilityRole="button" accessibilityLabel="Edit entry">
-                  <Text style={det.editBtnText}>✏️  Edit Entry</Text>
+                  <Ionicons name="pencil-outline" size={16} color={c.blue} />
+                  <Text style={det.editBtnText}>Edit Entry</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={det.deleteBtn} activeOpacity={0.8}
+                <TouchableOpacity style={[det.deleteBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]} activeOpacity={0.8}
                   onPress={() => { setDetailEntry(null); if (detailEntry) handleDeleteEntry(detailEntry); }}
                   accessibilityRole="button" accessibilityLabel="Delete entry">
-                  <Text style={det.deleteBtnText}>🗑  Delete Entry</Text>
+                  <Ionicons name="trash-outline" size={16} color={c.blush} />
+                  <Text style={det.deleteBtnText}>Delete Entry</Text>
                 </TouchableOpacity>
               </ScrollView>
             )}
@@ -2947,21 +2642,26 @@ function makeStyles(c: Colors) {
     scrollContent: { padding: 24, paddingBottom: 560 },
     heading:       { fontSize: 28, fontWeight: '800', color: c.textPrimary, marginBottom: 28 },
 
-    buttonGroup: { gap: 14, marginBottom: 36 },
-    button: {
-      flexDirection: 'row', alignItems: 'center', borderRadius: 18,
-      paddingVertical: 20, paddingHorizontal: 22,
-      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
+    quickLogGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 28 },
+    quickLogTile: {
+      flexGrow: 1,
+      flexBasis: '22%',
+      minWidth: 76,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 16,
+      borderWidth: 1.5,
+      paddingVertical: 14,
+      gap: 4,
     },
-    buttonEmoji: { fontSize: 30, marginRight: 14 },
-    buttonLabel: { flex: 1, fontSize: 18, fontWeight: '700', letterSpacing: 0.2 },
-    buttonArrow: { fontSize: 22, fontWeight: '300' },
+    quickLogLabel: { fontSize: 12.5, fontWeight: '700' },
 
-    timelineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-    sectionTitle:   { fontSize: 18, fontWeight: '700', color: c.textPrimary },
+    timelineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 14 },
+    sectionTitle:   { fontSize: 20, fontWeight: '800', color: c.textPrimary },
     timeline:       { backgroundColor: c.card, borderRadius: 16, overflow: 'hidden',
-                      borderWidth: 1.5, borderColor: c.cardBorder },
+                      borderWidth: 1.5, borderColor: c.cardBorder,
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
     empty:          { fontSize: 15, color: c.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 24 },
     entry:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18 },
     entryBorder:    { borderBottomWidth: 1, borderBottomColor: c.cardBorder },
@@ -2971,7 +2671,6 @@ function makeStyles(c: Colors) {
     entryDetail:    { fontSize: 12, color: c.textMuted, marginTop: 2, textTransform: 'capitalize' },
     entryTime:      { fontSize: 13, color: c.textMuted, fontWeight: '600', marginRight: 10 },
     deleteBtn:      { padding: 6 },
-    deleteIcon:     { fontSize: 16 },
 
     breastToggleRow:       { flexDirection: 'row', gap: 12, marginBottom: 20 },
     breastToggleBtn:       { flex: 1, backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder,
@@ -2995,21 +2694,9 @@ function makeStyles(c: Colors) {
     totalPreview:    { fontSize: 13, color: c.trackPump, fontWeight: '700', textAlign: 'center',
                        marginBottom: 20, marginTop: 4 },
 
-    // Quick nav arrows
-    categoryRowWrap:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    // flex:1 + minWidth:0 is what lets this horizontal ScrollView actually
-    // clip and scroll its content within the row instead of growing to fit
-    // it — without minWidth:0, a flex child's default min-width:auto on web
-    // stops it shrinking below its content size no matter how narrow the
-    // window is, which is what silently swallowed the scroll/arrows before.
-    categoryScrollView:   { flex: 1, minWidth: 0 },
-    categoryArrowBtn:     { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-                            backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator, marginBottom: 20 },
-    categoryArrowText:    { fontSize: 16, fontWeight: '800', color: c.textSecondary, lineHeight: 18 },
-    categoryRow:          { gap: 8, paddingBottom: 20, paddingRight: 4 },
     categoryChip:         { borderWidth: 1.5, borderColor: c.separator, backgroundColor: c.card, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
     categoryChipText:     { fontSize: 13, fontWeight: '700', color: c.textSecondary },
-    categoryChipTextActive: { color: '#fff' },
+
     groupHeading:        { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginTop: 10, marginBottom: 14 },
 
     // Pump enhancements
@@ -3046,7 +2733,7 @@ function makeStyles(c: Colors) {
     ppBtnText:       { fontSize: 14, fontWeight: '700', color: '#fff' },
 
     viewToggleRow:         { flexDirection: 'row', backgroundColor: c.inputBg, borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 },
-    viewToggleBtn:         { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
+    viewToggleBtn:         { flex: 1, flexDirection: 'row', paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 11 },
     viewToggleBtnActive:   { backgroundColor: c.card, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
     viewToggleText:        { fontSize: 15, fontWeight: '600', color: c.textMuted },
     viewToggleTextActive:  { color: c.textPrimary, fontWeight: '700' },
@@ -3060,6 +2747,43 @@ function makeStyles(c: Colors) {
     dateNavLabel:        { fontSize: 16, fontWeight: '700', color: c.textPrimary },
     dateNavCal:          { fontSize: 12, color: c.trackFeed },
     dateNavToday:        { fontSize: 12, color: c.trackFeed, fontWeight: '600' },
+
+    yourTrackersSection: { paddingHorizontal: 16, marginTop: 8, marginBottom: 8 },
+    sectionHeading: { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginBottom: 14 },
+    trackerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    trackerGridCard: {
+      // Percentage width alone already keeps this a responsive 3-column
+      // grid — no minWidth, which used to force overflow on ~320px screens
+      // (iPhone SE) once padding and gaps were subtracted.
+      width: '31%',
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      borderRadius: 14,
+      paddingVertical: 14,
+      paddingHorizontal: 8,
+      alignItems: 'center',
+      gap: 6,
+    },
+    trackerGridEmoji: { fontSize: 24 },
+    trackerGridLabel: { fontSize: 12, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
+    moreTrackersCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginHorizontal: 16,
+      marginTop: 8,
+      marginBottom: 16,
+      backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.inputBorder,
+      borderRadius: 16,
+      padding: 16,
+    },
+    moreTrackersEmoji: { fontSize: 24 },
+    moreTrackersTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
+    moreTrackersBody: { fontSize: 13, color: c.textSecondary, fontWeight: '500', marginTop: 2 },
+    moreTrackersChevron: { fontSize: 24, color: c.textMuted, fontWeight: '300' },
 
     premiumCard: {
       margin: 16,
@@ -3081,7 +2805,7 @@ function makeStyles(c: Colors) {
       paddingVertical: 13,
       paddingHorizontal: 28,
     },
-    premiumBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    premiumBtnText: { fontSize: 15, fontWeight: '700', color: c.textOnColored },
   });
 }
 

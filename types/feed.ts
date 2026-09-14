@@ -49,7 +49,7 @@ export type ReminderUrgency = 'info' | 'warning' | 'alert' | 'milestone' | 'stre
 
 export interface Reminder {
   id: string;
-  emoji: string;
+  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
   text: string;
   urgency: ReminderUrgency;
 }

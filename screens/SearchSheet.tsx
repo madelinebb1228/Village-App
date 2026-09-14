@@ -10,17 +10,29 @@ import {
   TextInput,
   Image,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor } from '../lib/accessibility';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
-import { RESOURCES } from './ResourcesTab';
+import { RESOURCES } from '../lib/resourcesData';
+import { Village } from '../lib/villageData';
+import { searchPatches, joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT } from '../lib/discoverData';
+import { useSubscription } from '../lib/subscriptionContext';
+import { VillageCard } from '../components/village/VillageCard';
+import VillageFeedSheet from './VillageFeedSheet';
+import PostTypeBadge from '../components/feed/PostTypeBadge';
 
 type SearchResource = typeof RESOURCES[number];
 
-interface SearchPatch {
+// `mom_groups` backs the separate Parent Groups directory (local meetups) —
+// a real, distinct feature from the Patch/community system (VILLAGES +
+// user_villages). This tab used to be mislabeled "Patches"; it now surfaces
+// under its own "Groups" tab, and "Patches" below searches the real catalog.
+interface SearchGroup {
   id: string;
   name: string;
   type: string;
@@ -68,16 +80,22 @@ export default function SearchSheet({ visible, onClose }: Props) {
   const s = useMemo(() => makeStyles(c), [c]);
 
   const [query, setQuery] = useState('');
-  const [tab, setTab] = useState<'people' | 'posts' | 'patches' | 'resources'>('people');
+  const [tab, setTab] = useState<'people' | 'posts' | 'patches' | 'groups' | 'resources'>('people');
   const [people, setPeople] = useState<SearchProfile[]>([]);
   const [posts, setPosts] = useState<SearchPost[]>([]);
-  const [patches, setPatches] = useState<SearchPatch[]>([]);
+  const [patches, setPatches] = useState<Village[]>([]);
+  const [groups, setGroups] = useState<SearchGroup[]>([]);
   const [resources, setResources] = useState<SearchResource[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+
+  const [joinedPatchIds, setJoinedPatchIds] = useState<Set<string>>(new Set());
+  const [joiningPatchId, setJoiningPatchId] = useState<string | null>(null);
+  const [feedVillage, setFeedVillage] = useState<Village | null>(null);
+  const { isSubscribed, openPaywall } = useSubscription();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -87,6 +105,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
       setPeople([]);
       setPosts([]);
       setPatches([]);
+      setGroups([]);
       setResources([]);
       setExpandedId(null);
       setProfileUserId(null);
@@ -98,6 +117,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
         loadFollowing(user.id);
       }
     });
+    fetchJoinedPatchIds().then(setJoinedPatchIds);
   }, [visible]);
 
   async function loadFollowing(userId: string) {
@@ -108,6 +128,25 @@ export default function SearchSheet({ visible, onClose }: Props) {
     if (data) setFollowingIds(new Set(data.map((r: any) => r.following_id)));
   }
 
+  async function toggleJoinPatch(villageId: string) {
+    const joined = joinedPatchIds.has(villageId);
+    if (!joined && !isSubscribed && joinedPatchIds.size >= FREE_PATCH_LIMIT) {
+      onClose();
+      openPaywall('village_limit');
+      return;
+    }
+    setJoiningPatchId(villageId);
+    const { error } = joined ? await leavePatch(villageId) : await joinPatch(villageId);
+    if (error) {
+      Alert.alert('Something went wrong', joined ? "Couldn't leave this patch. Please try again." : "Couldn't join this patch. Please try again.");
+    } else if (joined) {
+      setJoinedPatchIds(prev => { const n = new Set(prev); n.delete(villageId); return n; });
+    } else {
+      setJoinedPatchIds(prev => new Set([...prev, villageId]));
+    }
+    setJoiningPatchId(null);
+  }
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setExpandedId(null);
@@ -115,6 +154,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
       setPeople([]);
       setPosts([]);
       setPatches([]);
+      setGroups([]);
       setResources([]);
       setLoading(false);
       return;
@@ -144,13 +184,18 @@ export default function SearchSheet({ visible, onClose }: Props) {
           .limit(25);
         setPosts(data ?? []);
       } else if (tab === 'patches') {
+        // Real Patch catalog — same client-side search DiscoverTab uses, so
+        // "Patches" means the same thing (and returns the same results) here
+        // as it does in Discover.
+        setPatches(searchPatches(q));
+      } else if (tab === 'groups') {
         const { data } = await supabase
           .from('mom_groups')
           .select('id, name, type, city, state_name, description, schedule, link')
           .or(`name.ilike.%${q}%,description.ilike.%${q}%`)
           .order('name')
           .limit(25);
-        setPatches((data ?? []) as SearchPatch[]);
+        setGroups((data ?? []) as SearchGroup[]);
       } else {
         const needle = q.toLowerCase();
         setResources(
@@ -198,6 +243,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
     tab === 'people' ? people.length > 0
     : tab === 'posts' ? posts.length > 0
     : tab === 'patches' ? patches.length > 0
+    : tab === 'groups' ? groups.length > 0
     : resources.length > 0;
 
   return (
@@ -215,7 +261,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
               <Text style={s.searchIcon}>🔍</Text>
               <TextInput
                 style={s.searchInput}
-                placeholder="Search people, posts, patches, resources..."
+                placeholder="Search people, posts, patches, groups, resources..."
                 placeholderTextColor={c.textMuted}
                 value={query}
                 onChangeText={setQuery}
@@ -225,12 +271,14 @@ export default function SearchSheet({ visible, onClose }: Props) {
                 returnKeyType="search"
               />
               {query.length > 0 && (
-                <TouchableOpacity onPress={() => setQuery('')} style={s.clearBtn}>
+                <TouchableOpacity onPress={() => setQuery('')} style={s.clearBtn} hitSlop={hitSlopFor(20)}
+                  accessibilityRole="button" accessibilityLabel="Clear search">
                   <Text style={s.clearBtnText}>✕</Text>
                 </TouchableOpacity>
               )}
             </View>
-            <TouchableOpacity onPress={onClose} style={s.cancelBtn}>
+            <TouchableOpacity onPress={onClose} style={s.cancelBtn} hitSlop={hitSlopFor(20)}
+              accessibilityRole="button" accessibilityLabel="Close search">
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -256,6 +304,12 @@ export default function SearchSheet({ visible, onClose }: Props) {
               <Text style={[s.tabText, tab === 'patches' && s.tabTextActive]}>🩹 Patches</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              style={[s.tabBtn, tab === 'groups' && s.tabBtnActive]}
+              onPress={() => setTab('groups')}
+            >
+              <Text style={[s.tabText, tab === 'groups' && s.tabTextActive]}>👨‍👩‍👧 Groups</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[s.tabBtn, tab === 'resources' && s.tabBtnActive]}
               onPress={() => setTab('resources')}
             >
@@ -271,7 +325,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
           ) : trimmedQuery.length < 2 ? (
             <View style={s.center}>
               <Text style={s.hintEmoji}>
-                {tab === 'people' ? '👋' : tab === 'posts' ? '📝' : tab === 'patches' ? '🩹' : '📚'}
+                {tab === 'people' ? '👋' : tab === 'posts' ? '📝' : tab === 'patches' ? '🩹' : tab === 'groups' ? '👨‍👩‍👧' : '📚'}
               </Text>
               <Text style={s.hintText}>
                 {tab === 'people'
@@ -279,7 +333,9 @@ export default function SearchSheet({ visible, onClose }: Props) {
                   : tab === 'posts'
                   ? 'Search words or phrases to find posts'
                   : tab === 'patches'
-                  ? 'Search by name or description to find parent groups ("patches")'
+                  ? 'Search by name or description to find Patches — the same communities you can join from Discover'
+                  : tab === 'groups'
+                  ? 'Search by name or description to find local Parent Groups and meetups'
                   : 'Search topics like "choking" or "sleep" to find safety guides and resources'}
               </Text>
             </View>
@@ -370,11 +426,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                         <Text style={s.postAuthor}>{post.author}</Text>
                         <Text style={s.postTime}>{getTimeAgo(post.created_at)}</Text>
                       </View>
-                      {post.post_type !== 'text' && (
-                        <Text style={s.postTypeBadge}>
-                          {post.post_type === 'milestone' ? '🎉' : '❓'}
-                        </Text>
-                      )}
+                      <PostTypeBadge postType={post.post_type} />
                     </View>
                     {post.content ? (
                       <Text style={s.postContent} numberOfLines={3}>{post.content}</Text>
@@ -393,32 +445,55 @@ export default function SearchSheet({ visible, onClose }: Props) {
               showsVerticalScrollIndicator={false}
             >
               {!hasResults ? (
-                <Text style={s.emptyText}>No patches found for "{trimmedQuery}"</Text>
+                <Text style={s.emptyText}>No Patches found for "{trimmedQuery}"</Text>
               ) : (
-                patches.map(patch => {
-                  const expanded = expandedId === patch.id;
-                  const location = [patch.city, patch.state_name].filter(Boolean).join(', ');
+                patches.map(village => (
+                  <View key={village.id} style={{ marginBottom: 8 }}>
+                    <VillageCard
+                      village={village}
+                      joined={joinedPatchIds.has(village.id)}
+                      joining={joiningPatchId === village.id}
+                      onJoin={() => toggleJoinPatch(village.id)}
+                      onOpen={() => setFeedVillage(village)}
+                      fullWidth
+                    />
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          ) : tab === 'groups' ? (
+            <ScrollView
+              contentContainerStyle={s.listContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {!hasResults ? (
+                <Text style={s.emptyText}>No groups found for "{trimmedQuery}"</Text>
+              ) : (
+                groups.map(group => {
+                  const expanded = expandedId === group.id;
+                  const location = [group.city, group.state_name].filter(Boolean).join(', ');
                   return (
                     <TouchableOpacity
-                      key={patch.id}
+                      key={group.id}
                       style={s.postCard}
-                      onPress={() => setExpandedId(expanded ? null : patch.id)}
+                      onPress={() => setExpandedId(expanded ? null : group.id)}
                       activeOpacity={0.78}
                     >
-                      <Text style={s.postAuthor}>{patch.name}</Text>
+                      <Text style={s.postAuthor}>{group.name}</Text>
                       {location ? <Text style={s.postTime}>{location}</Text> : null}
-                      {patch.description ? (
+                      {group.description ? (
                         <Text style={s.postContent} numberOfLines={expanded ? undefined : 2}>
-                          {patch.description}
+                          {group.description}
                         </Text>
                       ) : null}
                       {expanded && (
                         <>
-                          {patch.schedule ? (
-                            <Text style={s.postHasPhoto}>🗓 {patch.schedule}</Text>
+                          {group.schedule ? (
+                            <Text style={s.postHasPhoto}>🗓 {group.schedule}</Text>
                           ) : null}
-                          {patch.link ? (
-                            <TouchableOpacity onPress={() => Linking.openURL(patch.link!)}>
+                          {group.link ? (
+                            <TouchableOpacity onPress={() => Linking.openURL(group.link!)}>
                               <Text style={[s.postHasPhoto, { color: c.primary }]}>🔗 Open link</Text>
                             </TouchableOpacity>
                           ) : null}
@@ -474,6 +549,16 @@ export default function SearchSheet({ visible, onClose }: Props) {
         userId={profileUserId}
         visible={profileUserId !== null}
         onClose={() => setProfileUserId(null)}
+        dismissParents={onClose}
+      />
+
+      {/* Nested Patch feed viewer */}
+      <VillageFeedSheet
+        village={feedVillage}
+        visible={feedVillage !== null}
+        onClose={() => setFeedVillage(null)}
+        joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
+        onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
       />
     </>
   );

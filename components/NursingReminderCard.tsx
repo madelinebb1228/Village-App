@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import {
@@ -113,7 +114,7 @@ export default function NursingReminderCard({ userId, babyId, babyName, refreshK
     <View style={s.wrap}>
       <View style={s.headerRow}>
         <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>🤱</Text>
+          <Ionicons name="heart-outline" size={22} color={c.blush} />
           <View>
             <Text style={s.headerTitle}>Last Nursing</Text>
             {loading ? (
@@ -130,7 +131,7 @@ export default function NursingReminderCard({ userId, babyId, babyName, refreshK
       <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}
         accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide reminder settings' : 'Show reminder settings'}>
         <View style={s.settingsToggleLeft}>
-          <Text style={s.settingsToggleIcon}>🔔</Text>
+          <Ionicons name="notifications-outline" size={15} color={c.textMuted} />
           <Text style={s.settingsToggleLabel}>
             {settings.enabled
               ? `Nursing reminder every ${settings.intervalHours}h`
@@ -216,11 +217,14 @@ export default function NursingReminderCard({ userId, babyId, babyName, refreshK
           </View>
 
           {settings.enabled && lastNursedAt && (
-            <Text style={s.nextNote}>
-              🔔 Next reminder ~{new Date(
-                new Date(lastNursedAt).getTime() + settings.intervalHours * 3_600_000,
-              ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+              <Ionicons name="notifications-outline" size={12} color={c.textMuted} />
+              <Text style={[s.nextNote, { marginTop: 0 }]}>
+                Next reminder ~{new Date(
+                  new Date(lastNursedAt).getTime() + settings.intervalHours * 3_600_000,
+                ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
           )}
         </View>
       )}
@@ -242,7 +246,6 @@ function makeStyles(c: Colors) {
 
     settingsToggle:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.separator },
     settingsToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    settingsToggleIcon: { fontSize: 16 },
     settingsToggleLabel:{ fontSize: 14, fontWeight: '600', color: c.textPrimary },
     settingsRight:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
     toggle:      { width: 46, height: 26, borderRadius: 13, backgroundColor: c.separator, justifyContent: 'center', paddingHorizontal: 2 },

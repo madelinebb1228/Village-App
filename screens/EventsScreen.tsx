@@ -30,6 +30,7 @@ interface Event {
 
 interface Props {
   onBack: () => void;
+  autoOpenCreate?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ function showSourcePicker(): Promise<'camera' | 'library' | null> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function EventsScreen({ onBack }: Props) {
+export default function EventsScreen({ onBack, autoOpenCreate }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
@@ -83,7 +84,7 @@ export default function EventsScreen({ onBack }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'going' | 'interested' | 'mine'>('all');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(!!autoOpenCreate);
 
   // Create form
   const [title, setTitle] = useState('');

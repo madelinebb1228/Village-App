@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import PaywallGate from '../PaywallGate';
 
@@ -29,7 +30,7 @@ function SuppliesSnapshotCard({ snapshot }: SuppliesSnapshotCardProps) {
             accessible
             accessibilityLabel={`Formula: ${snapshot.formula !== null ? `${snapshot.formula.toFixed(1)} ounces` : 'no data'}${snapshot.formulaLow ? ', low' : ''}`}
           >
-            <Text style={styles.supplyChipEmoji}>🍼</Text>
+            <Ionicons name="nutrition-outline" size={20} color={snapshot.formulaLow ? c.supplyLowText : c.textSecondary} style={styles.supplyChipIcon} />
             <Text style={[styles.supplyChipValue, snapshot.formulaLow && styles.supplyChipValueLow]}>
               {snapshot.formula !== null ? `${snapshot.formula.toFixed(1)} oz` : '–'}
             </Text>
@@ -40,7 +41,7 @@ function SuppliesSnapshotCard({ snapshot }: SuppliesSnapshotCardProps) {
             accessible
             accessibilityLabel={`Diapers: ${snapshot.diapers !== null ? Math.round(snapshot.diapers) : 'no data'}${snapshot.diapersLow ? ', low' : ''}`}
           >
-            <Text style={styles.supplyChipEmoji}>👶</Text>
+            <Ionicons name="shirt-outline" size={20} color={snapshot.diapersLow ? c.supplyLowText : c.textSecondary} style={styles.supplyChipIcon} />
             <Text style={[styles.supplyChipValue, snapshot.diapersLow && styles.supplyChipValueLow]}>
               {snapshot.diapers !== null ? String(Math.round(snapshot.diapers)) : '–'}
             </Text>
@@ -51,7 +52,7 @@ function SuppliesSnapshotCard({ snapshot }: SuppliesSnapshotCardProps) {
             accessible
             accessibilityLabel={`Milk Stash: ${snapshot.milkOz > 0 ? `${snapshot.milkOz.toFixed(1)} ounces` : 'no data'}`}
           >
-            <Text style={styles.supplyChipEmoji}>🤱</Text>
+            <Ionicons name="water-outline" size={20} color={c.textSecondary} style={styles.supplyChipIcon} />
             <Text style={styles.supplyChipValue}>
               {snapshot.milkOz > 0 ? `${snapshot.milkOz.toFixed(1)} oz` : '–'}
             </Text>
@@ -98,8 +99,7 @@ function makeStyles(c: Colors) {
       padding: 12,
       alignItems: 'center',
     },
-    supplyChipEmoji: {
-      fontSize: 22,
+    supplyChipIcon: {
       marginBottom: 6,
     },
     supplyChipValue: {

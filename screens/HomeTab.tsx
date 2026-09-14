@@ -14,10 +14,15 @@ import {
   Share,
   Image,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import MentionTextInput from '../components/MentionTextInput';
+import { Ionicons } from '@expo/vector-icons';
+import { hitSlopFor } from '../lib/accessibility';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { restoreScrollFocus } from '../lib/webFocus';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -30,21 +35,17 @@ import SearchSheet from './SearchSheet';
 import QAScreen from './QAScreen';
 import MessagesInbox from './MessagesInbox';
 import NotificationsScreen from './NotificationsScreen';
-import EventsScreen from './EventsScreen';
 import HandoffNotesSheet from '../components/HandoffNotesSheet';
 import { useBaby } from '../lib/babyContext';
-import { VILLAGE_MAP } from '../lib/villageData';
+import { VILLAGE_MAP, Village, villagesByIds } from '../lib/villageData';
+import VillageFeedSheet from './VillageFeedSheet';
+import { joinPatch, leavePatch } from '../lib/discoverData';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import StoriesBar, { StoryGroup } from '../components/StoriesBar';
-import StreakCard from '../components/StreakCard';
-import TodaySummaryCard from '../components/home/TodaySummaryCard';
 import HomeIconRow from '../components/home/HomeIconRow';
-import RemindersCard from '../components/home/RemindersCard';
 import UpcomingEventsCard from '../components/home/UpcomingEventsCard';
-import SuppliesSnapshotCard from '../components/home/SuppliesSnapshotCard';
-import BabyProfileCard from '../components/home/BabyProfileCard';
-import HandoffNotesCard from '../components/home/HandoffNotesCard';
 import StoryViewer from '../components/StoryViewer';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
@@ -57,11 +58,16 @@ import {
   todayRange, greetingFor, getBabyAge, getTimeAgo, resolveAuthorName, attachAuthorProfiles,
   showSourcePicker, uploadPostImage, uploadPostVideo,
   extractMentions, sendMentionNotifications, renderTextWithMentions,
+  buildCommentTree, toggleReactionMutation, toggleRepostMutation, castPollVoteMutation,
 } from '../lib/feedUtils.tsx';
 import { VideoPostPlayer } from '../components/feed/VideoPostPlayer';
 import { safeQuery, cacheSet, cacheGetStale } from '../lib/syncService';
 import { useOneHanded } from '../lib/OneHandedContext';
+import { useSubscription } from '../lib/subscriptionContext';
 import TipOfTheDayCard from '../components/TipOfTheDayCard';
+import FeedInsert from '../components/feed/FeedInsert';
+import PatchLabel from '../components/feed/PatchLabel';
+import PostTypeBadge from '../components/feed/PostTypeBadge';
 import { track, screenView } from '../lib/analytics';
 
 async function fetchLatestHandoffNote(babyId: string): Promise<string | null> {
@@ -80,9 +86,13 @@ async function fetchLatestHandoffNote(babyId: string): Promise<string | null> {
 export default function HomeTab() {
   const c = useColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const styles = useMemo(() => makeStyles(c), [c]);
   const { isOneHanded } = useOneHanded();
+  const { width: windowWidth } = useResponsive();
+  const feedMaxWidth = maxWidthFor(windowWidth, 'feed');
   const insets = useSafeAreaInsets();
+  const { isSubscribed } = useSubscription();
 
   const [stats, setStats] = useState<Stats>({ feeds: 0, diapers: 0, pumpedMl: 0 });
   const [loading, setLoading] = useState(true);
@@ -135,6 +145,14 @@ export default function HomeTab() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
+
+  // The topic-chip row used to live here; it's moved to Discover's Trending
+  // Topics now, which navigates back with this param instead — same filter
+  // state and logic, just driven from outside instead of an always-visible
+  // row of chips.
+  useEffect(() => {
+    if (route?.params?.filterTag) setActiveTag(route.params.filterTag);
+  }, [route?.params?.filterTag]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [baby, setBaby] = useState<{ name: string; birth_date: string | null; due_date: string | null; is_expecting: boolean | null; photo_url: string | null; gender: string | null } | null>(null);
@@ -147,7 +165,6 @@ export default function HomeTab() {
   const [messageTargetUserId, setMessageTargetUserId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showEvents, setShowEvents] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
@@ -173,16 +190,26 @@ export default function HomeTab() {
   useEffect(() => { screenView('HomeTab'); }, []);
 
   // App tour (coach marks)
-  const { tourRequestId } = useContext(AppContext);
+  const { tourRequestId, requestCreate, createAction } = useContext(AppContext);
   const [tourVisible, setTourVisible] = useState(false);
   const lastHandledTourRequestId = useRef(0);
+  const lastHandledCreateActionId = useRef(0);
   const mainScrollRef = useRef<ScrollView>(null);
   const mainScrollYRef = useRef(0);
+
+  // Web: react-native-web's <body> doesn't scroll (each screen owns its own
+  // ScrollView), so keyboard arrow/PageUp/PageDown scrolling only works while
+  // focus sits inside it. Restore focus here whenever this tab gains focus —
+  // it's a no-op if focus is already somewhere more specific (a text input,
+  // an open modal's own control), see restoreScrollFocus().
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== 'web') return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    (mainScrollRef.current as any)?.getScrollableNode?.()?.focus?.();
+  }, []));
   const iconRowRef = useRef<View>(null);
   const storiesRef = useRef<View>(null);
-  const babyCardRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
-  const statRowRef = useRef<View>(null);
-  const tipRef = useRef<View>(null);
   const fabRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
 
   // Stories
@@ -200,16 +227,26 @@ export default function HomeTab() {
   const [streakRefreshKey, setStreakRefreshKey] = useState(0);
 
   const [feedMode, setFeedMode] = useState<'for-you' | 'following' | 'friends' | 'patches'>('for-you');
+  const [refreshing, setRefreshing] = useState(false);
+  // Gates the feed empty-state copy so "No posts yet" / "Not following
+  // anyone" can't flash on screen before the very first fetch resolves.
+  // Only applies once per app session — later refocuses reuse cached data.
+  const [feedInitialLoading, setFeedInitialLoading] = useState(true);
+  const hasLoadedFeedOnce = useRef(false);
   const [followingPosts, setFollowingPosts] = useState<Post[]>([]);
   const [friendsPosts, setFriendsPosts] = useState<Post[]>([]);
-  const [patchTasks, setPatchTasks] = useState<any[]>([]);
-  const [myPatchVolunteered, setMyPatchVolunteered] = useState<Set<string>>(new Set());
-  const [patchVolCounts, setPatchVolCounts] = useState<Record<string, number>>({});
-  const [patchCategoryFilter, setPatchCategoryFilter] = useState<string | null>(null);
+  // Posts from the user's joined Patches — the "Patches" feed tab. Separate
+  // from myVillageIdsSet below only in that this is the fetched content;
+  // myVillageIdsSet is membership, reused by the tappable Patch tag on any post.
+  const [patchesPosts, setPatchesPosts] = useState<Post[]>([]);
+  const [myVillageIdsSet, setMyVillageIdsSet] = useState<Set<string>>(new Set());
+  const [feedVillage, setFeedVillage] = useState<Village | null>(null);
+  const [joiningVillageId, setJoiningVillageId] = useState<string | null>(null);
 
   const filteredPosts = useMemo(() => {
     const source = feedMode === 'following' ? followingPosts
       : feedMode === 'friends' ? friendsPosts
+      : feedMode === 'patches' ? patchesPosts
       : posts;
     let result = source.filter(p =>
       !blockedUserIds.has(p.user_id) &&
@@ -225,7 +262,103 @@ export default function HomeTab() {
     if (activeHashtag) result = result.filter(p => p.content?.toLowerCase().includes(`#${activeHashtag.toLowerCase()}`));
     if (activeTag) result = result.filter(p => p.tags?.includes(activeTag));
     return result;
-  }, [posts, followingPosts, friendsPosts, feedMode, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
+  }, [posts, followingPosts, friendsPosts, patchesPosts, feedMode, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
+
+  const greeting = greetingFor(new Date().getHours(), displayName ?? undefined);
+
+  // ── Parent Patch feed inserts ─────────────────────────────────────────────
+  // A small, deliberately limited set of branded utility cards woven into the
+  // feed (never stacked at the top). The rest of Step 5's dashboard cards
+  // (streak, supplies snapshot, baby profile) stay in their own component
+  // files, untouched, for a future phase to surface elsewhere — Home just
+  // doesn't render them at the top any more.
+  type FeedInsertItem = { key: string; node: React.ReactNode };
+
+  const feedInserts = useMemo<FeedInsertItem[]>(() => {
+    const items: FeedInsertItem[] = [];
+
+    if (baby && !loading) {
+      const parts = [
+        `${stats.feeds} feed${stats.feeds === 1 ? '' : 's'}`,
+        `${stats.diapers} diaper${stats.diapers === 1 ? '' : 's'}`,
+      ];
+      if (stats.pumpedMl > 0) parts.push(`${stats.pumpedMl}ml pumped`);
+      items.push({
+        key: 'insert-today',
+        node: (
+          <FeedInsert
+            accent="lavender"
+            icon="today-outline"
+            title={`${greeting.text} — today with ${baby.name}`}
+            body={parts.join(' · ')}
+            ctaLabel="View today"
+            onPress={() => setShowProfileSheet(true)}
+          />
+        ),
+      });
+    }
+
+    if (reminders.length > 0) {
+      items.push({
+        key: 'insert-reminder',
+        node: (
+          <FeedInsert
+            accent="honey"
+            icon="notifications-outline"
+            title="Parent Patch reminder"
+            body={reminders[0].text}
+            ctaLabel="Log now"
+            onPress={() => navigation.navigate('Track')}
+          />
+        ),
+      });
+    }
+
+    if (isSubscribed && upcomingEvents.length > 0) {
+      items.push({
+        key: 'insert-upcoming',
+        node: <UpcomingEventsCard events={upcomingEvents} onPress={() => navigation.navigate('Calendar')} />,
+      });
+    }
+
+    if (activeBaby && latestHandoffNote) {
+      items.push({
+        key: 'insert-handoff',
+        node: (
+          <FeedInsert
+            accent="blue"
+            icon="chatbubble-ellipses-outline"
+            title="Handoff note"
+            body={latestHandoffNote}
+            ctaLabel="View"
+            onPress={() => setShowHandoffNotes(true)}
+          />
+        ),
+      });
+    }
+
+    items.push({
+      key: 'insert-tip',
+      node: <TipOfTheDayCard onPress={(resourceId) => navigation.navigate('Discover', { initialResourceId: resourceId })} />,
+    });
+
+    return items;
+  }, [baby, loading, stats, greeting, reminders, isSubscribed, upcomingEvents, activeBaby, latestHandoffNote, navigation]);
+
+  // Interleave inserts roughly every 4 posts instead of stacking them at the
+  // top — each insert appears at most once per feed load.
+  const feedItems = useMemo(() => {
+    const items: Array<{ kind: 'post'; post: Post } | { kind: 'insert'; key: string; node: React.ReactNode }> = [];
+    let insertIdx = 0;
+    filteredPosts.forEach((post, i) => {
+      items.push({ kind: 'post', post });
+      if (insertIdx < feedInserts.length && (i + 1) % 4 === 0) {
+        items.push({ kind: 'insert', key: feedInserts[insertIdx].key, node: feedInserts[insertIdx].node });
+        insertIdx++;
+      }
+    });
+    return items;
+  }, [filteredPosts, feedInserts]);
 
   const showMentalHealthBanner = useMemo(() => {
     if (!postContent.trim()) return false;
@@ -234,12 +367,12 @@ export default function HomeTab() {
   }, [postContent]);
 
   useEffect(() => {
-    fetchPosts();
-    fetchFollowingPosts();
-    fetchFriendsPosts();
-    fetchPatchFeed();
-    fetchFollowingIds();
-    fetchTrendingPosts();
+    // fetchPosts/fetchFollowingPosts/fetchFriendsPosts/fetchPatchesPosts/
+    // fetchFollowingIds/fetchTrendingPosts are intentionally NOT called here —
+    // the useFocusEffect below already fires on initial mount (React
+    // Navigation runs a focus effect immediately if the screen is focused
+    // when it mounts), so calling them here too used to double-fetch and
+    // double-enrich all four feeds on cold start.
     fetchSavedPosts();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -474,58 +607,65 @@ export default function HomeTab() {
     }
   }
 
-  async function fetchPatchFeed() {
+  // Posts from Patches the user has joined — the Home "Patches" tab. Mirrors
+  // fetchFollowingPosts' shape exactly (same Post type, same reaction/poll/
+  // repost hydration) so renderPostCard needs no special-casing for it.
+  async function fetchPatchesPosts() {
     const { data: { user } } = await supabase.auth.getUser();
-    const [tasksRes, myVolRes, allVolRes] = await Promise.all([
-      (supabase.from('patch_tasks') as any)
-        .select('id,creator_id,category,title,description,urgency,needed_by,status,created_at,profiles!creator_id(display_name,username)')
-        .in('status', ['open', 'completed'])
-        .order('urgency', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(40),
-      user
-        ? (supabase.from('patch_task_volunteers') as any).select('task_id').eq('user_id', user.id)
-        : Promise.resolve({ data: [] }),
-      (supabase.from('patch_task_volunteers') as any).select('task_id'),
-    ]);
-    if (tasksRes.data) {
-      // Sort: emergency open first, then other open, then completed
-      const open  = (tasksRes.data as any[]).filter((t: any) => t.status === 'open');
-      const done  = (tasksRes.data as any[]).filter((t: any) => t.status === 'completed');
-      const emerg = open.filter((t: any) => t.urgency === 'emergency');
-      const rest  = open.filter((t: any) => t.urgency !== 'emergency');
-      setPatchTasks([...emerg, ...rest, ...done]);
+    if (!user) { setPatchesPosts([]); setMyVillageIdsSet(new Set()); return; }
+
+    const { data: villageRows } = await supabase.from('user_villages').select('village_id').eq('user_id', user.id);
+    const villageIds = (villageRows ?? []).map((r: any) => r.village_id as string);
+    setMyVillageIdsSet(new Set(villageIds));
+
+    if (villageIds.length === 0) { setPatchesPosts([]); return; }
+
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .in('village_id', villageIds)
+      .order('created_at', { ascending: false })
+      .limit(40);
+
+    const result: Post[] = await attachAuthorProfiles((data as Post[]) ?? []);
+    setPatchesPosts(result);
+    if (result.length > 0) {
+      fetchReactions(result);
+      fetchPollData(result);
+      fetchRepostData(result);
     }
-    setMyPatchVolunteered(new Set((myVolRes.data ?? []).map((r: any) => r.task_id as string)));
-    const counts: Record<string, number> = {};
-    for (const r of (allVolRes.data ?? [])) counts[r.task_id] = (counts[r.task_id] ?? 0) + 1;
-    setPatchVolCounts(counts);
   }
 
-  async function handlePatchVolunteer(taskId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await (supabase.from('patch_task_volunteers') as any).insert({ task_id: taskId, user_id: user.id });
-    setMyPatchVolunteered(prev => new Set([...prev, taskId]));
-    setPatchVolCounts(prev => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
+  // Pull-to-refresh only reloads the feed tab actually on screen — not all
+  // four — so one refresh gesture doesn't trigger three redundant fetches.
+  async function onRefreshFeed() {
+    setRefreshing(true);
+    try {
+      if (feedMode === 'for-you') await fetchPosts();
+      else if (feedMode === 'following') await fetchFollowingPosts();
+      else if (feedMode === 'friends') await fetchFriendsPosts();
+      else await fetchPatchesPosts();
+    } finally {
+      setRefreshing(false);
+    }
   }
 
-  async function handlePatchWithdraw(taskId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await (supabase.from('patch_task_volunteers') as any).delete().eq('task_id', taskId).eq('user_id', user.id);
-    setMyPatchVolunteered(prev => { const n = new Set(prev); n.delete(taskId); return n; });
-    setPatchVolCounts(prev => ({ ...prev, [taskId]: Math.max(0, (prev[taskId] ?? 1) - 1) }));
-  }
-
-  function handlePatchComplete(taskId: string) {
-    Alert.alert('Mark as done?', 'This will close the request.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Mark Done', onPress: async () => {
-        await (supabase.from('patch_tasks') as any).update({ status: 'completed' }).eq('id', taskId);
-        setPatchTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed' } : t));
-      }},
-    ]);
+  // Reuses the same Patch join/leave mutation Discover and Profile use, so
+  // tapping a Patch tag from any Home feed behaves identically everywhere.
+  async function toggleVillageMembership(villageId: string) {
+    setJoiningVillageId(villageId);
+    const wasJoined = myVillageIdsSet.has(villageId);
+    const { error } = wasJoined ? await leavePatch(villageId) : await joinPatch(villageId);
+    if (error) {
+      Alert.alert('Something went wrong', wasJoined ? "Couldn't leave this patch. Please try again." : "Couldn't join this patch. Please try again.");
+    } else {
+      setMyVillageIdsSet(prev => {
+        const n = new Set(prev);
+        wasJoined ? n.delete(villageId) : n.add(villageId);
+        return n;
+      });
+    }
+    setJoiningVillageId(null);
   }
 
   async function fetchTrendingPosts() {
@@ -578,7 +718,6 @@ export default function HomeTab() {
     setReactionPickerPostId(null);
 
     if (current === type) {
-      await supabase.from('post_reactions').delete().eq('post_id', postId).eq('user_id', user.id);
       setMyReactions(prev => { const n = new Map(prev); n.delete(postId); return n; });
       setReactionCounts(prev => {
         const n = new Map(prev);
@@ -588,8 +727,9 @@ export default function HomeTab() {
         n.set(postId, c);
         return n;
       });
+      const { error } = await toggleReactionMutation(postId, user.id, null);
+      if (error) fetchReactions([{ id: postId } as Post]);
     } else {
-      await supabase.from('post_reactions').upsert({ post_id: postId, user_id: user.id, type }, { onConflict: 'post_id,user_id' });
       setMyReactions(prev => new Map(prev).set(postId, type));
       setReactionCounts(prev => {
         const n = new Map(prev);
@@ -599,6 +739,8 @@ export default function HomeTab() {
         n.set(postId, c);
         return n;
       });
+      const { error } = await toggleReactionMutation(postId, user.id, type);
+      if (error) fetchReactions([{ id: postId } as Post]);
     }
   }
 
@@ -627,12 +769,11 @@ export default function HomeTab() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const isReposted = myRepostIds.has(post.id);
+    await toggleRepostMutation(post.id, user.id, !isReposted);
     if (isReposted) {
-      await (supabase as any).from('reposts').delete().eq('user_id', user.id).eq('post_id', post.id);
       setMyRepostIds(prev => { const n = new Set(prev); n.delete(post.id); return n; });
       setRepostCounts(prev => { const n = new Map(prev); n.set(post.id, Math.max(0, (n.get(post.id) || 1) - 1)); return n; });
     } else {
-      await (supabase as any).from('reposts').insert({ user_id: user.id, post_id: post.id });
       setMyRepostIds(prev => { const n = new Set(prev); n.add(post.id); return n; });
       setRepostCounts(prev => { const n = new Map(prev); n.set(post.id, (n.get(post.id) || 0) + 1); return n; });
     }
@@ -676,10 +817,12 @@ export default function HomeTab() {
     if (!user) return;
     const isSaved = savedPostIds.has(postId);
     setSavedPostIds(prev => { const n = new Set(prev); isSaved ? n.delete(postId) : n.add(postId); return n; });
-    if (isSaved) {
-      await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', user.id);
-    } else {
-      await supabase.from('saved_posts').insert({ post_id: postId, user_id: user.id });
+    const { error } = isSaved
+      ? await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', user.id)
+      : await supabase.from('saved_posts').insert({ post_id: postId, user_id: user.id });
+    if (error) {
+      // Revert — the write didn't actually go through, so don't leave the UI lying.
+      setSavedPostIds(prev => { const n = new Set(prev); isSaved ? n.add(postId) : n.delete(postId); return n; });
     }
   }
 
@@ -730,10 +873,8 @@ export default function HomeTab() {
       return n;
     });
 
-    await supabase.from('poll_votes').upsert(
-      { post_id: postId, user_id: user.id, option_id: optionId },
-      { onConflict: 'post_id,user_id' }
-    );
+    const { error } = await castPollVoteMutation(postId, user.id, optionId);
+    if (error) fetchPollData([{ id: postId, post_type: 'poll' } as Post]);
   }
 
   async function openComments(postId: string) {
@@ -752,20 +893,6 @@ export default function HomeTab() {
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
     if (data) setComments(buildCommentTree(await attachAuthorProfiles(data)));
-  }
-
-  function buildCommentTree(flat: Comment[]): Comment[] {
-    const map = new Map<string, Comment>();
-    flat.forEach(c => map.set(c.id, { ...c, replies: [] }));
-    const roots: Comment[] = [];
-    map.forEach(c => {
-      if (c.parent_id && map.has(c.parent_id)) {
-        map.get(c.parent_id)!.replies!.push(c);
-      } else {
-        roots.push(c);
-      }
-    });
-    return roots;
   }
 
   async function submitComment() {
@@ -1142,14 +1269,14 @@ export default function HomeTab() {
             const isMonthMilestone = isBirthdayToday && MONTH_MILESTONES.includes(monthsOld);
 
             if (isMonthMilestone) {
-              items.push({ id: 'milestone', emoji: '🎉', text: `${name} is ${monthsOld} months old today!`, urgency: 'milestone' });
+              items.push({ id: 'milestone', icon: 'gift-outline', text: `${name} is ${monthsOld} months old today!`, urgency: 'milestone' });
             } else if (isWeekMilestone) {
-              items.push({ id: 'milestone', emoji: '🎉', text: `${name} is ${ageWeeks} weeks old today!`, urgency: 'milestone' });
+              items.push({ id: 'milestone', icon: 'gift-outline', text: `${name} is ${ageWeeks} weeks old today!`, urgency: 'milestone' });
             } else {
               const ageLabel = monthsOld >= 3
                 ? `${monthsOld} month${monthsOld !== 1 ? 's' : ''}`
                 : `${ageWeeks} week${ageWeeks !== 1 ? 's' : ''}`;
-              items.push({ id: 'age', emoji: '👶', text: `${name} is ${ageLabel} old`, urgency: 'info' });
+              items.push({ id: 'age', icon: 'body-outline', text: `${name} is ${ageLabel} old`, urgency: 'info' });
             }
           }
 
@@ -1167,9 +1294,9 @@ export default function HomeTab() {
             const m = Math.floor(mins % 60);
             const label = h > 0 ? `${h}h ${m}m ago` : `${m}m ago`;
             if (mins > 210) {
-              items.push({ id: 'feed_gap', emoji: '🍼', text: `Baby last fed ${label} — might be hungry!`, urgency: 'alert' });
+              items.push({ id: 'feed_gap', icon: 'nutrition-outline', text: `Baby last fed ${label} — might be hungry!`, urgency: 'alert' });
             } else if (mins > 150) {
-              items.push({ id: 'feed_gap', emoji: '🍼', text: `Baby last fed ${label} — feed time coming up`, urgency: 'warning' });
+              items.push({ id: 'feed_gap', icon: 'nutrition-outline', text: `Baby last fed ${label} — feed time coming up`, urgency: 'warning' });
             }
           }
 
@@ -1187,7 +1314,7 @@ export default function HomeTab() {
             const m = Math.floor((hrs - h) * 60);
             const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
             if (hrs > 4) {
-              items.push({ id: 'diaper_gap', emoji: '💩', text: `No diaper change logged in ${label}`, urgency: 'warning' });
+              items.push({ id: 'diaper_gap', icon: 'shirt-outline', text: `No diaper change logged in ${label}`, urgency: 'warning' });
             }
           }
 
@@ -1200,11 +1327,11 @@ export default function HomeTab() {
           for (const s of supplies ?? []) {
             if (s.low_threshold > 0 && s.quantity_remaining <= s.low_threshold) {
               if (s.supply_type === 'formula') {
-                items.push({ id: 'supply_formula', emoji: '🍶', text: `Low on formula — ${s.quantity_remaining.toFixed(1)} oz left`, urgency: 'warning' });
+                items.push({ id: 'supply_formula', icon: 'flask-outline', text: `Low on formula — ${s.quantity_remaining.toFixed(1)} oz left`, urgency: 'warning' });
               } else if (s.supply_type === 'diapers') {
-                items.push({ id: 'supply_diapers', emoji: '🩺', text: `Running low on diapers — ${Math.round(s.quantity_remaining)} left`, urgency: 'warning' });
+                items.push({ id: 'supply_diapers', icon: 'shirt-outline', text: `Running low on diapers — ${Math.round(s.quantity_remaining)} left`, urgency: 'warning' });
               } else if (s.supply_type === 'breastmilk') {
-                items.push({ id: 'supply_milk', emoji: '🤱', text: `Milk stash low — ${(s.quantity_remaining / 29.5735).toFixed(1)} oz left`, urgency: 'warning' });
+                items.push({ id: 'supply_milk', icon: 'water-outline', text: `Milk stash low — ${(s.quantity_remaining / 29.5735).toFixed(1)} oz left`, urgency: 'warning' });
               }
             }
           }
@@ -1233,16 +1360,16 @@ export default function HomeTab() {
             }
           }
           if (fridgeExpiredOz > 0)
-            items.push({ id: 'milk_expired', emoji: '🍼', urgency: 'alert',
+            items.push({ id: 'milk_expired', icon: 'water-outline', urgency: 'alert',
               text: `${fridgeExpiredOz.toFixed(1)} oz of fridge milk has expired — use or discard` });
           if (fridgeTodayOz > 0)
-            items.push({ id: 'milk_today', emoji: '🍼', urgency: 'alert',
+            items.push({ id: 'milk_today', icon: 'water-outline', urgency: 'alert',
               text: `${fridgeTodayOz.toFixed(1)} oz of fridge milk expires today — use or move to freezer!` });
           if (fridgeSoonOz > 0)
-            items.push({ id: 'milk_soon', emoji: '🍼', urgency: 'warning',
+            items.push({ id: 'milk_soon', icon: 'water-outline', urgency: 'warning',
               text: `${fridgeSoonOz.toFixed(1)} oz of fridge milk expires in 1–2 days — use or freeze soon` });
           if (freezerSoonOz > 0)
-            items.push({ id: 'milk_freezer_soon', emoji: '❄️', urgency: 'warning',
+            items.push({ id: 'milk_freezer_soon', icon: 'snow-outline', urgency: 'warning',
               text: `${freezerSoonOz.toFixed(1)} oz of frozen milk expires within 30 days` });
 
           // ── Supplies snapshot for homepage card ──────────────────────────────
@@ -1272,7 +1399,7 @@ export default function HomeTab() {
             if (p.sessions_since_replaced >= limits.sessions || daysSince >= limits.days) {
               items.push({
                 id: `part_${p.part_name}`,
-                emoji: '🔧',
+                icon: 'build-outline',
                 text: `${PART_LABELS[p.part_name] || p.part_name} overdue for replacement`,
                 urgency: 'alert',
               });
@@ -1303,9 +1430,9 @@ export default function HomeTab() {
             else break;
           }
           if (streak >= 7) {
-            items.push({ id: 'streak', emoji: '🔥', text: `7-day logging streak! You're on a roll!`, urgency: 'streak' });
+            items.push({ id: 'streak', icon: 'flame', text: `7-day logging streak! You're on a roll!`, urgency: 'streak' });
           } else if (streak >= 3) {
-            items.push({ id: 'streak', emoji: '⭐', text: `${streak}-day logging streak — keep it up!`, urgency: 'streak' });
+            items.push({ id: 'streak', icon: 'star', text: `${streak}-day logging streak — keep it up!`, urgency: 'streak' });
           }
 
           if (isActive) setReminders(items);
@@ -1375,10 +1502,16 @@ export default function HomeTab() {
       fetchReminders();
       fetchUpcomingEvents();
       fetchFollowedQuestions();
-      fetchPosts();
-      fetchFollowingPosts();
-      fetchFriendsPosts();
-      fetchPatchFeed();
+      if (!hasLoadedFeedOnce.current) {
+        Promise.all([fetchPosts(), fetchFollowingPosts(), fetchFriendsPosts(), fetchPatchesPosts()]).finally(() => {
+          if (isActive) { setFeedInitialLoading(false); hasLoadedFeedOnce.current = true; }
+        });
+      } else {
+        fetchPosts();
+        fetchFollowingPosts();
+        fetchFriendsPosts();
+        fetchPatchesPosts();
+      }
       fetchFollowingIds();
       fetchTrendingPosts();
 
@@ -1389,20 +1522,12 @@ export default function HomeTab() {
   );
 
   const tourSteps = useMemo<CoachMarkStep[]>(() => {
-    const arr: CoachMarkStep[] = [
-      { ref: iconRowRef, title: 'Stay connected', body: 'Notifications, messages, your calendar, and search — all one tap away up here.' },
+    return [
+      { ref: iconRowRef, title: 'Stay connected', body: 'Notifications, messages, and search — all one tap away up here.' },
       { ref: storiesRef, title: 'Share the little moments', body: 'Post a quick photo or video story so your community can follow along in real time.' },
+      { ref: fabRef, title: 'Share with your community', body: 'Tap the + button to post an update, ask a question, start a story, or ask your Patch for help.' },
     ];
-    if (baby) {
-      arr.push({ ref: babyCardRef, title: "Your baby's profile", body: 'Tap here any time to view or update their details, growth, and milestones.' });
-    }
-    arr.push(
-      { ref: statRowRef, title: 'Today at a glance', body: 'Feeds, diapers, and pumped milk for today — updates the moment you log something.' },
-      { ref: tipRef, title: 'Tip of the Day', body: 'A fresh, pediatrician-informed tip every day. Tap it to read more.' },
-      { ref: fabRef, title: 'Share with your community', body: 'Tap the + button to post an update, photo, milestone, or question to your community.' },
-    );
-    return arr;
-  }, [baby]);
+  }, []);
 
   const tourSeenKey = useCallback((uid: string) => `app_tour_seen:${uid}`, []);
 
@@ -1424,6 +1549,36 @@ export default function HomeTab() {
       setTourVisible(true);
     }
   }, [tourRequestId]);
+
+  // The global create-options sheet (owned at the app root — see App.tsx) asks
+  // Home to run one of its existing creation flows via this request. Home owns
+  // all the actual state/handlers for these; the sheet itself just dispatches.
+  useEffect(() => {
+    if (!createAction || createAction.requestId === lastHandledCreateActionId.current) return;
+    lastHandledCreateActionId.current = createAction.requestId;
+    switch (createAction.action) {
+      case 'post':
+        setPostType('text');
+        setShowCreatePost(true);
+        break;
+      case 'question':
+        setPostType('question');
+        setShowCreatePost(true);
+        break;
+      case 'media':
+        setPostType('text');
+        setShowCreatePost(true);
+        pickPostImage();
+        break;
+      case 'story':
+        setStoryMode('photo');
+        setStoryImageUri(null);
+        setStoryVideoUri(null);
+        setStoryText('');
+        setShowAddStory(true);
+        break;
+    }
+  }, [createAction]);
 
   // Auto-show once, ever, per account — mirrors the onboarding_complete pattern in
   // App.tsx: check the local cache first, then fall back to the profile row so a
@@ -1449,40 +1604,352 @@ export default function HomeTab() {
     return () => { cancelled = true; };
   }, [currentUserId, loading, tourSeenKey]);
 
-  const greeting = greetingFor(new Date().getHours(), displayName ?? undefined);
+  // Feed actions (react/comment/repost/save/poll) stay inline so the feed
+  // never forces a navigation just to interact with a post — but tapping the
+  // post's own content, media, or timestamp opens the same full PostDetail
+  // screen Discover/Profile already link into, for a consistent "view post"
+  // destination app-wide.
+  function goToPostDetail(post: Post) {
+    navigation.navigate('PostDetail', { postId: post.id, origin: 'Home' });
+  }
+
+  // Neutral, content-first post card — the one place in the social feed that
+  // deliberately avoids the branded/colorful treatment (that's reserved for
+  // FeedInsert). Extracted out of the main JSX purely so it can be interleaved
+  // with feed inserts via feedItems.map above without duplicating this ~230
+  // lines of markup; still a plain closure over the same component state.
+  function renderPostCard(post: Post): React.ReactNode {
+    return (
+      <View style={styles.postCard}>
+        {post.is_sensitive && !revealedSensitiveIds.has(post.id) ? (
+          <View style={{ padding: 16, gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={28} />
+              <Text style={styles.postAuthorName}>{resolveAuthorName(post)}</Text>
+              <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
+            </View>
+            <View style={{ backgroundColor: c.reminderWarning.bg, borderRadius: 12, padding: 14, gap: 6, borderWidth: 1, borderColor: c.reminderWarning.border }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: c.reminderWarning.text }}>⚠️ Sensitive Content</Text>
+              {post.sensitive_label ? (
+                <Text style={{ fontSize: 13, color: c.reminderWarning.text, lineHeight: 18 }}>
+                  This post is marked as: <Text style={{ fontWeight: '700' }}>{post.sensitive_label}</Text>
+                </Text>
+              ) : (
+                <Text style={{ fontSize: 13, color: c.reminderWarning.text, lineHeight: 18 }}>
+                  The author has marked this post as sensitive.
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={() => setRevealedSensitiveIds(prev => { const s = new Set(prev); s.add(post.id); return s; })}
+                style={{ alignSelf: 'flex-start', marginTop: 4, backgroundColor: c.reminderWarning.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6 }}
+                accessibilityRole="button" accessibilityLabel="Show sensitive post"
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Show post</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+        {(!post.is_sensitive || revealedSensitiveIds.has(post.id)) && (<>
+        <View style={styles.postHeader}>
+          <View style={styles.postAuthorRow}>
+            <TouchableOpacity
+              onPress={() => setPublicProfileUserId(post.user_id)}
+              activeOpacity={0.7}
+              accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
+            >
+              <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={36} />
+            </TouchableOpacity>
+            <View>
+              <Text
+                style={styles.postAuthorName}
+                onPress={() => setPublicProfileUserId(post.user_id)}
+                accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
+              >
+                {resolveAuthorName(post)}
+              </Text>
+              <Text
+                style={styles.postTimestamp}
+                onPress={() => goToPostDetail(post)}
+                accessibilityRole="button" accessibilityLabel="View post"
+              >
+                {getTimeAgo(post.created_at)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.postHeaderRight}>
+            <PostTypeBadge postType={post.post_type} />
+            {currentUserId && post.user_id !== currentUserId && (
+              <TouchableOpacity
+                onPress={() => handleFollowToggle(post.user_id)}
+                style={[styles.followBtn, followingUserIds.has(post.user_id) && styles.followBtnActive]}
+                activeOpacity={0.75}
+                accessibilityRole="button" accessibilityLabel={followingUserIds.has(post.user_id) ? `Unfollow ${resolveAuthorName(post)}` : `Follow ${resolveAuthorName(post)}`}
+              >
+                <Text style={[styles.followBtnText, followingUserIds.has(post.user_id) && styles.followBtnTextActive]}>
+                  {followingUserIds.has(post.user_id) ? '✓ Following' : '+ Follow'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {post.user_id === currentUserId && (
+              <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}
+                accessibilityRole="button" accessibilityLabel="Delete post">
+                <Ionicons name="trash-outline" size={15} color={c.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+        {post.village_id && VILLAGE_MAP[post.village_id] && (
+          <PatchLabel
+            emoji={VILLAGE_MAP[post.village_id].emoji}
+            name={VILLAGE_MAP[post.village_id].name}
+            onPress={() => {
+              const [v] = villagesByIds([post.village_id!]);
+              if (v) setFeedVillage(v);
+            }}
+          />
+        )}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => goToPostDetail(post)}
+          accessibilityRole="button" accessibilityLabel="View post"
+        >
+          {post.content
+            ? renderTextWithMentions(post.content, styles.postContent, c.primary, openMentionedUser, tag => setActiveHashtag(tag))
+            : null}
+          {post.image_url ? (
+            <Image
+              source={{ uri: post.image_url }}
+              style={styles.postImage}
+              resizeMode="cover"
+            />
+          ) : null}
+          {post.video_url ? <VideoPostPlayer uri={post.video_url} /> : null}
+        </TouchableOpacity>
+        {post.tags && post.tags.length > 0 && (
+          <View style={styles.postTagsRow}>
+            {post.tags.map(tag => (
+              <TouchableOpacity key={tag} onPress={() => setActiveTag(tag)} style={styles.postTagChip}
+                accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}>
+                <Text style={styles.postTagChipText}>{tag}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {post.post_type === 'poll' && (() => {
+          const pd = pollData.get(post.id);
+          if (!pd) return null;
+          const totalVotes = pd.options.reduce((s: number, o: any) => s + o.vote_count, 0);
+          const hasVoted = !!pd.myVoteId;
+          return (
+            <View style={{ marginHorizontal: 2, marginBottom: 10, gap: 8 }}>
+              {pd.options.map((opt: any) => {
+                const pct = totalVotes > 0 ? Math.round((opt.vote_count / totalVotes) * 100) : 0;
+                const isMyVote = pd.myVoteId === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => castVote(post.id, opt.id)}
+                    activeOpacity={0.8}
+                    style={{
+                      borderRadius: 10,
+                      borderWidth: 1.5,
+                      borderColor: isMyVote ? c.primary : c.separator,
+                      overflow: 'hidden',
+                    }}
+                    accessibilityRole="button" accessibilityLabel={`Vote for ${opt.text}`}
+                  >
+                    {hasVoted && (
+                      <View style={{
+                        position: 'absolute', left: 0, top: 0, bottom: 0,
+                        width: `${pct}%` as any,
+                        backgroundColor: isMyVote ? c.cardLavender : c.cardBlush,
+                      }} />
+                    )}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, zIndex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {isMyVote && <Ionicons name="checkmark" size={15} color={c.textPrimary} />}
+                        <Text style={{ fontSize: 14, fontWeight: isMyVote ? '700' : '500', color: c.textPrimary }}>
+                          {opt.text}
+                        </Text>
+                      </View>
+                      {hasVoted && (
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: c.textMuted }}>{pct}%</Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>
+                {totalVotes} vote{totalVotes !== 1 ? 's' : ''}{hasVoted ? ' · tap to change' : ' · tap to vote'}
+              </Text>
+            </View>
+          );
+        })()}
+        <View style={styles.postFooter}>
+          <View>
+            {reactionPickerPostId === post.id && (
+              <View style={{
+                flexDirection: 'row', gap: 4, marginBottom: 6,
+                backgroundColor: c.card, borderRadius: 24,
+                paddingHorizontal: 10, paddingVertical: 6,
+                shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.12, shadowRadius: 6, elevation: 4,
+                alignSelf: 'flex-start',
+              }}>
+                {['❤️','😂','😢','💪','🙌','👶'].map(emoji => (
+                  <TouchableOpacity key={emoji} onPress={() => setReaction(post.id, emoji)} style={{ padding: 4 }}
+                    accessibilityRole="button" accessibilityLabel={`React with ${emoji}`}>
+                    <Text style={{
+                      fontSize: myReactions.get(post.id) === emoji ? 26 : 22,
+                      opacity: myReactions.get(post.id) && myReactions.get(post.id) !== emoji ? 0.5 : 1,
+                    }}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.postAction}
+              onPress={() => setReactionPickerPostId(prev => prev === post.id ? null : post.id)}
+              hitSlop={hitSlopFor(24)}
+              accessibilityRole="button" accessibilityLabel="React to post"
+              accessibilityState={{ selected: !!myReactions.get(post.id) }}
+            >
+              {(() => {
+                const myR = myReactions.get(post.id);
+                const counts = reactionCounts.get(post.id) || {};
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    {myR || topEmojis.length ? (
+                      <Text style={{ fontSize: 15 }}>{myR || topEmojis.join('')}</Text>
+                    ) : (
+                      <Ionicons name="heart-outline" size={18} color={c.textMuted} />
+                    )}
+                    <Text style={[styles.postActionText, myR ? styles.likedText : null]}>
+                      {total > 0 ? total : ''}
+                    </Text>
+                  </View>
+                );
+              })()}
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={[styles.postAction, { gap: 4 }]} onPress={() => openComments(post.id)}
+            hitSlop={hitSlopFor(24)}
+            accessibilityRole="button" accessibilityLabel="Reply to post">
+            <Ionicons name="chatbubble-outline" size={17} color={c.textMuted} />
+          </TouchableOpacity>
+          {currentUserId && post.user_id !== currentUserId && (
+            <TouchableOpacity
+              style={[styles.postAction, { gap: 4 }]}
+              onPress={() => handleRepost(post)}
+              hitSlop={hitSlopFor(24)}
+              accessibilityRole="button" accessibilityLabel="Repost"
+              accessibilityState={{ selected: myRepostIds.has(post.id) }}
+            >
+              <Ionicons name="repeat" size={19} color={myRepostIds.has(post.id) ? c.sage : c.textMuted} />
+              {repostCounts.get(post.id) ? (
+                <Text style={[styles.postActionText, myRepostIds.has(post.id) && { color: c.sage, fontWeight: '700' }]}>
+                  {repostCounts.get(post.id)}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}
+            hitSlop={hitSlopFor(24)}
+            accessibilityRole="button" accessibilityLabel="Share post">
+            <Ionicons name="arrow-redo-outline" size={17} color={c.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.postAction, { marginLeft: 'auto' as any }]}
+            onPress={() => toggleSave(post.id)}
+            hitSlop={hitSlopFor(24)}
+            accessibilityRole="button" accessibilityLabel={savedPostIds.has(post.id) ? 'Unsave post' : 'Save post'}
+            accessibilityState={{ selected: savedPostIds.has(post.id) }}
+          >
+            <Ionicons
+              name={savedPostIds.has(post.id) ? 'bookmark' : 'bookmark-outline'}
+              size={17}
+              color={savedPostIds.has(post.id) ? c.primary : c.textMuted}
+            />
+          </TouchableOpacity>
+          {currentUserId && post.user_id !== currentUserId && (
+            reportedPostIds.has(post.id) ? (
+              <Text style={[styles.postActionText, { fontSize: 11, fontStyle: 'italic' }]}>Reported</Text>
+            ) : (
+              <TouchableOpacity
+                style={styles.postAction}
+                onPress={() => { setReportPostId(post.id); setReportReason(''); setReportDone(false); }}
+                hitSlop={hitSlopFor(24)}
+                accessibilityRole="button" accessibilityLabel="Report post"
+              >
+                <Ionicons name="flag-outline" size={16} color={c.textMuted} />
+              </TouchableOpacity>
+            )
+          )}
+        </View>
+        </>)}
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <View style={{ flex: 1, width: '100%', maxWidth: feedMaxWidth, alignSelf: 'center' }}>
       <ScrollView
         ref={mainScrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        {...(Platform.OS === 'web' ? { tabIndex: 0, dataSet: { scrollRoot: 'true' } } : {})}
         onScroll={e => { mainScrollYRef.current = e.nativeEvent.contentOffset.y; }}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefreshFeed} tintColor={c.primary} colors={[c.primary]} />
+        }
       >
-        <View style={styles.headingRow}>
-          <Text style={styles.heading}>
-            {greeting.text}{' '}
-            {greeting.icon === 'sun'
-              ? <Image source={require('../assets/sun-icon.png')} resizeMode="contain" style={styles.headingIcon} />
-              : greeting.icon === 'moon'
-              ? <Image source={require('../assets/moon-icon.png')} resizeMode="contain" style={styles.headingIcon} />
-              : '🌸'}
-          </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.brandRow}>
+            <Image source={require('../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+            <Text style={styles.brandText}>Parent Patch</Text>
+          </View>
           <HomeIconRow
             containerRef={iconRowRef}
             unreadNotifCount={unreadNotifCount}
             unreadMessageCount={unreadCount}
             onPressNotifications={() => setShowNotifications(true)}
             onPressMessages={() => { setMessageTargetUserId(null); setShowMessages(true); }}
-            onPressEvents={() => setShowEvents(true)}
             onPressSearch={() => setShowSearch(true)}
           />
         </View>
 
-        {/* Stories */}
-        <View ref={storiesRef}>
+        {/* Feed mode toggle — directly under the header, per the social-feed layout */}
+        <View style={styles.feedToggleRow}>
+          {(['for-you', 'following', 'friends', 'patches'] as const).map(mode => (
+            <TouchableOpacity
+              key={mode}
+              style={styles.feedToggleBtn}
+              onPress={() => setFeedMode(mode)}
+              activeOpacity={0.75}
+              accessibilityRole="button" accessibilityState={{ selected: feedMode === mode }}
+              accessibilityLabel={mode === 'for-you' ? 'For You feed'
+                  : mode === 'following' ? 'Following feed'
+                  : mode === 'friends' ? 'Friends feed'
+                  : 'Patches feed'}
+            >
+              <Text style={[styles.feedToggleText, feedMode === mode && styles.feedToggleTextActive]} numberOfLines={1}>
+                {mode === 'for-you' ? 'For You'
+                  : mode === 'following' ? 'Following'
+                  : mode === 'friends' ? 'Friends'
+                  : 'Patches'}
+              </Text>
+              {feedMode === mode && <View style={styles.feedToggleUnderline} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Stories — directly below the feed tabs */}
+        <View ref={storiesRef} style={{ paddingTop: 8 }}>
           <StoriesBar
             currentUserId={currentUserId}
             myName={displayName}
@@ -1492,40 +1959,35 @@ export default function HomeTab() {
           />
         </View>
 
-        {/* Patchy streak card */}
-        <StreakCard userId={currentUserId} refreshKey={streakRefreshKey} />
-
-        {/* Baby profile card */}
-        {baby && (
-          <BabyProfileCard baby={baby} onPress={() => setShowProfileSheet(true)} containerRef={babyCardRef} />
+        {/* Active topic filter — set by tapping a Trending Topic in Discover;
+            the chip row that used to sit here permanently has moved there. */}
+        {activeTag && (
+          <TouchableOpacity
+            onPress={() => setActiveTag(null)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: c.cardLavender, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
+            accessibilityRole="button" accessibilityLabel={`Clear topic filter ${activeTag}`}
+            hitSlop={hitSlopFor(32)}
+          >
+            <Text style={{ color: c.primary, fontWeight: '700', fontSize: 14 }}>{activeTag}</Text>
+            <Ionicons name="close" size={14} color={c.primary} />
+          </TouchableOpacity>
         )}
 
-        {/* Stat cards */}
-        <TodaySummaryCard stats={stats} loading={loading} containerRef={statRowRef} />
-
-        {/* Handoff notes */}
-        {activeBaby && (
-          <HandoffNotesCard latestNote={latestHandoffNote} onPress={() => setShowHandoffNotes(true)} />
+        {/* Active hashtag banner */}
+        {activeHashtag && (
+          <TouchableOpacity
+            onPress={() => setActiveHashtag(null)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: c.cardBlue, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
+            accessibilityRole="button" accessibilityLabel={`Clear hashtag filter #${activeHashtag}`}
+            hitSlop={hitSlopFor(32)}
+          >
+            <Text style={{ color: c.blue, fontWeight: '700', fontSize: 14 }}>#{activeHashtag}</Text>
+            <Ionicons name="close" size={14} color={c.blue} />
+          </TouchableOpacity>
         )}
-
-        {/* Reminders */}
-        <RemindersCard reminders={reminders} />
-
-        {/* Upcoming calendar events */}
-        <UpcomingEventsCard events={upcomingEvents} onPress={() => navigation.navigate('Calendar')} />
-
-        {/* Supplies overview card */}
-        <SuppliesSnapshotCard snapshot={suppliesSnap} />
-
-        {/* Tip of the day */}
-        <View ref={tipRef}>
-          <TipOfTheDayCard
-            onPress={(resourceId) => navigation.navigate('Resources', { initialResourceId: resourceId })}
-          />
-        </View>
 
         {/* Followed Q+A questions */}
-        {followedQuestions.length > 0 && (
+        {feedMode !== 'patches' && followedQuestions.length > 0 && (
           <View style={styles.followedQSection}>
             <Text style={styles.sectionTitle}>Questions You're Following</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.followedQScroll}>
@@ -1539,8 +2001,14 @@ export default function HomeTab() {
                 >
                   <Text style={styles.followedQContent} numberOfLines={3}>{q.content}</Text>
                   <View style={styles.followedQMeta}>
-                    <Text style={styles.followedQMetaText}>💬 {q.answer_count}</Text>
-                    <Text style={styles.followedQMetaText}>⬆ {q.vote_score}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Ionicons name="chatbubble-outline" size={12} color={c.textMuted} />
+                      <Text style={styles.followedQMetaText}>{q.answer_count}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Ionicons name="arrow-up-outline" size={12} color={c.textMuted} />
+                      <Text style={styles.followedQMetaText}>{q.vote_score}</Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -1549,10 +2017,10 @@ export default function HomeTab() {
         )}
 
         {/* Trending posts */}
-        {trendingPosts.length >= 2 && (
+        {feedMode !== 'patches' && trendingPosts.length >= 2 && (
           <View style={{ marginBottom: 16 }}>
             <View style={styles.forYouHeader}>
-              <Text style={{ fontSize: 18 }}>🔥</Text>
+              <Ionicons name="flame" size={18} color={c.blush} />
               <Text style={styles.forYouTitle}>Trending</Text>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
@@ -1567,20 +2035,29 @@ export default function HomeTab() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <UserAvatar userId={post.user_id} name={authorName} size={24} />
                     <Text style={styles.trendingCardAuthor} numberOfLines={1}>{authorName}</Text>
-                    {post.post_type !== 'text' && (
-                      <Text style={{ fontSize: 13 }}>
-                        {post.post_type === 'milestone' ? '🎉' : post.post_type === 'poll' ? '📊' : '❓'}
-                      </Text>
-                    )}
+                    <PostTypeBadge postType={post.post_type} size={12} />
                   </View>
-                  <Text style={styles.trendingCardContent} numberOfLines={3}>
-                    {post.content || (post.image_url ? '📷 Photo' : post.video_url ? '🎬 Video' : '')}
-                  </Text>
+                  {post.content ? (
+                    <Text style={styles.trendingCardContent} numberOfLines={3}>{post.content}</Text>
+                  ) : post.image_url ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="image-outline" size={13} color={c.textMuted} />
+                      <Text style={styles.trendingCardContent}>Photo</Text>
+                    </View>
+                  ) : post.video_url ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="videocam-outline" size={13} color={c.textMuted} />
+                      <Text style={styles.trendingCardContent}>Video</Text>
+                    </View>
+                  ) : null}
                   {post.tags && post.tags.length > 0 && (
                     <Text style={styles.trendingCardTag}>{post.tags[0]}</Text>
                   )}
                   <View style={styles.trendingCardFooter}>
-                    <Text style={styles.trendingCardStat}>❤️ {post.likes || 0}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="heart" size={12} color={c.blush} />
+                      <Text style={styles.trendingCardStat}>{post.likes || 0}</Text>
+                    </View>
                     <Text style={styles.trendingCardTime}>{getTimeAgo(post.created_at)}</Text>
                   </View>
                 </TouchableOpacity>
@@ -1589,226 +2066,40 @@ export default function HomeTab() {
           </View>
         )}
 
-        {/* Feed mode toggle */}
-        <View style={styles.feedToggleRow}>
-          {(['for-you', 'following', 'friends', 'patches'] as const).map(mode => (
-            <TouchableOpacity
-              key={mode}
-              style={styles.feedToggleBtn}
-              onPress={() => setFeedMode(mode)}
-              activeOpacity={0.75}
-              accessibilityRole="button" accessibilityLabel={mode === 'for-you' ? 'For You feed'
-                  : mode === 'following' ? 'Following feed'
-                  : mode === 'friends' ? 'Friends feed'
-                  : 'Patches feed'}
-            >
-              <Text style={[styles.feedToggleText, feedMode === mode && styles.feedToggleTextActive]}>
-                {mode === 'for-you' ? 'For You'
-                  : mode === 'following' ? 'Following'
-                  : mode === 'friends' ? 'Friends'
-                  : '🤝 Patches'}
-              </Text>
-              {feedMode === mode && <View style={styles.feedToggleUnderline} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Topic filter chips — hidden on Patches tab */}
-        {feedMode !== 'patches' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 4 }}>
-            {POST_TAGS.map(tag => (
-              <TouchableOpacity
-                key={tag}
-                onPress={() => setActiveTag(activeTag === tag ? null : tag)}
-                style={[styles.tagChip, activeTag === tag && styles.tagChipActive]}
-                accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}
-              >
-                <Text style={[styles.tagChipText, activeTag === tag && styles.tagChipTextActive]}>{tag}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Active hashtag banner */}
-        {feedMode !== 'patches' && activeHashtag && (
-          <TouchableOpacity
-            onPress={() => setActiveHashtag(null)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#E8F4FB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
-            accessibilityRole="button" accessibilityLabel={`Clear hashtag filter #${activeHashtag}`}
-          >
-            <Text style={{ color: '#57B2E8', fontWeight: '700', fontSize: 14 }}>#{activeHashtag}</Text>
-            <Text style={{ color: '#57B2E8', fontSize: 13 }}>✕</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Patches feed ─────────────────────────────────────────────────────── */}
-        {feedMode === 'patches' && (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: c.card, borderBottomWidth: 1, borderBottomColor: c.separator }}>
-              <Text style={{ fontSize: 13, color: c.textMuted, flex: 1, lineHeight: 18 }}>
-                Neighbors helping neighbors — ask for anything, offer when you can 💛
-              </Text>
-              {patchTasks.filter(t => t.status === 'open').length > 0 && (
-                <View style={{ backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 8 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: c.sage }}>
-                    {patchTasks.filter(t => t.status === 'open').length} open
-                  </Text>
-                </View>
-              )}
-            </View>
-            {/* Safety banner */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginHorizontal: 16, marginTop: 10, marginBottom: 2, backgroundColor: '#FEF9C3', borderRadius: 12, borderWidth: 1, borderColor: '#FDE047', padding: 12 }}>
-              <Text style={{ fontSize: 18, lineHeight: 22 }}>⚠️</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E', marginBottom: 2 }}>Safety Reminder</Text>
-                <Text style={{ fontSize: 12, color: '#713F12', lineHeight: 17 }}>
-                  Always verify who you're speaking with before meeting up. Never meet someone for the first time alone or in a private place — bring a friend or meet in a public location.
-                </Text>
-              </View>
-            </View>
-            {/* Category filter chips */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: c.card, borderBottomWidth: 1, borderBottomColor: c.separator }} contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 8, gap: 8 }}>
-              {[
-                { key: null,             label: 'All',         emoji: '🏘️' },
-                { key: 'meal_train',     label: 'Meal Train',  emoji: '🍲' },
-                { key: 'errand',         label: 'Errand',      emoji: '🛒' },
-                { key: 'recommendation', label: 'Recommend',   emoji: '📋' },
-                { key: 'playdate',       label: 'Playdate',    emoji: '🛝' },
-                { key: 'emergency',      label: 'Emergency',   emoji: '🚨' },
-                { key: 'general',        label: 'General Help', emoji: '💬' },
-              ].map(({ key, label, emoji }) => {
-                const active = patchCategoryFilter === key;
-                return (
-                  <TouchableOpacity
-                    key={String(key)}
-                    onPress={() => setPatchCategoryFilter(key)}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 4,
-                      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-                      borderWidth: 1.5,
-                      borderColor: active ? c.primary : c.separator,
-                      backgroundColor: active ? c.cardLavender : c.background,
-                    }}
-                    accessibilityRole="button" accessibilityLabel={`Filter by ${label}`}
-                  >
-                    <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                    <Text style={{ fontSize: 12, fontWeight: active ? '700' : '500', color: active ? c.primary : c.textMuted }}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            {(() => {
-              const visibleTasks = patchCategoryFilter ? patchTasks.filter(t => t.category === patchCategoryFilter) : patchTasks;
-              return visibleTasks.length === 0 ? (
-              <View style={styles.emptyFeed}>
-                <Text style={[styles.emptyFeedText, { fontSize: 32, marginBottom: 8 }]}>🏘️</Text>
-                <Text style={styles.emptyFeedText}>{patchTasks.length === 0 ? 'No patch requests yet.\nBe the first to ask for help!' : 'No requests in this category yet.'}</Text>
-              </View>
-            ) : (
-              visibleTasks.map(task => {
-                const PATCH_COLORS: Record<string, { bg: string; border: string }> = {
-                  meal_train:     { bg: c.cardHoney,   border: c.honey },
-                  errand:         { bg: c.cardBlush,   border: c.blush },
-                  recommendation: { bg: c.cardBlue,    border: c.blue },
-                  playdate:       { bg: c.cardSage,    border: c.sage },
-                  emergency:      { bg: '#FEE2E2',     border: '#DC2626' },
-                  general:        { bg: c.cardLavender, border: c.lavender },
-                };
-                const PATCH_EMOJI: Record<string, string> = {
-                  meal_train: '🍲', errand: '🛒', recommendation: '📋',
-                  playdate: '🛝', emergency: '🚨', general: '💬',
-                };
-                const PATCH_LABEL: Record<string, string> = {
-                  meal_train: 'Meal Train', errand: 'Errand Run', recommendation: 'Recommend',
-                  playdate: 'Playdate', emergency: 'Emergency', general: 'General Help',
-                };
-                const pc = PATCH_COLORS[task.category] ?? PATCH_COLORS.general;
-                const isOwn = task.creator_id === currentUserId;
-                const volunteered = myPatchVolunteered.has(task.id);
-                const volCount = patchVolCounts[task.id] ?? 0;
-                const authorName = task.profiles?.display_name || task.profiles?.username || 'A parent';
-                return (
-                  <View key={task.id} style={[styles.postCard, { borderLeftWidth: 5, borderLeftColor: pc.border, backgroundColor: pc.bg }]}>
-                    {/* Top row: category + urgency + time */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                      <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, backgroundColor: pc.border + '22', borderColor: pc.border }}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: pc.border }}>
-                          {PATCH_EMOJI[task.category] ?? '💬'} {PATCH_LABEL[task.category] ?? 'General Help'}
-                        </Text>
-                      </View>
-                      {task.urgency === 'emergency' && (
-                        <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#DC2626' }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>🚨 ASAP</Text>
-                        </View>
-                      )}
-                      {task.urgency === 'urgent' && (
-                        <View style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#D97706' }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>⚡ Urgent</Text>
-                        </View>
-                      )}
-                      <Text style={{ fontSize: 11, color: c.textMuted, marginLeft: 'auto' as any }}>
-                        {getTimeAgo(task.created_at)}
-                      </Text>
-                    </View>
-                    {/* Title */}
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 4, lineHeight: 21 }}>{task.title}</Text>
-                    {/* Description */}
-                    {task.description ? (
-                      <Text style={{ fontSize: 13, color: c.textSecondary, lineHeight: 19, marginBottom: 10 }} numberOfLines={3}>{task.description}</Text>
-                    ) : null}
-                    {/* Footer */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 12, color: c.textMuted }}>from {authorName}</Text>
-                        {volCount > 0 && (
-                          <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>
-                            💛 {volCount} {volCount === 1 ? 'parent' : 'parents'} helping
-                          </Text>
-                        )}
-                      </View>
-                      {task.status === 'completed' ? (
-                        <View style={{ backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: c.sage }}>✓ Done</Text>
-                        </View>
-                      ) : isOwn ? (
-                        <TouchableOpacity
-                          onPress={() => handlePatchComplete(task.id)}
-                          style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: pc.border }}
-                          accessibilityRole="button" accessibilityLabel="Mark patch request done"
-                        >
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: pc.border }}>Mark Done</Text>
-                        </TouchableOpacity>
-                      ) : volunteered ? (
-                        <TouchableOpacity
-                          onPress={() => handlePatchWithdraw(task.id)}
-                          style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey }}
-                          accessibilityRole="button" accessibilityLabel="Withdraw from helping"
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: c.honey }}>💛 Helping</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity
-                          onPress={() => handlePatchVolunteer(task.id)}
-                          style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: pc.border }}
-                          accessibilityRole="button" accessibilityLabel="Volunteer to help"
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>🙋 I Can Help!</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })
-            );
-          })()}
-          </>
-        )}
-
         {/* ── Post feeds (For You / Following / Friends) ───────────────────────── */}
+        {feedInitialLoading && filteredPosts.length === 0 && (
+          <View style={styles.emptyFeed}>
+            <ActivityIndicator color={c.primary} />
+          </View>
+        )}
         {feedMode === 'for-you' && postsLoadError && posts.length === 0 && (
           <LoadErrorBanner message="Couldn't load your feed." onRetry={fetchPosts} />
         )}
-        {feedMode !== 'patches' && filteredPosts.length === 0 && (
+        {!feedInitialLoading && feedMode === 'patches' && filteredPosts.length === 0 && (
+          <View style={styles.emptyFeed}>
+            {myVillageIdsSet.size === 0 ? (
+              <>
+                <Text style={styles.emptyFeedText}>Your Patches will show up here</Text>
+                <Text style={[styles.emptyFeedText, { fontWeight: '500', marginTop: 4 }]}>
+                  Join communities for your parenting stage, interests, or experiences.
+                </Text>
+                <TouchableOpacity
+                  style={{ marginTop: 14, backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 20, paddingVertical: 12 }}
+                  onPress={() => navigation.navigate('Discover')}
+                  accessibilityRole="button" accessibilityLabel="Discover Patches"
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Discover Patches</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.emptyFeedText}>
+                It's quiet in your Patches{'\n'}Visit a community or share something to get the conversation going.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {!feedInitialLoading && feedMode !== 'patches' && filteredPosts.length === 0 && (
           <View style={styles.emptyFeed}>
             <Text style={styles.emptyFeedText}>
               {feedMode === 'friends'
@@ -1824,250 +2115,18 @@ export default function HomeTab() {
           </View>
         )}
 
-        {feedMode !== 'patches' && filteredPosts.map((post) => (
-          <View key={post.id} style={[styles.postCard, {
-            borderLeftWidth: 4,
-            borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
-              : post.post_type === 'question' ? c.postQuestion
-              : c.postText,
-          }]}>
-            {post.is_sensitive && !revealedSensitiveIds.has(post.id) ? (
-              <View style={{ padding: 16, gap: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={28} />
-                  <Text style={styles.postAuthorName}>{resolveAuthorName(post)}</Text>
-                  <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                </View>
-                <View style={{ backgroundColor: c.cardHoney, borderRadius: 12, padding: 14, gap: 6, borderWidth: 1, borderColor: c.honey }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400E' }}>⚠️ Sensitive Content</Text>
-                  {post.sensitive_label ? (
-                    <Text style={{ fontSize: 13, color: '#78350F', lineHeight: 18 }}>
-                      This post is marked as: <Text style={{ fontWeight: '700' }}>{post.sensitive_label}</Text>
-                    </Text>
-                  ) : (
-                    <Text style={{ fontSize: 13, color: '#78350F', lineHeight: 18 }}>
-                      The author has marked this post as sensitive.
-                    </Text>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => setRevealedSensitiveIds(prev => { const s = new Set(prev); s.add(post.id); return s; })}
-                    style={{ alignSelf: 'flex-start', marginTop: 4, backgroundColor: '#92400E', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6 }}
-                    accessibilityRole="button" accessibilityLabel="Show sensitive post"
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Show post</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-            {(!post.is_sensitive || revealedSensitiveIds.has(post.id)) && (<>
-            <View style={styles.postHeader}>
-              <TouchableOpacity
-                style={styles.postAuthorRow}
-                onPress={() => setPublicProfileUserId(post.user_id)}
-                activeOpacity={0.7}
-                accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
-              >
-                <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={36} />
-                <View>
-                  <Text style={styles.postAuthorName}>{resolveAuthorName(post)}</Text>
-                  <Text style={styles.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.postHeaderRight}>
-                {post.post_type !== 'text' && (
-                  <View style={[
-                    styles.postBadge,
-                    post.post_type === 'milestone' ? { backgroundColor: c.cardHoney }
-                      : post.post_type === 'poll' ? { backgroundColor: c.cardSage }
-                      : { backgroundColor: c.cardBlue },
-                  ]}>
-                    <Text>{post.post_type === 'milestone' ? '🎉' : post.post_type === 'poll' ? '📊' : '❓'}</Text>
-                  </View>
-                )}
-                {currentUserId && post.user_id !== currentUserId && (
-                  <TouchableOpacity
-                    onPress={() => handleFollowToggle(post.user_id)}
-                    style={[styles.followBtn, followingUserIds.has(post.user_id) && styles.followBtnActive]}
-                    activeOpacity={0.75}
-                    accessibilityRole="button" accessibilityLabel={followingUserIds.has(post.user_id) ? `Unfollow ${resolveAuthorName(post)}` : `Follow ${resolveAuthorName(post)}`}
-                  >
-                    <Text style={[styles.followBtnText, followingUserIds.has(post.user_id) && styles.followBtnTextActive]}>
-                      {followingUserIds.has(post.user_id) ? '✓ Following' : '+ Follow'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {post.user_id === currentUserId && (
-                  <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}
-                    accessibilityRole="button" accessibilityLabel="Delete post">
-                    <Text style={styles.postDeleteText}>🗑</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-            {post.village_id && VILLAGE_MAP[post.village_id] && (
-              <View style={styles.villageTag}>
-                <Text style={styles.villageTagText}>
-                  {VILLAGE_MAP[post.village_id].emoji} {VILLAGE_MAP[post.village_id].name}
-                </Text>
-              </View>
-            )}
-            {post.content
-              ? renderTextWithMentions(post.content, styles.postContent, c.primary, openMentionedUser, tag => setActiveHashtag(tag))
-              : null}
-            {post.image_url ? (
-              <Image
-                source={{ uri: post.image_url }}
-                style={styles.postImage}
-                resizeMode="cover"
-              />
-            ) : null}
-            {post.video_url ? <VideoPostPlayer uri={post.video_url} /> : null}
-            {post.tags && post.tags.length > 0 && (
-              <View style={styles.postTagsRow}>
-                {post.tags.map(tag => (
-                  <TouchableOpacity key={tag} onPress={() => setActiveTag(tag)} style={styles.postTagChip}
-                    accessibilityRole="button" accessibilityLabel={`Filter by ${tag}`}>
-                    <Text style={styles.postTagChipText}>{tag}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {post.post_type === 'poll' && (() => {
-              const pd = pollData.get(post.id);
-              if (!pd) return null;
-              const totalVotes = pd.options.reduce((s: number, o: any) => s + o.vote_count, 0);
-              const hasVoted = !!pd.myVoteId;
-              return (
-                <View style={{ marginHorizontal: 2, marginBottom: 10, gap: 8 }}>
-                  {pd.options.map((opt: any) => {
-                    const pct = totalVotes > 0 ? Math.round((opt.vote_count / totalVotes) * 100) : 0;
-                    const isMyVote = pd.myVoteId === opt.id;
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        onPress={() => castVote(post.id, opt.id)}
-                        activeOpacity={0.8}
-                        style={{
-                          borderRadius: 10,
-                          borderWidth: 1.5,
-                          borderColor: isMyVote ? c.primary : c.separator,
-                          overflow: 'hidden',
-                        }}
-                        accessibilityRole="button" accessibilityLabel={`Vote for ${opt.text}`}
-                      >
-                        {hasVoted && (
-                          <View style={{
-                            position: 'absolute', left: 0, top: 0, bottom: 0,
-                            width: `${pct}%` as any,
-                            backgroundColor: isMyVote ? c.cardLavender : c.cardBlush,
-                          }} />
-                        )}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, zIndex: 1 }}>
-                          <Text style={{ fontSize: 14, fontWeight: isMyVote ? '700' : '500', color: c.textPrimary }}>
-                            {isMyVote ? '✓ ' : ''}{opt.text}
-                          </Text>
-                          {hasVoted && (
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: c.textMuted }}>{pct}%</Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                  <Text style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>
-                    {totalVotes} vote{totalVotes !== 1 ? 's' : ''}{hasVoted ? ' · tap to change' : ' · tap to vote'}
-                  </Text>
-                </View>
-              );
-            })()}
-            <View style={styles.postFooter}>
-              <View>
-                {reactionPickerPostId === post.id && (
-                  <View style={{
-                    flexDirection: 'row', gap: 4, marginBottom: 6,
-                    backgroundColor: c.card, borderRadius: 24,
-                    paddingHorizontal: 10, paddingVertical: 6,
-                    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.12, shadowRadius: 6, elevation: 4,
-                    alignSelf: 'flex-start',
-                  }}>
-                    {['❤️','😂','😢','💪','🙌','👶'].map(emoji => (
-                      <TouchableOpacity key={emoji} onPress={() => setReaction(post.id, emoji)} style={{ padding: 4 }}
-                        accessibilityRole="button" accessibilityLabel={`React with ${emoji}`}>
-                        <Text style={{
-                          fontSize: myReactions.get(post.id) === emoji ? 26 : 22,
-                          opacity: myReactions.get(post.id) && myReactions.get(post.id) !== emoji ? 0.5 : 1,
-                        }}>{emoji}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                <TouchableOpacity
-                  style={styles.postAction}
-                  onPress={() => setReactionPickerPostId(prev => prev === post.id ? null : post.id)}
-                  accessibilityRole="button" accessibilityLabel="React to post"
-                >
-                  {(() => {
-                    const myR = myReactions.get(post.id);
-                    const counts = reactionCounts.get(post.id) || {};
-                    const total = Object.values(counts).reduce((a, b) => a + b, 0);
-                    const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
-                    return (
-                      <Text style={[styles.postActionText, myR ? styles.likedText : null]}>
-                        {myR || (topEmojis.length ? topEmojis.join('') : '🤍')} {total > 0 ? total : ''}
-                      </Text>
-                    );
-                  })()}
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={styles.postAction} onPress={() => openComments(post.id)}
-                accessibilityRole="button" accessibilityLabel="Reply to post">
-                <Text style={styles.postActionText}>💬 Reply</Text>
-              </TouchableOpacity>
-              {currentUserId && post.user_id !== currentUserId && (
-                <TouchableOpacity
-                  style={styles.postAction}
-                  onPress={() => handleRepost(post)}
-                  accessibilityRole="button" accessibilityLabel="Repost"
-                >
-                  <Text style={[styles.postActionText, myRepostIds.has(post.id) && { color: c.primary, fontWeight: '700' }]}>
-                    ↻ Repost{repostCounts.get(post.id) ? ` ${repostCounts.get(post.id)}` : ''}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.postAction} onPress={() => handleShare(post)}
-                accessibilityRole="button" accessibilityLabel="Share post">
-                <Text style={styles.postActionText}>↗ Share</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.postAction, { marginLeft: 'auto' as any }]}
-                onPress={() => toggleSave(post.id)}
-                accessibilityRole="button" accessibilityLabel={savedPostIds.has(post.id) ? 'Unsave post' : 'Save post'}
-              >
-                <Text style={styles.postActionText}>{savedPostIds.has(post.id) ? '🔖' : '🏷️'}</Text>
-              </TouchableOpacity>
-              {currentUserId && post.user_id !== currentUserId && (
-                reportedPostIds.has(post.id) ? (
-                  <Text style={[styles.postActionText, { fontSize: 11, fontStyle: 'italic' }]}>Reported</Text>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.postAction}
-                    onPress={() => { setReportPostId(post.id); setReportReason(''); setReportDone(false); }}
-                    accessibilityRole="button" accessibilityLabel="Report post"
-                  >
-                    <Text style={styles.postActionText}>🚩</Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-            </>)}
-          </View>
+        {feedItems.map((item) => (
+          item.kind === 'insert'
+            ? <React.Fragment key={item.key}>{item.node}</React.Fragment>
+            : <React.Fragment key={item.post.id}>{renderPostCard(item.post)}</React.Fragment>
         ))}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </View>
 
       {/* Search sheet */}
-      <SearchSheet visible={showSearch} onClose={() => setShowSearch(false)} />
+      <SearchSheet visible={showSearch} onClose={() => { setShowSearch(false); restoreScrollFocus(); }} />
 
       <HandoffNotesSheet
         visible={showHandoffNotes}
@@ -2091,10 +2150,19 @@ export default function HomeTab() {
         onMessage={(uid) => { setPublicProfileUserId(null); setMessageTargetUserId(uid); setShowMessages(true); }}
       />
 
+      {/* Patch feed sheet — opened by tapping a post's Patch tag */}
+      <VillageFeedSheet
+        village={feedVillage}
+        visible={feedVillage !== null}
+        onClose={() => setFeedVillage(null)}
+        joined={feedVillage !== null && myVillageIdsSet.has(feedVillage.id)}
+        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+      />
+
       {/* Messages */}
       <Modal visible={showMessages} animationType="slide" presentationStyle="fullScreen">
         <MessagesInbox
-          onBack={() => { setShowMessages(false); setMessageTargetUserId(null); if (currentUserId) fetchUnreadCount(currentUserId); }}
+          onBack={() => { setShowMessages(false); setMessageTargetUserId(null); if (currentUserId) fetchUnreadCount(currentUserId); restoreScrollFocus(); }}
           openWithUserId={messageTargetUserId}
         />
       </Modal>
@@ -2102,13 +2170,8 @@ export default function HomeTab() {
       {/* Notifications */}
       <Modal visible={showNotifications} animationType="slide" presentationStyle="fullScreen">
         <NotificationsScreen
-          onBack={() => { setShowNotifications(false); if (currentUserId) fetchUnreadNotifCount(currentUserId); }}
+          onBack={() => { setShowNotifications(false); if (currentUserId) fetchUnreadNotifCount(currentUserId); restoreScrollFocus(); }}
         />
-      </Modal>
-
-      {/* Events */}
-      <Modal visible={showEvents} animationType="slide" presentationStyle="fullScreen">
-        <EventsScreen onBack={() => setShowEvents(false)} />
       </Modal>
 
       {/* Comments modal */}
@@ -2123,7 +2186,7 @@ export default function HomeTab() {
             <Text style={styles.modalTitle}>Post</Text>
             <TouchableOpacity onPress={() => { setCommentPostId(null); setSelectedPost(null); }}
               accessibilityRole="button" accessibilityLabel="Close">
-              <Text style={styles.modalClose}>✕</Text>
+              <Ionicons name="close" size={20} color={c.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -2199,7 +2262,9 @@ export default function HomeTab() {
                     <TouchableOpacity
                       style={styles.postAction}
                       onPress={() => setReactionPickerPostId(prev => prev === selectedPost.id ? null : selectedPost.id)}
+                      hitSlop={hitSlopFor(24)}
                       accessibilityRole="button" accessibilityLabel="React to post"
+                      accessibilityState={{ selected: !!myReactions.get(selectedPost.id) }}
                     >
                       {(() => {
                         const myR = myReactions.get(selectedPost.id);
@@ -2207,31 +2272,50 @@ export default function HomeTab() {
                         const total = Object.values(counts).reduce((a, b) => a + b, 0);
                         const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
                         return (
-                          <Text style={[styles.postActionText, myR ? styles.likedText : null]}>
-                            {myR || (topEmojis.length ? topEmojis.join('') : '🤍')} {total > 0 ? total : ''}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            {myR || topEmojis.length ? (
+                              <Text style={{ fontSize: 15 }}>{myR || topEmojis.join('')}</Text>
+                            ) : (
+                              <Ionicons name="heart-outline" size={18} color={c.textMuted} />
+                            )}
+                            <Text style={[styles.postActionText, myR ? styles.likedText : null]}>
+                              {total > 0 ? total : ''}
+                            </Text>
+                          </View>
                         );
                       })()}
                     </TouchableOpacity>
                   </View>
                   {currentUserId && selectedPost.user_id !== currentUserId && (
-                    <TouchableOpacity style={styles.postAction} onPress={() => handleRepost(selectedPost)}
-                      accessibilityRole="button" accessibilityLabel="Repost">
-                      <Text style={[styles.postActionText, myRepostIds.has(selectedPost.id) && { color: c.primary, fontWeight: '700' }]}>
-                        ↻ Repost{repostCounts.get(selectedPost.id) ? ` ${repostCounts.get(selectedPost.id)}` : ''}
-                      </Text>
+                    <TouchableOpacity style={[styles.postAction, { gap: 4 }]} onPress={() => handleRepost(selectedPost)}
+                      hitSlop={hitSlopFor(24)}
+                      accessibilityRole="button" accessibilityLabel="Repost"
+                      accessibilityState={{ selected: myRepostIds.has(selectedPost.id) }}>
+                      <Ionicons name="repeat" size={19} color={myRepostIds.has(selectedPost.id) ? c.sage : c.textMuted} />
+                      {repostCounts.get(selectedPost.id) ? (
+                        <Text style={[styles.postActionText, myRepostIds.has(selectedPost.id) && { color: c.sage, fontWeight: '700' }]}>
+                          {repostCounts.get(selectedPost.id)}
+                        </Text>
+                      ) : null}
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.postAction} onPress={() => handleShare(selectedPost)}
+                    hitSlop={hitSlopFor(24)}
                     accessibilityRole="button" accessibilityLabel="Share post">
-                    <Text style={styles.postActionText}>↗ Share</Text>
+                    <Ionicons name="arrow-redo-outline" size={17} color={c.textMuted} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.postAction, { marginLeft: 'auto' as any }]}
                     onPress={() => toggleSave(selectedPost.id)}
+                    hitSlop={hitSlopFor(24)}
                     accessibilityRole="button" accessibilityLabel={savedPostIds.has(selectedPost.id) ? 'Unsave post' : 'Save post'}
+                    accessibilityState={{ selected: savedPostIds.has(selectedPost.id) }}
                   >
-                    <Text style={styles.postActionText}>{savedPostIds.has(selectedPost.id) ? '🔖' : '🏷️'}</Text>
+                    <Ionicons
+                      name={savedPostIds.has(selectedPost.id) ? 'bookmark' : 'bookmark-outline'}
+                      size={17}
+                      color={savedPostIds.has(selectedPost.id) ? c.primary : c.textMuted}
+                    />
                   </TouchableOpacity>
                 </View>
                 <View style={{ height: 1, backgroundColor: c.separator, marginTop: 8, marginBottom: 12 }} />
@@ -2263,7 +2347,7 @@ export default function HomeTab() {
                           ) : (
                             <TouchableOpacity onPress={() => { setReportCommentId(cm.id); setReportCommentReason(''); setReportCommentDone(false); }}
                               accessibilityRole="button" accessibilityLabel="Report comment">
-                              <Text style={{ fontSize: 12, color: c.textMuted }}>🚩</Text>
+                              <Ionicons name="flag-outline" size={13} color={c.textMuted} />
                             </TouchableOpacity>
                           )
                         )}
@@ -2295,7 +2379,7 @@ export default function HomeTab() {
                 <Text style={styles.replyingToText}>Replying to <Text style={{ fontWeight: '700' }}>@{resolveAuthorName(replyingTo)}</Text></Text>
                 <TouchableOpacity onPress={() => { setReplyingTo(null); setCommentText(''); }}
                   accessibilityRole="button" accessibilityLabel="Cancel reply">
-                  <Text style={styles.replyingToCancel}>✕</Text>
+                  <Ionicons name="close" size={16} color={styles.replyingToCancel.color} />
                 </TouchableOpacity>
               </View>
             )}
@@ -2335,12 +2419,12 @@ export default function HomeTab() {
             <Text style={styles.modalTitle}>Report Post</Text>
             <TouchableOpacity onPress={() => { setReportPostId(null); setReportDone(false); }}
               accessibilityRole="button" accessibilityLabel="Close">
-              <Text style={styles.modalClose}>✕</Text>
+              <Ionicons name="close" size={20} color={c.textMuted} />
             </TouchableOpacity>
           </View>
           {reportDone ? (
             <View style={styles.reportDoneContainer}>
-              <Text style={styles.reportDoneEmoji}>✅</Text>
+              <Ionicons name="checkmark-circle" size={44} color={c.sage} style={styles.reportDoneEmoji} />
               <Text style={styles.reportDoneTitle}>Report Submitted</Text>
               <Text style={styles.reportDoneBody}>Thank you for helping keep the community safe. We'll review this post.</Text>
               <TouchableOpacity
@@ -2394,12 +2478,12 @@ export default function HomeTab() {
             <Text style={styles.modalTitle}>Report Comment</Text>
             <TouchableOpacity onPress={() => { setReportCommentId(null); setReportCommentDone(false); }}
               accessibilityRole="button" accessibilityLabel="Close">
-              <Text style={styles.modalClose}>✕</Text>
+              <Ionicons name="close" size={20} color={c.textMuted} />
             </TouchableOpacity>
           </View>
           {reportCommentDone ? (
             <View style={styles.reportDoneContainer}>
-              <Text style={styles.reportDoneEmoji}>✅</Text>
+              <Ionicons name="checkmark-circle" size={44} color={c.sage} style={styles.reportDoneEmoji} />
               <Text style={styles.reportDoneTitle}>Report Submitted</Text>
               <Text style={styles.reportDoneBody}>Thank you for helping keep the community safe. We'll review this comment.</Text>
               <TouchableOpacity
@@ -2441,13 +2525,15 @@ export default function HomeTab() {
         </SafeAreaView>
       </Modal>
 
-      {/* Floating action button */}
+      {/* Floating action button — opens the same global create-options sheet as
+          the bottom-nav Create tab (owned at the app root, see App.tsx), so
+          there's one consistent entry point regardless of where it's tapped from. */}
       <TouchableOpacity
         ref={fabRef}
         style={styles.fab}
-        onPress={() => setShowCreatePost(true)}
+        onPress={requestCreate}
         activeOpacity={0.85}
-        accessibilityRole="button" accessibilityLabel="Create new post"
+        accessibilityRole="button" accessibilityLabel="Create"
       >
         <Text style={styles.fabIcon}>＋</Text>
       </TouchableOpacity>
@@ -2520,12 +2606,17 @@ export default function HomeTab() {
                 {(['text', 'milestone', 'question', 'poll'] as Post['post_type'][]).map((t) => (
                   <TouchableOpacity
                     key={t}
-                    style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive]}
+                    style={[styles.postTypeButton, postType === t && styles.postTypeButtonActive, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
                     onPress={() => setPostType(t)}
                     accessibilityRole="button" accessibilityLabel={`${t} post type`}
                   >
+                    <Ionicons
+                      name={t === 'text' ? 'chatbubble-outline' : t === 'milestone' ? 'trophy-outline' : t === 'question' ? 'help-circle-outline' : 'bar-chart-outline'}
+                      size={14}
+                      color={postType === t ? styles.postTypeTextActive.color : styles.postTypeText.color}
+                    />
                     <Text style={[styles.postTypeText, postType === t && styles.postTypeTextActive]}>
-                      {t === 'text' ? '💬 Update' : t === 'milestone' ? '🎉 Milestone' : t === 'question' ? '❓ Question' : '📊 Poll'}
+                      {t === 'text' ? 'Update' : t === 'milestone' ? 'Milestone' : t === 'question' ? 'Question' : 'Poll'}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -2550,35 +2641,36 @@ export default function HomeTab() {
 
               {showMentalHealthBanner && !dismissedHealthBanner && (
                 <View style={{
-                  backgroundColor: '#FFFBEB', borderRadius: 12, padding: 14, marginTop: 8,
-                  borderLeftWidth: 4, borderLeftColor: '#F59E0B',
+                  backgroundColor: c.reminderWarning.bg, borderRadius: 12, padding: 14, marginTop: 8,
+                  borderLeftWidth: 4, borderLeftColor: c.reminderWarning.border,
                 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#92400E', flex: 1, marginRight: 8 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: c.reminderWarning.text, flex: 1, marginRight: 8 }}>
                       You're not alone 💛
                     </Text>
                     <TouchableOpacity onPress={() => setDismissedHealthBanner(true)}
+                      hitSlop={hitSlopFor(22)}
                       accessibilityRole="button" accessibilityLabel="Dismiss support banner">
-                      <Text style={{ fontSize: 16, color: '#92400E', opacity: 0.6 }}>✕</Text>
+                      <Ionicons name="close" size={16} color={c.reminderWarning.text} style={{ opacity: 0.6 }} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={{ fontSize: 13, color: '#78350F', marginTop: 4, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 13, color: c.reminderWarning.text, marginTop: 4, lineHeight: 18 }}>
                     It sounds like you might be going through a tough time. Free, confidential support is available.
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                     <TouchableOpacity
                       onPress={() => Linking.openURL('https://www.postpartum.net')}
-                      style={{ backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                      style={{ backgroundColor: c.reminderWarning.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
                       accessibilityRole="link" accessibilityLabel="Open Postpartum Support website"
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Postpartum Support</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: c.textOnColored }}>Postpartum Support</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => Linking.openURL('tel:988')}
-                      style={{ backgroundColor: '#92400E', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                      style={{ backgroundColor: c.reminderWarning.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
                       accessibilityRole="button" accessibilityLabel="Call or text 988"
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Call/Text 988</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: c.textOnColored }}>Call/Text 988</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2598,7 +2690,7 @@ export default function HomeTab() {
                       {i >= 2 && (
                         <TouchableOpacity onPress={() => setPollOptions(prev => prev.filter((_, j) => j !== i))}
                           accessibilityRole="button" accessibilityLabel={`Remove option ${i + 1}`}>
-                          <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
+                          <Ionicons name="close" size={18} color={c.textMuted} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -2693,7 +2785,7 @@ export default function HomeTab() {
                     onPress={() => setPendingPostImageUri(null)}
                     accessibilityRole="button" accessibilityLabel="Remove photo"
                   >
-                    <Text style={styles.removePostImageText}>✕</Text>
+                    <Ionicons name="close" size={16} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -2706,19 +2798,21 @@ export default function HomeTab() {
                     onPress={() => setPendingPostVideoUri(null)}
                     accessibilityRole="button" accessibilityLabel="Remove video"
                   >
-                    <Text style={styles.removePostImageText}>✕</Text>
+                    <Ionicons name="close" size={16} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPostImage}
+                <TouchableOpacity style={[styles.addPhotoBtn, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={pickPostImage}
                   accessibilityRole="button" accessibilityLabel="Add photo">
-                  <Text style={styles.addPhotoBtnText}>📷  Photo</Text>
+                  <Ionicons name="image-outline" size={16} color={c.primary} />
+                  <Text style={styles.addPhotoBtnText}>Photo</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.addPhotoBtn, { backgroundColor: '#E8E4F7' }]} onPress={pickPostVideo}
+                <TouchableOpacity style={[styles.addPhotoBtn, { backgroundColor: c.cardLavender, flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={pickPostVideo}
                   accessibilityRole="button" accessibilityLabel="Add video">
-                  <Text style={styles.addPhotoBtnText}>🎬  Video</Text>
+                  <Ionicons name="videocam-outline" size={16} color={c.primary} />
+                  <Text style={styles.addPhotoBtnText}>Video</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -2787,12 +2881,17 @@ export default function HomeTab() {
             {(['photo', 'video', 'text'] as const).map(mode => (
               <TouchableOpacity
                 key={mode}
-                style={[styles.postTypeButton, storyMode === mode && styles.postTypeButtonActive, { flex: 1 }]}
+                style={[styles.postTypeButton, storyMode === mode && styles.postTypeButtonActive, { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }]}
                 onPress={() => setStoryMode(mode)}
                 accessibilityRole="button" accessibilityLabel={`${mode} story`}
               >
+                <Ionicons
+                  name={mode === 'photo' ? 'image-outline' : mode === 'video' ? 'videocam-outline' : 'create-outline'}
+                  size={14}
+                  color={storyMode === mode ? styles.postTypeTextActive.color : styles.postTypeText.color}
+                />
                 <Text style={[styles.postTypeText, storyMode === mode && styles.postTypeTextActive, { textAlign: 'center' }]}>
-                  {mode === 'photo' ? '📷 Photo' : mode === 'video' ? '🎬 Video' : '✏️ Text'}
+                  {mode === 'photo' ? 'Photo' : mode === 'video' ? 'Video' : 'Text'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -2807,13 +2906,13 @@ export default function HomeTab() {
                       <Image source={{ uri: storyImageUri }} style={[styles.postImagePreview, { height: 360 }]} resizeMode="cover" />
                       <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryImageUri(null)}
                         accessibilityRole="button" accessibilityLabel="Remove photo">
-                        <Text style={styles.removePostImageText}>✕</Text>
+                        <Ionicons name="close" size={16} color="#fff" />
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48 }]} onPress={pickStoryImage}
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, alignItems: 'center' }]} onPress={pickStoryImage}
                       accessibilityRole="button" accessibilityLabel="Pick a photo for story">
-                      <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>📷</Text>
+                      <Ionicons name="image-outline" size={36} color={c.primary} style={{ marginBottom: 12 }} />
                       <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a photo</Text>
                     </TouchableOpacity>
                   )}
@@ -2825,13 +2924,13 @@ export default function HomeTab() {
                       <VideoPostPlayer uri={storyVideoUri} />
                       <TouchableOpacity style={styles.removePostImageBtn} onPress={() => setStoryVideoUri(null)}
                         accessibilityRole="button" accessibilityLabel="Remove video">
-                        <Text style={styles.removePostImageText}>✕</Text>
+                        <Ionicons name="close" size={16} color="#fff" />
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, backgroundColor: '#E8E4F7' }]} onPress={pickStoryVideo}
+                    <TouchableOpacity style={[styles.addPhotoBtn, { paddingVertical: 48, backgroundColor: c.cardLavender, alignItems: 'center' }]} onPress={pickStoryVideo}
                       accessibilityRole="button" accessibilityLabel="Pick a video for story">
-                      <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>🎬</Text>
+                      <Ionicons name="videocam-outline" size={36} color={c.primary} style={{ marginBottom: 12 }} />
                       <Text style={[styles.addPhotoBtnText, { textAlign: 'center' }]}>Tap to pick a video</Text>
                       <Text style={{ fontSize: 12, color: c.textMuted, textAlign: 'center', marginTop: 6 }}>Max 30 seconds</Text>
                     </TouchableOpacity>
@@ -2926,21 +3025,26 @@ function makeStyles(c: Colors) {
       padding: 24,
       paddingBottom: 40,
     },
-    headingRow: {
+    headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 24,
+      marginBottom: 4,
     },
-    headingIcon: { width: 34, height: 34 },
-    heading: {
-      fontSize: 26,
+    brandRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    brandLogo: { width: 28, height: 28, borderRadius: 8 },
+    brandText: {
+      fontSize: 20,
       fontWeight: '800',
-      color: c.textSecondary,
+      color: c.textPrimary,
+      letterSpacing: 0.2,
     },
     sectionTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      ...typography.sectionTitle,
       color: c.textSecondary,
       marginBottom: 14,
     },
@@ -3021,7 +3125,7 @@ function makeStyles(c: Colors) {
       borderRadius: 20,
     },
     submitButtonDisabled: {
-      backgroundColor: '#d1d5db',
+      backgroundColor: c.primaryDisabled,
     },
     submitButtonText: {
       color: '#fff',
@@ -3029,15 +3133,11 @@ function makeStyles(c: Colors) {
       fontWeight: '600',
     },
     postCard: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 10,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 2,
+      backgroundColor: c.bg,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
     },
     postHeader: {
       flexDirection: 'row',
@@ -3050,26 +3150,12 @@ function makeStyles(c: Colors) {
       gap: 10,
       alignItems: 'center',
     },
-    postAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: c.boyBg,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    postAvatarText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: c.primary,
-    },
     postAuthorName: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: c.textSecondary,
+      ...typography.postAuthor,
+      color: c.textPrimary,
     },
     postTimestamp: {
-      fontSize: 12,
+      ...typography.postMeta,
       color: c.textMuted,
       marginTop: 1,
     },
@@ -3107,21 +3193,6 @@ function makeStyles(c: Colors) {
     followBtnTextActive: {
       color: c.primary,
     },
-    villageTag: {
-      alignSelf: 'flex-start',
-      backgroundColor: c.cardLavender,
-      borderRadius: 10,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: c.lavender,
-    },
-    villageTagText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: c.primary,
-    },
     postContent: {
       fontSize: 15,
       lineHeight: 22,
@@ -3132,8 +3203,6 @@ function makeStyles(c: Colors) {
       flexDirection: 'row',
       gap: 20,
       paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: c.inputBg,
     },
     postAction: {
       flexDirection: 'row',
@@ -3144,7 +3213,7 @@ function makeStyles(c: Colors) {
       color: c.textMuted,
     },
     likedText: {
-      color: '#e11d48',
+      color: c.blush,
       fontWeight: '600',
     },
     // ── Comments modal ──────────────────────────────────────────────────────────
@@ -3310,7 +3379,7 @@ function makeStyles(c: Colors) {
     feedToggleBtn: {
       flex: 1,
       alignItems: 'center',
-      paddingVertical: 12,
+      paddingVertical: 10,
       position: 'relative',
     },
     feedToggleText: {
@@ -3449,9 +3518,8 @@ function makeStyles(c: Colors) {
 
     // ── Post image (in feed cards) ──────────────────────────────────────────────
     postImage: {
-      width: 160,
-      height: 210,
-      alignSelf: 'center',
+      width: '100%',
+      aspectRatio: 4 / 3,
       borderRadius: 12,
       marginBottom: 12,
       backgroundColor: '#F0EBE4',
@@ -3586,8 +3654,8 @@ function makeStyles(c: Colors) {
     trendingCardTag: {
       fontSize: 11,
       fontWeight: '600',
-      color: '#57B2E8',
-      backgroundColor: '#EEF6FC',
+      color: c.blue,
+      backgroundColor: c.cardBlue,
       alignSelf: 'flex-start',
       paddingHorizontal: 8,
       paddingVertical: 3,
@@ -3611,24 +3679,24 @@ function makeStyles(c: Colors) {
     },
     // ── Tags ──────────────────────────────────────────────────────────────────────
     tagChip: {
-      paddingHorizontal: 12,
-      paddingVertical: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
       borderRadius: 20,
-      backgroundColor: c.cardBlush,
+      backgroundColor: c.bg,
       borderWidth: 1,
-      borderColor: 'transparent',
+      borderColor: c.separator,
     },
     tagChipActive: {
       backgroundColor: c.primary,
       borderColor: c.primary,
     },
     tagChipText: {
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: '600',
-      color: c.textSecondary,
+      color: c.textMuted,
     },
     tagChipTextActive: {
-      color: '#fff',
+      color: c.primaryText,
     },
     postTagsRow: {
       flexDirection: 'row',
@@ -3640,12 +3708,12 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: 12,
-      backgroundColor: '#EEF6FC',
+      backgroundColor: c.cardBlue,
     },
     postTagChipText: {
       fontSize: 11,
       fontWeight: '600',
-      color: '#57B2E8',
+      color: c.blue,
     },
     // ── Story styles ────────────────────────────────────────────────────────────
     storyTextPreview: {

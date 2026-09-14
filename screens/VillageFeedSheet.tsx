@@ -12,17 +12,21 @@ import {
   Platform,
   Alert,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { hitSlopFor } from '../lib/accessibility';
 import { Village } from '../lib/villageData';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal from '../components/ContentBlockedModal';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
 import { track } from '../lib/analytics';
+import { Ionicons } from '@expo/vector-icons';
+import PostTypeBadge from '../components/feed/PostTypeBadge';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +95,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
 
@@ -120,9 +125,9 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
     fetchLikedPosts();
   }, [visible, village?.id]);
 
-  async function fetchPosts() {
+  async function fetchPosts(opts?: { silent?: boolean }) {
     if (!village) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     const { data, error } = await supabase
       .from('posts')
       .select('*')
@@ -130,7 +135,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
       .order('created_at', { ascending: false })
       .limit(30);
     if (!error && data) setPosts(data);
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }
 
   async function fetchLikedPosts() {
@@ -284,7 +289,8 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
 
           {/* ── Header ── */}
           <View style={s.header}>
-            <TouchableOpacity onPress={onClose} style={s.doneBtn}>
+            <TouchableOpacity onPress={onClose} style={s.doneBtn} hitSlop={hitSlopFor(20)}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={s.doneBtnText}>Done</Text>
             </TouchableOpacity>
             <View style={s.headerCenter}>
@@ -294,6 +300,9 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
             <TouchableOpacity
               style={[s.joinToggleBtn, joined && s.joinToggleBtnJoined]}
               onPress={onToggleJoin}
+              accessibilityRole="button"
+              accessibilityLabel={joined ? `Leave ${village.name} patch` : `Join ${village.name} patch`}
+              accessibilityState={{ selected: joined }}
             >
               <Text style={[s.joinToggleBtnText, joined && s.joinToggleBtnTextJoined]}>
                 {joined ? 'Leave' : '+ Join'}
@@ -316,6 +325,14 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
               style={s.feed}
               contentContainerStyle={s.feedContent}
               showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={async () => { setRefreshing(true); await fetchPosts({ silent: true }); setRefreshing(false); }}
+                  tintColor={c.primary}
+                  colors={[c.primary]}
+                />
+              }
             >
               {posts.length === 0 ? (
                 <View style={s.emptyFeed}>
@@ -346,17 +363,10 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
                       </View>
                     </TouchableOpacity>
                     <View style={s.postHeaderRight}>
-                      {post.post_type !== 'text' && (
-                        <View style={[
-                          s.postBadge,
-                          post.post_type === 'milestone' ? { backgroundColor: c.cardHoney } : { backgroundColor: c.cardBlue },
-                        ]}>
-                          <Text>{post.post_type === 'milestone' ? '🎉' : '❓'}</Text>
-                        </View>
-                      )}
+                      <PostTypeBadge postType={post.post_type} />
                       {post.user_id === currentUserId && (
                         <TouchableOpacity onPress={() => handleDeletePost(post)} style={s.postDeleteBtn}>
-                          <Text>🗑</Text>
+                          <Ionicons name="trash-outline" size={15} color={c.textMuted} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -522,6 +532,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
         userId={profileUserId}
         visible={profileUserId !== null}
         onClose={() => setProfileUserId(null)}
+        dismissParents={onClose}
       />
 
       {blockedContent && currentUserId && (

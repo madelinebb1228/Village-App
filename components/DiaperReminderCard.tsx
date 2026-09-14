@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Modal, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, useColors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import {
@@ -170,7 +171,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
       {/* ── Header row: last changed + color guide ── */}
       <View style={s.headerRow}>
         <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>💩</Text>
+          <Ionicons name="shirt-outline" size={22} color={c.trackDiaper} />
           <View>
             <Text style={s.headerTitle}>Diaper Status</Text>
             {loading ? (
@@ -184,14 +185,18 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
         </View>
         <TouchableOpacity style={s.colorGuideBtn} onPress={() => setShowColorGuide(true)} activeOpacity={0.8}
           accessibilityRole="button" accessibilityLabel="Open poop color guide">
-          <Text style={s.colorGuideBtnText}>🎨 Color guide</Text>
+          <Ionicons name="color-palette-outline" size={13} color={c.sage} />
+          <Text style={s.colorGuideBtnText}>Color guide</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── Rash escalation nudge ── */}
       {showRashNudge && (
         <View style={s.rashNudge}>
-          <Text style={s.rashNudgeTitle}>🩹 Diaper rash noticed</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <Ionicons name="medical-outline" size={14} color={c.reminderWarning.text} />
+            <Text style={[s.rashNudgeTitle, { marginBottom: 0 }]}>Diaper rash noticed</Text>
+          </View>
           <Text style={s.rashNudgeBody}>
             You've logged an elevated rash in recent changes. Your pediatrician may have cream or treatment suggestions.
           </Text>
@@ -202,7 +207,7 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
       <TouchableOpacity style={s.settingsToggle} onPress={() => setShowSettings(p => !p)} activeOpacity={0.8}
         accessibilityRole="button" accessibilityLabel={showSettings ? 'Hide reminder settings' : 'Show reminder settings'}>
         <View style={s.settingsToggleLeft}>
-          <Text style={s.settingsToggleIcon}>🔔</Text>
+          <Ionicons name="notifications-outline" size={15} color={c.textMuted} />
           <Text style={s.settingsToggleLabel}>
             {settings.enabled
               ? `Reminder every ${settings.intervalHours}h`
@@ -290,12 +295,15 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
           </View>
 
           {settings.enabled && lastLog && (
-            <Text style={s.nextReminderNote}>
-              🔔 Next reminder scheduled for{' '}
-              {new Date(
-                new Date(lastLog.logged_at).getTime() + settings.intervalHours * 3_600_000,
-              ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+              <Ionicons name="notifications-outline" size={12} color={c.textMuted} />
+              <Text style={[s.nextReminderNote, { marginTop: 0 }]}>
+                Next reminder scheduled for{' '}
+                {new Date(
+                  new Date(lastLog.logged_at).getTime() + settings.intervalHours * 3_600_000,
+                ).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
           )}
         </View>
       )}
@@ -307,7 +315,10 @@ export default function DiaperReminderCard({ userId, babyId, babyName, refreshKe
             accessibilityRole="button" accessibilityLabel="Close" />
           <View style={s.modalSheet}>
             <View style={s.modalHandle} />
-            <Text style={s.modalTitle}>🎨 Poop Color Guide</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="color-palette-outline" size={20} color={c.textPrimary} />
+              <Text style={s.modalTitle}>Poop Color Guide</Text>
+            </View>
             <Text style={s.modalSubtitle}>What do different colors mean?</Text>
             <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 8 }}>
               {COLOR_GUIDE.map(entry => (
@@ -352,16 +363,15 @@ function makeStyles(c: Colors) {
     headerTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary },
     elapsedText: { fontSize: 12, color: c.textMuted, marginTop: 2 },
 
-    colorGuideBtn:     { backgroundColor: c.cardSage, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1.5, borderColor: '#A7F3D0' },
+    colorGuideBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.cardSage, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1.5, borderColor: c.sage },
     colorGuideBtnText: { fontSize: 12, fontWeight: '700', color: c.sage },
 
-    rashNudge:     { margin: 12, marginTop: 0, backgroundColor: '#FDE68A', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#D97706' },
-    rashNudgeTitle:{ fontSize: 13, fontWeight: '800', color: '#92400E', marginBottom: 4 },
-    rashNudgeBody: { fontSize: 12, color: '#92400E', lineHeight: 17 },
+    rashNudge:     { margin: 12, marginTop: 0, backgroundColor: c.reminderWarning.bg, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: c.reminderWarning.border },
+    rashNudgeTitle:{ fontSize: 13, fontWeight: '800', color: c.reminderWarning.text, marginBottom: 4 },
+    rashNudgeBody: { fontSize: 12, color: c.reminderWarning.text, lineHeight: 17 },
 
     settingsToggle:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.separator },
     settingsToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    settingsToggleIcon: { fontSize: 16 },
     settingsToggleLabel:{ fontSize: 14, fontWeight: '600', color: c.textPrimary },
     settingsRight:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
     toggle:    { width: 46, height: 26, borderRadius: 13, backgroundColor: c.separator, justifyContent: 'center', paddingHorizontal: 2 },

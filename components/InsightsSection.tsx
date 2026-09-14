@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { Colors, useColors } from '../lib/theme'
 import { generateInsights, InsightType, InsightsResult, invalidateInsightsCache } from '../lib/insightsEngine'
 
@@ -97,7 +98,7 @@ export default function InsightsSection({
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerLeft}>
-          <Text style={s.headerEmoji}>✨</Text>
+          <Ionicons name="sparkles-outline" size={19} color={c.lavender} style={{ marginRight: 8 }} />
           <Text style={s.headerTitle}>Patterns & Insights</Text>
         </View>
         <View style={s.periodRow}>
@@ -135,7 +136,7 @@ export default function InsightsSection({
       {/* Empty state */}
       {!loading && result && visibleInsights.length === 0 && (
         <View style={s.empty}>
-          <Text style={s.emptyIcon}>📊</Text>
+          <Ionicons name="bar-chart-outline" size={28} color={c.textMuted} style={{ marginBottom: 8 }} />
           <Text style={s.emptyTitle}>Not enough data yet</Text>
           <Text style={s.emptyBody}>
             Keep logging feeds, sleep, and diapers. Pattern insights appear after a few days of tracking.
@@ -173,7 +174,7 @@ export default function InsightsSection({
                     activeOpacity={0.6}
                     accessibilityRole="button" accessibilityLabel={`Dismiss ${insight.title}`}
                   >
-                    <Text style={s.dismissText}>✕</Text>
+                    <Ionicons name="close" size={14} color={c.textMuted} />
                   </TouchableOpacity>
                 </View>
               </View>

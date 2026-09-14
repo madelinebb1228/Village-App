@@ -12,11 +12,22 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { VILLAGE_MAP } from '../lib/villageData';
+import { Village, villagesByIds } from '../lib/villageData';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
+import { hitSlopFor } from '../lib/accessibility';
 import LoadErrorBanner from '../components/LoadErrorBanner';
 import { useSubscription } from '../lib/subscriptionContext';
+import { Post as FeedPost } from '../types/feed';
+import PostPreviewCard from '../components/discover/PostPreviewCard';
+import ProfileMediaGrid from '../components/profile/ProfileMediaGrid';
+import PatchChipRow from '../components/profile/PatchChipRow';
+import VillageFeedSheet from './VillageFeedSheet';
+import { joinPatch, leavePatch } from '../lib/discoverData';
+import { Ionicons } from '@expo/vector-icons';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
 
 interface PublicProfile {
   id: string;
@@ -24,21 +35,23 @@ interface PublicProfile {
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
+  header_url: string | null;
   parent_role: string | null;
+  preferred_term: string | null;
+  family_structure: string | null;
+  family_structure_custom: string | null;
   show_villages: boolean | null;
+  baby_info_private: boolean | null;
   pinned_post_id: string | null;
   is_private: boolean | null;
   is_founder: boolean | null;
   is_official: boolean | null;
 }
 
-interface PinnedPost {
-  id: string;
-  content: string;
-  post_type: string;
-  image_url: string | null;
-  likes: number;
-  created_at: string;
+interface PublicBaby {
+  name: string;
+  birth_date: string | null;
+  is_expecting: boolean | null;
 }
 
 interface Props {
@@ -46,20 +59,31 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onMessage?: (userId: string) => void;
+  // When this sheet is itself nested inside another Modal (SearchSheet,
+  // VillageFeedSheet), navigating to PostDetail switches the tab underneath
+  // but doesn't dismiss that ancestor Modal, since it's a portal independent
+  // of navigation focus. Callers that nest this sheet pass their own close
+  // handler here so it's dismissed too.
+  dismissParents?: () => void;
+}
+
+// Whichever tab is currently focused when this sheet is opened — used as the
+// PostDetail back-destination, since the sheet itself is a modal reused from
+// many different screens (Home, Discover, SearchSheet, Profile) rather than
+// a route with a fixed origin.
+function currentRouteName(navigation: any): string | undefined {
+  try {
+    const state = navigation.getState();
+    return state?.routes?.[state.index]?.name;
+  } catch {
+    return undefined;
+  }
 }
 
 function memberSince(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
-function getTimeAgo(dateString: string): string {
-  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
-  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
 
 function makeStyles(c: Colors) {
   return StyleSheet.create({
@@ -79,36 +103,33 @@ function makeStyles(c: Colors) {
 
     content: { padding: 20 },
 
+    // Bleeds past `content`'s own 20px padding so the cover photo reads as an
+    // edge-to-edge social header, matching the redesigned own-Profile screen.
     hero: {
-      backgroundColor: c.heroBg,
-      borderRadius: 20,
-      padding: 24,
-      alignItems: 'center',
+      marginHorizontal: -20,
       marginBottom: 20,
-      shadowColor: c.heroShadow,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.18,
-      shadowRadius: 10,
-      elevation: 4,
     },
-    heroAdmin: {
-      borderWidth: 1.5,
-      borderColor: 'rgba(212,175,55,0.45)',
-      shadowColor: '#D4AF37',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.35,
-      shadowRadius: 18,
-      elevation: 10,
-    },
+    headerBannerWrap: { width: '100%', height: 160 },
+    headerBannerWrapWide: { height: 120 },
+    headerBannerImage: { width: '100%', height: 160 },
+    headerBannerImageWide: { height: 120 },
+    headerBannerPlaceholder: { width: '100%', height: 160, backgroundColor: c.cardLavender },
+    headerBannerPlaceholderAdmin: { backgroundColor: c.cardHoney },
+    avatarOverlapRow: { width: '100%', alignItems: 'center', marginTop: -52, marginBottom: 6 },
+    avatarOverlapRowWide: { width: 'auto', alignItems: 'flex-start', marginTop: 0, marginBottom: 0 },
+    heroWideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20, paddingHorizontal: 24, marginTop: -48 },
+    heroContentWrap: { width: '100%', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 4 },
+    heroContentWrapWide: { flex: 1, width: undefined, alignItems: 'flex-start', paddingHorizontal: 0, paddingBottom: 4, paddingTop: 14 },
     avatarWrap: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
+      width: 104,
+      height: 104,
+      borderRadius: 52,
       backgroundColor: c.avatarBg,
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 14,
       overflow: 'hidden',
+      borderWidth: 4,
+      borderColor: c.bg,
     },
     avatarWrapAdmin: {
       borderWidth: 3,
@@ -119,65 +140,39 @@ function makeStyles(c: Colors) {
       shadowRadius: 14,
       elevation: 8,
     },
-    avatarImage: { width: 80, height: 80, borderRadius: 40 },
-    avatarInitial: { fontSize: 30, fontWeight: '800', color: c.primary },
-    founderWrap: {
+    avatarImage: { width: 96, height: 96, borderRadius: 48 },
+    avatarInitial: { fontSize: 38, fontWeight: '800', color: c.primary },
+    founderBadge: {
+      flexDirection: 'row',
       alignItems: 'center',
-      gap: 5,
+      gap: 6,
+      alignSelf: 'center',
+      backgroundColor: c.cardHoney,
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      marginTop: 4,
       marginBottom: 6,
     },
-    founderStars: {
-      fontSize: 11,
-      color: '#D4AF37',
-      letterSpacing: 3,
-      fontWeight: '700',
-    },
-    founderBadge: {
-      backgroundColor: '#FFF8E1',
-      borderWidth: 1.5,
-      borderColor: '#D4AF37',
-      borderRadius: 22,
-      paddingHorizontal: 20,
-      paddingVertical: 9,
-      shadowColor: '#D4AF37',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 4,
-    },
     founderBadgeText: {
-      fontSize: 14,
-      fontWeight: '800',
-      color: '#7C5C00',
-      letterSpacing: 0.3,
-    },
-    founderStarsBottom: {
-      fontSize: 13,
-      color: '#D4AF37',
-      letterSpacing: 4,
+      fontSize: 12.5,
+      fontWeight: '700',
+      color: c.honey,
     },
 
     heroName: {
-      fontSize: 20,
-      fontWeight: '800',
+      ...typography.screenTitle,
       color: c.textPrimary,
-      marginBottom: 4,
+      marginBottom: 2,
       textAlign: 'center',
     },
     heroUsername: {
-      fontSize: 14,
+      fontSize: 14.5,
       color: c.textMuted,
       fontWeight: '600',
       marginBottom: 8,
+      textAlign: 'center',
     },
-    roleBadge: {
-      backgroundColor: c.roleBadge,
-      paddingHorizontal: 14,
-      paddingVertical: 5,
-      borderRadius: 12,
-      marginBottom: 10,
-    },
-    roleBadgeText: { fontSize: 12, fontWeight: '700', color: c.textOnColored },
     heroBio: {
       fontSize: 14,
       color: c.textMuted,
@@ -190,44 +185,37 @@ function makeStyles(c: Colors) {
     statsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderTopWidth: 1,
-      borderTopColor: c.sage,
-      paddingTop: 14,
+      gap: 28,
+      justifyContent: 'center',
       width: '100%',
       marginTop: 4,
     },
-    statItem: { flex: 1, alignItems: 'center' },
+    statItem: { alignItems: 'center' },
     statNum: { fontSize: 15, fontWeight: '800', color: c.textSecondary, marginBottom: 2 },
     statLbl: { fontSize: 11, color: c.textMuted, fontWeight: '500' },
-    statDivider: { width: 1, height: 32, backgroundColor: c.cardSage },
 
-    section: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 12,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 1,
-    },
-    sectionHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-    },
+    section: { marginBottom: 20 },
     sectionTitle: {
-      fontSize: 15,
-      fontWeight: '700',
-      color: c.textSecondary,
+      ...typography.sectionTitle,
+      color: c.textPrimary,
+      marginBottom: 8,
     },
+    babySnippet: {
+      backgroundColor: c.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.separator,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    babySnippetText: { fontSize: 14, fontWeight: '700', color: c.textPrimary },
     commonBadge: {
+      alignSelf: 'flex-start',
       backgroundColor: c.cardSage,
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: 12,
+      marginBottom: 8,
     },
     commonBadgeText: {
       fontSize: 12,
@@ -235,91 +223,30 @@ function makeStyles(c: Colors) {
       color: c.textSecondary,
     },
 
-    villageChipsWrap: {
+    tabRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
+      gap: 8,
+      marginBottom: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
     },
-    villageChip: {
-      borderRadius: 12,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderWidth: 1,
-    },
-    villageChipText: {
-      fontSize: 12,
-      color: c.textSecondary,
-      fontWeight: '600',
-    },
+    tabBtn: { paddingVertical: 10, paddingHorizontal: 4, marginRight: 16, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabBtnActive: { borderBottomColor: c.primary },
+    tabBtnText: { fontSize: 14, fontWeight: '700', color: c.textMuted },
+    tabBtnTextActive: { color: c.textPrimary },
+    emptyTabText: { fontSize: 13.5, color: c.textMuted, textAlign: 'center', paddingVertical: 20 },
 
-    privateNote: {
-      fontSize: 13,
-      color: c.textMuted,
-      textAlign: 'center',
-      fontStyle: 'italic',
-      marginTop: 4,
-    },
-
-    pinnedCard: {
-      backgroundColor: c.card,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 12,
-      borderTopWidth: 2,
-      borderTopColor: c.primary,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 1,
-    },
-    pinnedLabel: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: c.primary,
-      letterSpacing: 0.3,
-      marginBottom: 8,
-    },
-    pinnedTypeBadge: {
-      alignSelf: 'flex-start',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 10,
-      marginBottom: 8,
-    },
-    pinnedTypeBadgeText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: c.textSecondary,
-    },
-    pinnedContent: {
-      fontSize: 14,
-      lineHeight: 21,
-      color: c.textSecondary,
-      marginBottom: 10,
-    },
-    pinnedImage: {
-      width: '100%',
-      height: 180,
-      borderRadius: 10,
-      marginBottom: 10,
-    },
-    pinnedFooter: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      borderTopWidth: 1,
-      borderTopColor: c.separator,
-      paddingTop: 8,
-    },
-    pinnedStat: { fontSize: 12, color: c.textMuted, fontWeight: '500' },
-    pinnedTime: { fontSize: 11, color: c.textMuted },
   });
 }
 
-export default function PublicProfileSheet({ userId, visible, onClose, onMessage }: Props) {
+export default function PublicProfileSheet({ userId, visible, onClose, onMessage, dismissParents }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const { isSubscribed } = useSubscription();
+  const navigation = useNavigation<any>();
+  const { width: windowWidth, isDesktop, isTablet } = useResponsive();
+  const profileMaxWidth = maxWidthFor(windowWidth, 'profile');
+  const isWideProfile = isDesktop || isTablet;
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [postCount, setPostCount] = useState(0);
@@ -334,7 +261,12 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [myId, setMyId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [pinnedPost, setPinnedPost] = useState<PinnedPost | null>(null);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [canViewPosts, setCanViewPosts] = useState(false);
+  const [profileTab, setProfileTab] = useState<'posts' | 'media'>('posts');
+  const [baby, setBaby] = useState<PublicBaby | null>(null);
+  const [feedVillage, setFeedVillage] = useState<Village | null>(null);
+  const [joiningVillageId, setJoiningVillageId] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -348,7 +280,10 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   useEffect(() => {
     if (!visible || !userId) return;
     setProfile(null);
-    setPinnedPost(null);
+    setPosts([]);
+    setCanViewPosts(false);
+    setProfileTab('posts');
+    setBaby(null);
     setTheirVillageIds([]);
     setMyVillageIds([]);
     setPostCount(0);
@@ -376,8 +311,8 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
           return;
         }
 
-        const [profileRes, postsRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes, blockRes, muteRes, followReqRes] = await Promise.all([
-          supabase.from('profiles').select('id,username,display_name,bio,avatar_url,parent_role,show_villages,pinned_post_id,is_private,is_founder,is_official').eq('id', userId).maybeSingle(),
+        const [profileRes, postsCountRes, theirVillagesRes, myVillagesRes, followersRes, followingRes, isFollowingRes, blockRes, muteRes, followReqRes] = await Promise.all([
+          (supabase as any).from('profiles').select('id,username,display_name,bio,avatar_url,header_url,parent_role,preferred_term,family_structure,family_structure_custom,show_villages,baby_info_private,pinned_post_id,is_private,is_founder,is_official').eq('id', userId).maybeSingle(),
           supabase.from('posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', userId),
           supabase.from('user_villages').select('village_id').eq('user_id', user.id),
@@ -389,25 +324,42 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
           (supabase as any).from('follow_requests').select('status').eq('requester_id', user.id).eq('target_id', userId).maybeSingle(),
         ]);
 
-        setProfile(profileRes.data ?? null);
-        setPostCount(postsRes.count ?? 0);
+        const profileData = profileRes.data ?? null;
+        setProfile(profileData);
+        setPostCount(postsCountRes.count ?? 0);
         setFollowerCount(followersRes.count ?? 0);
         setFollowingCount(followingRes.count ?? 0);
         setTheirVillageIds((theirVillagesRes.data ?? []).map((r: any) => r.village_id));
         setMyVillageIds((myVillagesRes.data ?? []).map((r: any) => r.village_id));
-        setIsFollowing(!!isFollowingRes.data);
+        const following = !!isFollowingRes.data;
+        setIsFollowing(following);
         setIsBlocked(!!blockRes.data);
         setIsMuted(!!muteRes.data);
         setFollowRequestStatus(followReqRes.data?.status === 'pending' ? 'pending' : 'none');
 
-        const pinnedId = (profileRes.data as any)?.pinned_post_id;
-        if (pinnedId) {
-          const { data: pinned } = await supabase
+        // Private accounts only reveal actual post content (pinned post,
+        // Posts/Media tabs) to accepted followers — never fetched into state
+        // before access is granted, not just hidden in the UI.
+        const canView = !profileData?.is_private || following;
+        setCanViewPosts(canView);
+        if (canView) {
+          const { data: postsData } = await supabase
             .from('posts')
-            .select('id,content,post_type,image_url,likes,created_at')
-            .eq('id', pinnedId)
+            .select('id,user_id,author,content,post_type,created_at,likes,image_url,video_url,tags,is_sensitive,sensitive_label')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+          const authorProfile = { username: profileData?.username ?? null, display_name: profileData?.display_name ?? null };
+          setPosts((postsData ?? []).map((p: any) => ({ ...p, profiles: authorProfile })));
+        }
+
+        if (!profileData?.baby_info_private) {
+          const { data: babyData } = await supabase
+            .from('babies')
+            .select('name,birth_date,is_expecting')
+            .eq('user_id', userId)
+            .limit(1)
             .maybeSingle();
-          setPinnedPost((pinned as any) ?? null);
+          setBaby((babyData as any) ?? null);
         }
       } catch (err: any) {
         console.warn('PublicProfileSheet error:', err.message);
@@ -499,6 +451,29 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     setReportUserDone(true);
   }
 
+  // Reuses the same Patch join/leave mutation Discover and Home's search use —
+  // membership can be changed from any profile that shows the chip, not just
+  // the viewer's own.
+  async function toggleVillageMembership(villageId: string) {
+    setJoiningVillageId(villageId);
+    const wasJoined = myVillageIds.includes(villageId);
+    const { error } = wasJoined ? await leavePatch(villageId) : await joinPatch(villageId);
+    if (error) {
+      Alert.alert('Something went wrong', wasJoined ? "Couldn't leave this patch. Please try again." : "Couldn't join this patch. Please try again.");
+    } else if (wasJoined) {
+      setMyVillageIds(prev => prev.filter(id => id !== villageId));
+    } else {
+      setMyVillageIds(prev => [...prev, villageId]);
+    }
+    setJoiningVillageId(null);
+  }
+
+  function openPost(post: FeedPost) {
+    onClose();
+    dismissParents?.();
+    navigation.navigate('PostDetail', { postId: post.id, origin: currentRouteName(navigation) });
+  }
+
   const commonIds = theirVillageIds.filter(id => myVillageIds.includes(id));
   const displayName = profile?.display_name || profile?.username || 'Parent';
   const initial = displayName.charAt(0).toUpperCase();
@@ -506,12 +481,26 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const isAdmin = profile?.is_founder === true;
   const isOfficial = profile?.is_official === true;
   const isGoldTier = isAdmin || isOfficial;
+  const theirVillages = villagesByIds(theirVillageIds);
+
+  const familyLabel = profile?.family_structure === 'Other' ? profile?.family_structure_custom : profile?.family_structure;
+  const identityLine = [profile?.parent_role || profile?.preferred_term || null, familyLabel].filter(Boolean).join(' · ');
+
+  const sortedPosts = useMemo(() => {
+    const pinnedId = profile?.pinned_post_id;
+    if (!pinnedId) return posts;
+    const pinned = posts.find(p => p.id === pinnedId);
+    const rest = posts.filter(p => p.id !== pinnedId);
+    return pinned ? [pinned, ...rest] : posts;
+  }, [posts, profile?.pinned_post_id]);
+  const mediaPosts = useMemo(() => posts.filter(p => p.image_url || p.video_url), [posts]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={s.safeArea}>
         <View style={s.topBar}>
-          <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7} hitSlop={hitSlopFor(24)}
+            accessibilityRole="button" accessibilityLabel="Close">
             <Text style={s.closeText}>Done</Text>
           </TouchableOpacity>
         </View>
@@ -533,72 +522,70 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
             <Text style={s.ownProfileText}>Profile not found.</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-            {/* Hero card */}
-            <View style={[s.hero, isGoldTier && s.heroAdmin]}>
-              {/* Avatar */}
-              <View style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}>
-                {profile.avatar_url ? (
-                  <Image source={{ uri: profile.avatar_url }} style={s.avatarImage} />
+          <ScrollView contentContainerStyle={[s.content, { width: '100%', maxWidth: profileMaxWidth, alignSelf: 'center' }]} showsVerticalScrollIndicator={false}>
+            {/* Hero */}
+            <View style={s.hero}>
+              {/* Cover — edge-to-edge, matching the redesigned own-Profile header */}
+              <View style={[s.headerBannerWrap, isWideProfile && s.headerBannerWrapWide]}>
+                {profile.header_url ? (
+                  <Image source={{ uri: profile.header_url }} style={[s.headerBannerImage, isWideProfile && s.headerBannerImageWide]} resizeMode="cover" />
                 ) : (
-                  <Text style={s.avatarInitial}>{initial}</Text>
+                  <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide, isGoldTier && s.headerBannerPlaceholderAdmin]} />
                 )}
               </View>
 
+              <View style={isWideProfile ? s.heroWideRow : undefined}>
+              <View style={[s.avatarOverlapRow, isWideProfile && s.avatarOverlapRowWide]}>
+                <View style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}>
+                  {profile.avatar_url ? (
+                    <Image source={{ uri: profile.avatar_url }} style={s.avatarImage} />
+                  ) : (
+                    <Text style={s.avatarInitial}>{initial}</Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={[s.heroContentWrap, isWideProfile && s.heroContentWrapWide]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={s.heroName}>{displayName}</Text>
+                <Text style={[s.heroName, isWideProfile && { textAlign: 'left' }]}>{displayName}</Text>
                 {profile.is_private && <Text style={{ fontSize: 16 }}>🔒</Text>}
               </View>
 
               {isGoldTier && (
-                <View style={s.founderWrap}>
-                  <Text style={s.founderStars}>✦  ✦  ✦  ✦  ✦</Text>
-                  <View style={s.founderBadge}>
-                    <Text style={s.founderBadgeText}>
-                      {isAdmin ? '👑  Founder of Parent Patch  👑' : '🌿  Official Parent Patch Account  🌿'}
-                    </Text>
-                  </View>
-                  <Text style={s.founderStarsBottom}>⭐  ⭐  ⭐  ⭐  ⭐</Text>
+                <View style={[s.founderBadge, isWideProfile && { alignSelf: 'flex-start' }]}>
+                  <Ionicons name={isAdmin ? 'ribbon' : 'leaf'} size={13} color={isAdmin ? c.honey : c.sage} />
+                  <Text style={s.founderBadgeText}>
+                    {isAdmin ? 'Founder of Parent Patch' : 'Official Parent Patch Account'}
+                  </Text>
                 </View>
               )}
 
-              {profile.username && (
-                <Text style={s.heroUsername}>@{profile.username}</Text>
-              )}
-              {profile.parent_role && (
-                <View style={s.roleBadge}>
-                  <Text style={s.roleBadgeText}>{profile.parent_role}</Text>
-                </View>
+              {(profile.username || identityLine) && (
+                <Text style={[s.heroUsername, isWideProfile && { textAlign: 'left' }]}>
+                  {profile.username ? `@${profile.username}` : ''}
+                  {profile.username && identityLine ? '  ·  ' : ''}
+                  {identityLine}
+                </Text>
               )}
               {profile.bio ? (
-                <Text style={s.heroBio}>{profile.bio}</Text>
+                <Text style={[s.heroBio, isWideProfile && { textAlign: 'left' }]}>{profile.bio}</Text>
               ) : null}
 
-              {/* Stats */}
-              <View style={s.statsRow}>
+              {/* Social stats — Patches is a community count, kept out of
+                  this row and shown in its own section below instead. */}
+              <View style={[s.statsRow, isWideProfile && { justifyContent: 'flex-start', width: 'auto' }]}>
                 <View style={s.statItem}>
                   <Text style={s.statNum}>{postCount}</Text>
                   <Text style={s.statLbl}>Posts</Text>
                 </View>
-                <View style={s.statDivider} />
-                <View style={s.statItem}>
-                  <Text style={s.statNum}>{followerCount}</Text>
-                  <Text style={s.statLbl}>Followers</Text>
-                </View>
-                <View style={s.statDivider} />
                 <View style={s.statItem}>
                   <Text style={s.statNum}>{followingCount}</Text>
                   <Text style={s.statLbl}>Following</Text>
                 </View>
-                {showVillages && (
-                  <>
-                    <View style={s.statDivider} />
-                    <View style={s.statItem}>
-                      <Text style={s.statNum}>{theirVillageIds.length}</Text>
-                      <Text style={s.statLbl}>Patches</Text>
-                    </View>
-                  </>
-                )}
+                <View style={s.statItem}>
+                  <Text style={s.statNum}>{followerCount}</Text>
+                  <Text style={s.statLbl}>Followers</Text>
+                </View>
               </View>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
                 {!isBlocked && (
@@ -606,6 +593,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     onPress={toggleFollow}
                     disabled={followLoading}
                     activeOpacity={0.85}
+                    hitSlop={hitSlopFor(34)}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       backgroundColor: isFollowing || followRequestStatus === 'pending' ? c.card : c.primary,
@@ -617,7 +605,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     <Text style={{ fontSize: 14 }}>
                       {isFollowing ? '✓' : followRequestStatus === 'pending' ? '⏳' : '+'}
                     </Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : '#fff' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText }}>
                       {isFollowing ? 'Following' : followRequestStatus === 'pending' ? 'Requested' : 'Follow'}
                     </Text>
                   </TouchableOpacity>
@@ -627,6 +615,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     onPress={toggleMute}
                     disabled={muteLoading}
                     activeOpacity={0.85}
+                    hitSlop={hitSlopFor(34)}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       backgroundColor: isMuted ? c.cardHoney : c.card, borderRadius: 20,
@@ -649,6 +638,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   <TouchableOpacity
                     onPress={() => { onClose(); onMessage(userId); }}
                     activeOpacity={0.85}
+                    hitSlop={hitSlopFor(34)}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       backgroundColor: c.card, borderRadius: 20,
@@ -663,6 +653,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 <TouchableOpacity
                   onPress={() => { setShowReportUser(true); setReportUserReason(''); setReportUserDone(false); }}
                   activeOpacity={0.85}
+                  hitSlop={hitSlopFor(34)}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 6,
                     backgroundColor: c.card, borderRadius: 20,
@@ -677,23 +668,26 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   onPress={handleBlock}
                   disabled={blockLoading}
                   activeOpacity={0.85}
+                  hitSlop={hitSlopFor(34)}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 6,
-                    backgroundColor: isBlocked ? '#FEE2E2' : c.card, borderRadius: 20,
+                    backgroundColor: c.card, borderRadius: 20,
                     paddingHorizontal: 16, paddingVertical: 10,
-                    borderWidth: 1.5, borderColor: isBlocked ? '#FCA5A5' : c.separator,
+                    borderWidth: 1.5, borderColor: isBlocked ? c.signOut : c.separator,
                   }}
                 >
                   {blockLoading
-                    ? <ActivityIndicator size="small" color="#DC2626" />
+                    ? <ActivityIndicator size="small" color={c.signOut} />
                     : <>
                         <Text style={{ fontSize: 14 }}>🚫</Text>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: isBlocked ? '#DC2626' : c.textPrimary }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: isBlocked ? c.signOut : c.textPrimary }}>
                           {isBlocked ? 'Unblock' : 'Block'}
                         </Text>
                       </>
                   }
                 </TouchableOpacity>
+              </View>
+              </View>
               </View>
             </View>
 
@@ -714,73 +708,81 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               </View>
             )}
 
-            {/* Pinned post */}
-            {pinnedPost && (
-              <View style={s.pinnedCard}>
-                <Text style={s.pinnedLabel}>📌 Pinned</Text>
-                <View style={[
-                  s.pinnedTypeBadge,
-                  pinnedPost.post_type === 'milestone' ? { backgroundColor: c.cardHoney }
-                    : pinnedPost.post_type === 'question' ? { backgroundColor: c.cardBlue }
-                    : { backgroundColor: c.cardBlush },
-                ]}>
-                  <Text style={s.pinnedTypeBadgeText}>
-                    {pinnedPost.post_type === 'milestone' ? '🎉 Milestone'
-                      : pinnedPost.post_type === 'question' ? '❓ Question'
-                      : '💬 Update'}
+            {/* Family — secondary to the social identity above, respects baby_info_private */}
+            {baby && (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>Family</Text>
+                <View style={s.babySnippet}>
+                  <Text style={s.babySnippetText}>
+                    👶 {baby.is_expecting ? 'Expecting' : baby.name}
                   </Text>
                 </View>
-                {!!pinnedPost.content && (
-                  <Text style={s.pinnedContent}>{pinnedPost.content}</Text>
-                )}
-                {pinnedPost.image_url && (
-                  <Image source={{ uri: pinnedPost.image_url }} style={s.pinnedImage} resizeMode="cover" />
-                )}
-                <View style={s.pinnedFooter}>
-                  <Text style={s.pinnedStat}>❤️ {pinnedPost.likes || 0}</Text>
-                  <Text style={s.pinnedTime}>{getTimeAgo(pinnedPost.created_at)}</Text>
-                </View>
               </View>
             )}
 
-            {/* Villages section */}
-            {showVillages && theirVillageIds.length > 0 && (
+            {/* Patches — community identity, tappable into the real feed */}
+            <View style={s.section}>
+              {isSubscribed && showVillages && commonIds.length > 0 && (
+                <View style={s.commonBadge}>
+                  <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
+                </View>
+              )}
+              <PatchChipRow
+                title="Patches"
+                villages={showVillages ? theirVillages : []}
+                onPressVillage={(v) => setFeedVillage(v)}
+                emptyTitle={showVillages ? 'No Patches yet' : "This user's patches are private."}
+              />
+            </View>
+
+            {/* Posts / Media — gated behind canViewPosts, which is false for
+                a private account the viewer doesn't follow (never fetched,
+                not just hidden). */}
+            {canViewPosts && (
               <View style={s.section}>
-                <View style={s.sectionHeaderRow}>
-                  <Text style={s.sectionTitle}>Patches</Text>
-                  {isSubscribed && commonIds.length > 0 && (
-                    <View style={s.commonBadge}>
-                      <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
+                <View style={s.tabRow}>
+                  <TouchableOpacity
+                    style={[s.tabBtn, profileTab === 'posts' && s.tabBtnActive]}
+                    onPress={() => setProfileTab('posts')}
+                    hitSlop={hitSlopFor(34)}
+                    accessibilityRole="button" accessibilityState={{ selected: profileTab === 'posts' }} accessibilityLabel="Posts tab"
+                  >
+                    <Text style={[s.tabBtnText, profileTab === 'posts' && s.tabBtnTextActive]}>Posts</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.tabBtn, profileTab === 'media' && s.tabBtnActive]}
+                    onPress={() => setProfileTab('media')}
+                    hitSlop={hitSlopFor(34)}
+                    accessibilityRole="button" accessibilityState={{ selected: profileTab === 'media' }} accessibilityLabel="Media tab"
+                  >
+                    <Text style={[s.tabBtnText, profileTab === 'media' && s.tabBtnTextActive]}>Media</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {profileTab === 'posts' ? (
+                  sortedPosts.length === 0 ? (
+                    <Text style={s.emptyTabText}>No posts yet</Text>
+                  ) : (
+                    <View style={{ gap: 10 }}>
+                      {sortedPosts.map(post => (
+                        <PostPreviewCard
+                          key={post.id}
+                          post={post}
+                          pinned={profile.pinned_post_id === post.id}
+                          onPress={() => openPost(post)}
+                          onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                        />
+                      ))}
                     </View>
-                  )}
-                </View>
-
-                <View style={s.villageChipsWrap}>
-                  {theirVillageIds.map((id, i) => {
-                    const v = VILLAGE_MAP[id];
-                    if (!v) return null;
-                    const chipColors = [
-                      { bg: c.cardLavender, border: c.lavender },
-                      { bg: c.cardBlue,     border: c.blue },
-                      { bg: c.cardBlush,    border: c.blush },
-                      { bg: c.cardHoney,    border: c.honey },
-                      { bg: c.cardSage,     border: c.sage },
-                    ];
-                    const cc = chipColors[i % chipColors.length];
-                    return (
-                      <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
-                        <Text style={s.villageChipText}>
-                          {v.emoji} {v.name.replace(' Patch', '').replace(' Parents', '')}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
+                  )
+                ) : (
+                  mediaPosts.length === 0 ? (
+                    <Text style={s.emptyTabText}>No media yet</Text>
+                  ) : (
+                    <ProfileMediaGrid posts={mediaPosts} onPressPost={openPost} />
+                  )
+                )}
               </View>
-            )}
-
-            {!showVillages && (
-              <Text style={s.privateNote}>This user's patches are private.</Text>
             )}
 
             <View style={{ height: 40 }} />
@@ -802,7 +804,8 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
             borderBottomWidth: 1, borderBottomColor: c.separator,
           }}>
             <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report User</Text>
-            <TouchableOpacity onPress={() => setShowReportUser(false)}>
+            <TouchableOpacity onPress={() => setShowReportUser(false)} hitSlop={hitSlopFor(18)}
+              accessibilityRole="button" accessibilityLabel="Close">
               <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -817,7 +820,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 onPress={() => setShowReportUser(false)}
                 style={{ marginTop: 8, backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 28, paddingVertical: 12 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Close</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: c.primaryText }}>Close</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -848,14 +851,22 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 }}
               >
                 {reportUserSubmitting
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Submit Report</Text>
+                  ? <ActivityIndicator color={c.primaryText} />
+                  : <Text style={{ fontSize: 15, fontWeight: '700', color: c.primaryText }}>Submit Report</Text>
                 }
               </TouchableOpacity>
             </ScrollView>
           )}
         </SafeAreaView>
       </Modal>
+
+      <VillageFeedSheet
+        village={feedVillage}
+        visible={feedVillage !== null}
+        onClose={() => setFeedVillage(null)}
+        joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
+        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+      />
     </Modal>
   );
 }

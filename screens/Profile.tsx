@@ -12,25 +12,34 @@ import {
   Platform,
   Switch,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { AppContext } from '../lib/AppContext';
-import { VILLAGE_MAP } from '../lib/villageData';
+import { Village, villagesByIds } from '../lib/villageData';
 import BabyProfileSheet from './BabyProfileSheet';
 import BabyJournal from './BabyJournal';
 import SettingsScreen from './SettingsScreen';
+import VillageFeedSheet from './VillageFeedSheet';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
 import LoadErrorBanner from '../components/LoadErrorBanner';
-import { useSubscription } from '../lib/subscriptionContext';
 import PaywallGate from '../components/PaywallGate';
 import { moderateImage } from '../lib/contentModeration';
 import ContentBlockedModal, { ContentType } from '../components/ContentBlockedModal';
 import { PARENT_TERM_OPTIONS, CUSTOM_TERM_ID, FAMILY_STRUCTURE_OPTIONS } from '../lib/inclusiveLanguage';
 import { track, screenView } from '../lib/analytics';
+import { joinPatch, leavePatch } from '../lib/discoverData';
+import { Post as FeedPost } from '../types/feed';
+import PostPreviewCard from '../components/discover/PostPreviewCard';
+import ProfileMediaGrid from '../components/profile/ProfileMediaGrid';
+import PatchChipRow from '../components/profile/PatchChipRow';
+import { Ionicons } from '@expo/vector-icons';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,15 +83,6 @@ interface Baby {
   gender: string | null;
 }
 
-interface Post {
-  id: string;
-  content: string;
-  post_type: 'text' | 'milestone' | 'question';
-  created_at: string;
-  likes: number;
-  image_url?: string | null;
-}
-
 const PARENT_ROLES = ['Mom', 'Dad', 'Grandparent', 'Caregiver', 'Other'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -104,15 +104,6 @@ function ageLabel(iso: string): string {
   const months = Math.floor(days / 30.44);
   if (months < 24) return `${months}mo old`;
   return `${Math.floor(months / 12)}yr old`;
-}
-
-function getTimeAgo(dateString: string): string {
-  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateString) ? dateString : dateString + 'Z';
-  const seconds = Math.floor((Date.now() - new Date(normalized).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 async function uploadAvatar(uri: string, userId: string): Promise<string | null> {
@@ -139,14 +130,27 @@ export default function Profile() {
   const c = useColors();
   const navigation = useNavigation<any>();
   const { requestTour } = useContext(AppContext);
+  const { width: windowWidth, isDesktop, isTablet } = useResponsive();
+  const profileMaxWidth = maxWidthFor(windowWidth, 'profile');
+  const isWideProfile = isDesktop || isTablet;
   const s = useMemo(() => makeStyles(c), [c]);
-  const { isSubscribed, openPaywall } = useSubscription();
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Web: restore keyboard focus to this screen's ScrollView whenever Profile
+  // regains focus (mount, tab switch) so arrow/PageUp/PageDown scrolling
+  // works — see lib/webFocus.ts for why this is needed on web.
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== 'web') return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    (scrollRef.current as any)?.getScrollableNode?.()?.focus?.();
+  }, []));
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [userCreatedAt, setUserCreatedAt] = useState('');
   const [baby, setBaby] = useState<Baby | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -157,9 +161,12 @@ export default function Profile() {
   const [followingCount, setFollowingCount] = useState(0);
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
-  const [profileTab, setProfileTab] = useState<'posts' | 'saved' | 'journal'>('posts');
-  const [savedPosts, setSavedPosts] = useState<any[]>([]);
+  const [profileTab, setProfileTab] = useState<'posts' | 'media' | 'saved'>('posts');
+  const [savedPosts, setSavedPosts] = useState<FeedPost[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showJournal, setShowJournal] = useState(false);
+  const [feedVillage, setFeedVillage] = useState<Village | null>(null);
+  const [joiningVillageId, setJoiningVillageId] = useState<string | null>(null);
 
   // Edit state
   const [editUsername, setEditUsername] = useState('');
@@ -180,9 +187,9 @@ export default function Profile() {
   const [usernameError, setUsernameError] = useState('');
   const [saveError, setSaveError] = useState('');
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (opts?: { silent?: boolean }) => {
     setLoadError(false);
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -191,18 +198,22 @@ export default function Profile() {
       setUserCreatedAt(user.created_at ?? '');
 
       const [profileRes, babyRes, postsRes, villagesRes, followersRes, followingRes, savedRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
+        (supabase as any).from('profiles').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('babies').select('id,name,birth_date,due_date,is_expecting,photo_url,gender').eq('user_id', user.id).limit(1).maybeSingle(),
-        supabase.from('posts').select('id,content,post_type,created_at,likes,image_url').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('posts').select('id,user_id,author,content,post_type,created_at,likes,image_url,video_url,tags,is_sensitive,sensitive_label').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('user_villages').select('village_id').eq('user_id', user.id),
         supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', user.id),
         supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', user.id),
-        supabase.from('saved_posts').select('post_id, posts(id,content,post_type,created_at,likes,image_url,author)').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('saved_posts').select('post_id, posts(id,user_id,author,content,post_type,created_at,likes,image_url,video_url,tags,is_sensitive,sensitive_label)').eq('user_id', user.id).order('created_at', { ascending: false }),
       ]);
 
+      // These are always the owner's own posts, so the live username/display
+      // name is attached directly rather than via an extra attachAuthorProfiles
+      // batch query (which exists for feeds mixing many authors).
+      const myAuthorProfile = { username: profileRes.data?.username ?? null, display_name: profileRes.data?.display_name ?? null };
       setProfile(profileRes.data ?? null);
       setBaby(babyRes.data ?? null);
-      setPosts(postsRes.data ?? []);
+      setPosts((postsRes.data ?? []).map((p: any) => ({ ...p, profiles: myAuthorProfile })));
       setSavedPosts((savedRes.data ?? []).map((r: any) => r.posts).filter(Boolean));
       setMyVillageIds((villagesRes.data ?? []).map((r: any) => r.village_id));
       setFollowerCount(followersRes.count ?? 0);
@@ -240,11 +251,18 @@ export default function Profile() {
       console.warn('Profile loadAll error:', err.message);
       setLoadError(true);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAll({ silent: true });
+    setRefreshing(false);
+  }, [loadAll]);
 
   useEffect(() => { screenView('Profile'); }, []);
 
@@ -442,6 +460,22 @@ export default function Profile() {
     setProfile(prev => prev ? { ...prev, pinned_post_id: newPinnedId } : prev);
   }
 
+  // Leaving from the profile's own Patch chips reuses the same mutation Discover
+  // and Home's search use — membership itself isn't re-implemented here.
+  async function toggleVillageMembership(villageId: string) {
+    setJoiningVillageId(villageId);
+    const wasJoined = myVillageIds.includes(villageId);
+    const { error } = wasJoined ? await leavePatch(villageId) : await joinPatch(villageId);
+    if (error) {
+      Alert.alert('Something went wrong', wasJoined ? "Couldn't leave this patch. Please try again." : "Couldn't join this patch. Please try again.");
+    } else if (wasJoined) {
+      setMyVillageIds(prev => prev.filter(id => id !== villageId));
+    } else {
+      setMyVillageIds(prev => [...prev, villageId]);
+    }
+    setJoiningVillageId(null);
+  }
+
   async function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -475,13 +509,22 @@ export default function Profile() {
   const isOfficial = (profile as any)?.is_official === true;
   const isGoldTier = isAdmin || isOfficial;
 
+  // "Mom · Mom + Dad family" — a short, concise identity line combining the
+  // role and family-structure fields, neither of which was surfaced in view
+  // mode before (only captured in the edit form).
+  const familyLabel = profile?.family_structure === 'Other' ? profile?.family_structure_custom : profile?.family_structure;
+  const identityLine = [profile?.parent_role || profile?.preferred_term || null, familyLabel].filter(Boolean).join(' · ');
+
+  const myVillages = useMemo(() => villagesByIds(myVillageIds), [myVillageIds]);
+  const mediaPosts = useMemo(() => posts.filter(p => p.image_url || p.video_url), [posts]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <SafeAreaView style={s.safeArea}>
         <View style={s.center}>
-          <ActivityIndicator size="large" color="#B8A9C9" />
+          <ActivityIndicator size="large" color={c.primary} />
         </View>
       </SafeAreaView>
     );
@@ -490,11 +533,15 @@ export default function Profile() {
   return (
     <SafeAreaView style={s.safeArea}>
       {loadError && <LoadErrorBanner message="Couldn't load your profile." onRetry={loadAll} />}
+      <View style={{ flex: 1, width: '100%', maxWidth: profileMaxWidth, alignSelf: 'center' }}>
       <ScrollView
+        ref={scrollRef}
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        {...(Platform.OS === 'web' ? { tabIndex: 0, dataSet: { scrollRoot: 'true' } } : {})}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} colors={[c.primary]} />}
       >
         {/* ── Top bar ── */}
         <View style={s.topBar}>
@@ -529,14 +576,14 @@ export default function Profile() {
         </View>
 
         {/* ── Hero ── */}
-        <View style={[s.hero, isGoldTier && s.heroAdmin]}>
+        <View style={s.hero}>
 
           {/* Header banner */}
-          <View style={s.headerBannerWrap}>
+          <View style={[s.headerBannerWrap, isWideProfile && s.headerBannerWrapWide]}>
             {headerDisplayUri ? (
-              <Image source={{ uri: headerDisplayUri }} style={s.headerBannerImage} resizeMode="cover" />
+              <Image source={{ uri: headerDisplayUri }} style={[s.headerBannerImage, isWideProfile && s.headerBannerImageWide]} resizeMode="cover" />
             ) : (
-              <View style={[s.headerBannerPlaceholder, isGoldTier && s.headerBannerPlaceholderAdmin]} />
+              <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide, isGoldTier && s.headerBannerPlaceholderAdmin]} />
             )}
             {editing && (
               <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}
@@ -546,8 +593,9 @@ export default function Profile() {
             )}
           </View>
 
+          <View style={isWideProfile ? s.heroWideRow : undefined}>
           {/* Avatar overlapping header */}
-          <View style={s.avatarOverlapRow}>
+          <View style={[s.avatarOverlapRow, isWideProfile && s.avatarOverlapRowWide]}>
             <TouchableOpacity
               style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}
               onPress={editing ? pickAvatar : undefined}
@@ -571,7 +619,7 @@ export default function Profile() {
           </View>
 
           {/* Info — view or edit */}
-          <View style={s.heroContentWrap}>
+          <View style={[s.heroContentWrap, isWideProfile && s.heroContentWrapWide]}>
           {editing ? (
             <View style={s.editBlock}>
               <TextInput
@@ -579,7 +627,7 @@ export default function Profile() {
                 value={editDisplayName}
                 onChangeText={setEditDisplayName}
                 placeholder="Your name"
-                placeholderTextColor="#C4BAB2"
+                placeholderTextColor={c.textMuted}
                 autoCapitalize="words"
                 accessibilityLabel="Your name"
               />
@@ -594,7 +642,7 @@ export default function Profile() {
                     setUsernameError('');
                   }}
                   placeholder="username"
-                  placeholderTextColor="#C4BAB2"
+                  placeholderTextColor={c.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   maxLength={20}
@@ -608,7 +656,7 @@ export default function Profile() {
                 value={editBio}
                 onChangeText={setEditBio}
                 placeholder="Add a bio..."
-                placeholderTextColor="#C4BAB2"
+                placeholderTextColor={c.textMuted}
                 multiline
                 maxLength={160}
                 accessibilityLabel="Bio"
@@ -647,7 +695,7 @@ export default function Profile() {
                   value={editCustomTerm}
                   onChangeText={setEditCustomTerm}
                   placeholder="What should we call you?"
-                  placeholderTextColor="#C4BAB2"
+                  placeholderTextColor={c.textMuted}
                   accessibilityLabel="Custom term"
                 />
               )}
@@ -672,7 +720,7 @@ export default function Profile() {
                   value={editFamilyStructureCustom}
                   onChangeText={setEditFamilyStructureCustom}
                   placeholder="Describe your family"
-                  placeholderTextColor="#C4BAB2"
+                  placeholderTextColor={c.textMuted}
                   accessibilityLabel="Custom family structure"
                 />
               )}
@@ -710,53 +758,50 @@ export default function Profile() {
               {saveError ? <Text style={s.saveError}>{saveError}</Text> : null}
             </View>
           ) : (
-            <View style={s.viewBlock}>
-              <Text style={s.heroName}>{displayName}</Text>
+            <View style={[s.viewBlock, isWideProfile && s.viewBlockWide]}>
+              <Text style={[s.heroName, isWideProfile && s.textLeft]}>{displayName}</Text>
 
               {isGoldTier && (
-                <View style={s.founderWrap}>
-                  <Text style={s.founderStars}>✦  ✦  ✦  ✦  ✦</Text>
-                  <View style={s.founderBadge}>
-                    <Text style={s.founderBadgeText}>
-                      {isAdmin ? '👑  Founder of Parent Patch  👑' : '🌿  Official Parent Patch Account  🌿'}
-                    </Text>
-                  </View>
-                  <Text style={s.founderStarsBottom}>⭐  ⭐  ⭐  ⭐  ⭐</Text>
+                <View style={[s.founderBadge, isWideProfile && s.alignSelfStart]}>
+                  <Ionicons
+                    name={isAdmin ? 'ribbon' : 'leaf'}
+                    size={13}
+                    color={isAdmin ? c.honey : c.sage}
+                  />
+                  <Text style={s.founderBadgeText}>
+                    {isAdmin ? 'Founder of Parent Patch' : 'Official Parent Patch Account'}
+                  </Text>
                 </View>
               )}
 
-              {profile?.username && (
-                <Text style={s.heroUsername}>@{profile.username}</Text>
-              )}
-              {profile?.parent_role && (
-                <View style={s.roleBadge}>
-                  <Text style={s.roleBadgeText}>{profile.parent_role}</Text>
-                </View>
+              {(profile?.username || identityLine) && (
+                <Text style={[s.heroUsername, isWideProfile && s.textLeft]}>
+                  {profile?.username ? `@${profile.username}` : ''}
+                  {profile?.username && identityLine ? '  ·  ' : ''}
+                  {identityLine}
+                </Text>
               )}
               {profile?.bio ? (
-                <Text style={s.heroBio}>{profile.bio}</Text>
+                <Text style={[s.heroBio, isWideProfile && s.textLeft]}>{profile.bio}</Text>
               ) : null}
 
-              {/* Stats row */}
-              <View style={s.statsRow}>
-                <View style={s.statItem} accessible accessibilityLabel={`${posts.length} Posts`}>
+              {/* Social stats — Patches is a community count, not a follow
+                  metric, so it's surfaced separately in the Patches section
+                  below rather than mixed into this row. */}
+              <View style={[s.statsRow, isWideProfile && s.statsRowWide]}>
+                <TouchableOpacity style={[s.statItem, isWideProfile && s.statItemWide]}
+                  onPress={() => setProfileTab('posts')} activeOpacity={0.7}
+                  accessibilityRole="button" accessibilityLabel={`${posts.length} Posts`}>
                   <Text style={s.statNum}>{posts.length}</Text>
                   <Text style={s.statLbl}>Posts</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statItem} accessible accessibilityLabel={`${followerCount} Followers`}>
-                  <Text style={s.statNum}>{followerCount}</Text>
-                  <Text style={s.statLbl}>Followers</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statItem} accessible accessibilityLabel={`${followingCount} Following`}>
+                </TouchableOpacity>
+                <View style={[s.statItem, isWideProfile && s.statItemWide]} accessible accessibilityLabel={`${followingCount} Following`}>
                   <Text style={s.statNum}>{followingCount}</Text>
                   <Text style={s.statLbl}>Following</Text>
                 </View>
-                <View style={s.statDivider} />
-                <View style={s.statItem} accessible accessibilityLabel={`${myVillageIds.length} Patches`}>
-                  <Text style={s.statNum}>{myVillageIds.length}</Text>
-                  <Text style={s.statLbl}>Patches</Text>
+                <View style={[s.statItem, isWideProfile && s.statItemWide]} accessible accessibilityLabel={`${followerCount} Followers`}>
+                  <Text style={s.statNum}>{followerCount}</Text>
+                  <Text style={s.statLbl}>Followers</Text>
                 </View>
               </View>
 
@@ -785,13 +830,15 @@ export default function Profile() {
                             <TouchableOpacity
                               onPress={() => handleFollowRequest(req.id, req.requester_id, true)}
                               style={{ backgroundColor: c.primary, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5 }}
+                              hitSlop={hitSlopFor(22)}
                               accessibilityRole="button" accessibilityLabel={`Accept follow request from ${name}`}
                             >
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Accept</Text>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: c.primaryText }}>Accept</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => handleFollowRequest(req.id, req.requester_id, false)}
                               style={{ backgroundColor: c.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1.5, borderColor: c.separator }}
+                              hitSlop={hitSlopFor(22)}
                               accessibilityRole="button" accessibilityLabel={`Decline follow request from ${name}`}
                             >
                               <Text style={{ fontSize: 12, fontWeight: '700', color: c.textMuted }}>Decline</Text>
@@ -804,43 +851,14 @@ export default function Profile() {
                 </View>
               )}
 
-              {/* My villages chips — shown only when public */}
-              {myVillageIds.length > 0 && profile?.show_villages !== false && (
-                <View style={s.villageChipsWrap}>
-                  {myVillageIds.slice(0, 6).map((id, i) => {
-                    const v = VILLAGE_MAP[id];
-                    if (!v) return null;
-                    const chipColors = [
-                      { bg: c.cardLavender, border: c.lavender },
-                      { bg: c.cardBlue,     border: c.blue },
-                      { bg: c.cardBlush,    border: c.blush },
-                      { bg: c.cardHoney,    border: c.honey },
-                      { bg: c.cardSage,     border: c.sage },
-                    ];
-                    const cc = chipColors[i % chipColors.length];
-                    return (
-                      <View key={id} style={[s.villageChip, { backgroundColor: cc.bg, borderColor: cc.border }]}>
-                        <Text style={s.villageChipText}>{v.emoji} {v.name.replace(' Patch', '').replace(' Parents', '')}</Text>
-                      </View>
-                    );
-                  })}
-                  {myVillageIds.length > 6 && (
-                    <View style={s.villageChip}>
-                      <Text style={s.villageChipText}>+{myVillageIds.length - 6} more</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-              {profile?.show_villages === false && (
-                <Text style={s.villagesPrivateNote}>Patches set to private</Text>
-              )}
             </View>
           )}
           </View>
+          </View>
         </View>
 
-        {/* ── Baby card ── */}
-        <Text style={s.sectionTitle}>Baby Profile</Text>
+        {/* ── Family & community — secondary to the social identity above ── */}
+        <Text style={s.sectionTitle}>Family</Text>
         <View style={{ overflow: 'visible' }}>
         {baby ? (
           <TouchableOpacity
@@ -886,152 +904,133 @@ export default function Profile() {
         )}
         </View>
 
-        {/* ── Posts / Journal / Calendar tab toggle ── */}
+        {/* Journal — a private family feature, so it lives here rather than
+            competing with the social content tabs below. PaywallGate (inside
+            the modal) still handles the subscription upsell for non-subscribers. */}
+        <TouchableOpacity
+          style={s.journalRow}
+          onPress={() => setShowJournal(true)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Open Baby Journal"
+        >
+          <Text style={s.journalRowIcon}>📖</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.journalRowTitle}>Baby Journal</Text>
+            <Text style={s.journalRowSubtitle}>Memories and notes for {baby?.name || 'your baby'}</Text>
+          </View>
+          <Text style={s.babyChevron}>›</Text>
+        </TouchableOpacity>
+
+        <View style={{ marginTop: 20 }}>
+          <PatchChipRow
+            title="Your Patches"
+            villages={profile?.show_villages !== false ? myVillages : []}
+            onPressVillage={(v) => setFeedVillage(v)}
+            onSeeAll={() => navigation.navigate('Patch')}
+            emptyTitle={profile?.show_villages === false ? 'Patches set to private' : "You haven't joined any Patches yet"}
+            emptyMessage={profile?.show_villages === false ? undefined : 'Find communities that match your parenting stage or interests.'}
+          />
+        </View>
+
+        {/* ── Content tabs — the same three a real social profile has ── */}
         <View style={[s.tabToggleRow, { marginTop: 28 }]}>
           <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'posts' && s.tabToggleBtnActive]}
             onPress={() => setProfileTab('posts')}
             activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel="Posts tab"
+            accessibilityRole="button" accessibilityState={{ selected: profileTab === 'posts' }} accessibilityLabel="Posts tab"
           >
-            <Text style={[s.tabToggleText, profileTab === 'posts' && s.tabToggleTextActive]}>
-              💬 Posts
-            </Text>
+            <Text style={[s.tabToggleText, profileTab === 'posts' && s.tabToggleTextActive]}>Posts</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.tabToggleBtn, profileTab === 'media' && s.tabToggleBtnActive]}
+            onPress={() => setProfileTab('media')}
+            activeOpacity={0.8}
+            accessibilityRole="button" accessibilityState={{ selected: profileTab === 'media' }} accessibilityLabel="Media tab"
+          >
+            <Text style={[s.tabToggleText, profileTab === 'media' && s.tabToggleTextActive]}>Media</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.tabToggleBtn, profileTab === 'saved' && s.tabToggleBtnActive]}
             onPress={() => setProfileTab('saved')}
             activeOpacity={0.8}
-            accessibilityRole="button" accessibilityLabel="Saved tab"
+            accessibilityRole="button" accessibilityState={{ selected: profileTab === 'saved' }} accessibilityLabel="Saved tab"
           >
-            <Text style={[s.tabToggleText, profileTab === 'saved' && s.tabToggleTextActive]}>
-              🔖 Saved
-            </Text>
+            <Text style={[s.tabToggleText, profileTab === 'saved' && s.tabToggleTextActive]}>Saved</Text>
           </TouchableOpacity>
-          {isSubscribed && (
-            <TouchableOpacity
-              style={[s.tabToggleBtn, profileTab === 'journal' && s.tabToggleBtnActive]}
-              onPress={() => setProfileTab('journal')}
-              activeOpacity={0.8}
-              accessibilityRole="button" accessibilityLabel="Journal tab"
-            >
-              <Text style={[s.tabToggleText, profileTab === 'journal' && s.tabToggleTextActive]}>
-                📖 Journal
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {profileTab === 'posts' ? (
           sortedPosts.length === 0 ? (
             <View style={s.emptyPosts}>
-              <Text style={s.emptyPostsText}>No posts yet — share something with your community!</Text>
+              <Text style={s.emptyPostsTitle}>No posts yet</Text>
+              <Text style={s.emptyPostsText}>Share something with your community!</Text>
             </View>
           ) : (
-            sortedPosts.map(post => {
-              const isPinned = profile?.pinned_post_id === post.id;
-              return (
-                <View key={post.id} style={[
-                  s.postCard,
-                  isPinned && s.postCardPinned,
-                  {
-                    borderLeftWidth: 4,
-                    borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
-                      : post.post_type === 'question' ? c.postQuestion
-                      : c.postText,
-                  },
-                ]}>
-                  {isPinned && (
-                    <View style={s.pinnedBanner}>
-                      <Text style={s.pinnedBannerText}>📌 Pinned</Text>
-                    </View>
-                  )}
-                  <View style={s.postCardTop}>
-                    <View style={[
-                      s.postTypeBadge,
-                      post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
-                      post.post_type === 'question' && { backgroundColor: c.cardBlue },
-                      post.post_type === 'text' && { backgroundColor: c.cardBlush },
-                    ]}>
-                      <Text style={s.postTypeBadgeText}>
-                        {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        accessibilityRole="button" accessibilityLabel={isPinned ? 'Unpin post' : 'Pin post'}>
-                        <Text style={s.postDeleteIcon}>{isPinned ? '📌' : '📍'}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postDeleteBtn}
-                        accessibilityRole="button" accessibilityLabel="Delete post">
-                        <Text style={s.postDeleteIcon}>🗑</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={s.postContent}>{post.content}</Text>
-                  {post.image_url ? (
-                    <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
-                  ) : null}
-                  <View style={s.postCardFooter}>
-                    <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                    <Text style={s.postLikes}>❤️ {post.likes}</Text>
-                  </View>
-                </View>
-              );
-            })
+            <View style={{ gap: 10 }}>
+              {sortedPosts.map(post => {
+                const isPinned = profile?.pinned_post_id === post.id;
+                return (
+                  <PostPreviewCard
+                    key={post.id}
+                    post={post}
+                    pinned={isPinned}
+                    onPress={() => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
+                    onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                    headerRight={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postIconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button" accessibilityLabel={isPinned ? 'Unpin post' : 'Pin post'}>
+                          <Text style={s.postIconBtnText}>{isPinned ? '📌' : '📍'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postIconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button" accessibilityLabel="Delete post">
+                          <Text style={s.postIconBtnText}>🗑</Text>
+                        </TouchableOpacity>
+                      </View>
+                    }
+                  />
+                );
+              })}
+            </View>
           )
-        ) : profileTab === 'saved' ? (
-          savedPosts.length === 0 ? (
+        ) : profileTab === 'media' ? (
+          mediaPosts.length === 0 ? (
             <View style={s.emptyPosts}>
-              <Text style={s.emptyPostsText}>No saved posts yet — tap 🏷️ on any post to bookmark it.</Text>
+              <Text style={s.emptyPostsTitle}>No media yet</Text>
+              <Text style={s.emptyPostsText}>Photos and videos you share will appear here.</Text>
             </View>
           ) : (
-            savedPosts.map(post => (
-              <View key={post.id} style={[
-                s.postCard,
-                {
-                  borderLeftWidth: 4,
-                  borderLeftColor: post.post_type === 'milestone' ? c.postMilestone
-                    : post.post_type === 'question' ? c.postQuestion
-                    : c.postText,
-                },
-              ]}>
-                <View style={s.postCardTop}>
-                  <View style={[
-                    s.postTypeBadge,
-                    post.post_type === 'milestone' && { backgroundColor: c.cardHoney },
-                    post.post_type === 'question' && { backgroundColor: c.cardBlue },
-                    post.post_type === 'text' && { backgroundColor: c.cardBlush },
-                  ]}>
-                    <Text style={s.postTypeBadgeText}>
-                      {post.post_type === 'milestone' ? '🎉 Milestone' : post.post_type === 'question' ? '❓ Question' : '💬 Update'}
-                    </Text>
-                  </View>
-                  {post.author && <Text style={s.postTimestamp}>by {post.author}</Text>}
-                </View>
-                <Text style={s.postContent}>{post.content}</Text>
-                {post.image_url ? (
-                  <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
-                ) : null}
-                <View style={s.postCardFooter}>
-                  <Text style={s.postTimestamp}>{getTimeAgo(post.created_at)}</Text>
-                  <Text style={s.postLikes}>❤️ {post.likes}</Text>
-                </View>
-              </View>
-            ))
+            <ProfileMediaGrid
+              posts={mediaPosts}
+              onPressPost={(post) => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
+            />
           )
         ) : (
-          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
-            <BabyJournal
-              userId={profile?.id ?? null}
-              babyId={baby?.id ?? null}
-              babyName={baby?.name ?? null}
-            />
-          </PaywallGate>
+          savedPosts.length === 0 ? (
+            <View style={s.emptyPosts}>
+              <Text style={s.emptyPostsTitle}>Nothing saved yet</Text>
+              <Text style={s.emptyPostsText}>Tap 🔖 on any post to bookmark it here.</Text>
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              <Text style={s.savedPrivacyNote}>🔒 Only you can see saved posts</Text>
+              {savedPosts.map(post => (
+                <PostPreviewCard
+                  key={post.id}
+                  post={post}
+                  onPress={() => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
+                  onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                />
+              ))}
+            </View>
+          )
         )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
+      </View>
 
       <BabyProfileSheet
         visible={showProfileSheet}
@@ -1049,6 +1048,32 @@ export default function Profile() {
         />
       </Modal>
 
+      <Modal visible={showJournal} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={s.safeArea}>
+          <View style={s.journalModalHeader}>
+            <TouchableOpacity onPress={() => setShowJournal(false)} style={s.topBarCancelBtn}
+              accessibilityRole="button" accessibilityLabel="Close Baby Journal">
+              <Text style={s.topBarCancelText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <PaywallGate feature="baby_journal" isTracker title="Baby Journal" description="Write memories and notes for your baby to look back on someday." emoji="📓">
+            <BabyJournal
+              userId={profile?.id ?? null}
+              babyId={baby?.id ?? null}
+              babyName={baby?.name ?? null}
+            />
+          </PaywallGate>
+        </SafeAreaView>
+      </Modal>
+
+      <VillageFeedSheet
+        village={feedVillage}
+        visible={feedVillage !== null}
+        onClose={() => setFeedVillage(null)}
+        joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
+        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+      />
+
       {blockedContent && currentUserId && (
         <ContentBlockedModal
           visible={!!blockedContent}
@@ -1065,9 +1090,9 @@ export default function Profile() {
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
         }}>
-          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 }}>
-            <ActivityIndicator size="large" />
-            <Text style={{ fontSize: 14, fontWeight: '600' }}>Scanning content…</Text>
+          <View style={{ backgroundColor: c.card, borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 }}>
+            <ActivityIndicator size="large" color={c.primary} />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: c.textPrimary }}>Scanning content…</Text>
           </View>
         </View>
       )}
@@ -1092,8 +1117,7 @@ function makeStyles(c: Colors) {
     marginBottom: 28,
   },
   heading: {
-    fontSize: 28,
-    fontWeight: '800',
+    ...typography.screenTitle,
     color: c.textSecondary,
   },
   topBarActions: {
@@ -1148,32 +1172,33 @@ function makeStyles(c: Colors) {
 
   // ── Hero
   hero: {
-    backgroundColor: c.heroBg,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 24,
-    shadowColor: c.heroShadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 4,
+    // Bleeds past the page's own 24px padding so the cover photo reads as an
+    // edge-to-edge social header rather than a card floating on the page.
+    marginHorizontal: -24,
+    marginBottom: 20,
   },
   headerBannerWrap: {
     width: '100%',
-    height: 116,
+    height: 160,
     position: 'relative',
+  },
+  headerBannerWrapWide: {
+    height: 120,
   },
   headerBannerImage: {
     width: '100%',
-    height: 116,
+    height: 160,
+  },
+  headerBannerImageWide: {
+    height: 120,
   },
   headerBannerPlaceholder: {
     width: '100%',
-    height: 116,
+    height: 160,
     backgroundColor: c.cardLavender,
   },
   headerBannerPlaceholderAdmin: {
-    backgroundColor: '#FFF0C8',
+    backgroundColor: c.cardHoney,
   },
   headerBannerEditBtn: {
     position: 'absolute',
@@ -1192,33 +1217,48 @@ function makeStyles(c: Colors) {
   avatarOverlapRow: {
     width: '100%',
     alignItems: 'center',
-    marginTop: -44,
-    marginBottom: 4,
+    marginTop: -52,
+    marginBottom: 8,
+  },
+  avatarOverlapRowWide: {
+    width: 'auto',
+    alignItems: 'flex-start',
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+  },
+  heroWideRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 20,
+    paddingHorizontal: 24,
+    marginTop: -48,
   },
   heroContentWrap: {
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingBottom: 20,
     paddingTop: 4,
   },
-  heroAdmin: {
-    borderWidth: 1.5,
-    borderColor: 'rgba(212,175,55,0.45)',
-    shadowColor: '#D4AF37',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 10,
+  heroContentWrapWide: {
+    flex: 1,
+    width: undefined,
+    alignItems: 'flex-start',
+    paddingLeft: 0,
+    paddingBottom: 24,
+    paddingTop: 14,
   },
   avatarWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     backgroundColor: c.avatarBg,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    borderWidth: 4,
+    borderColor: c.bg,
   },
   avatarWrapAdmin: {
     borderWidth: 3,
@@ -1230,12 +1270,12 @@ function makeStyles(c: Colors) {
     elevation: 8,
   },
   avatarImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   avatarInitial: {
-    fontSize: 34,
+    fontSize: 38,
     fontWeight: '800',
     color: c.primary,
   },
@@ -1254,66 +1294,38 @@ function makeStyles(c: Colors) {
 
   // view mode
   viewBlock: { alignItems: 'center', width: '100%' },
+  viewBlockWide: { alignItems: 'flex-start', width: '100%' },
+  textLeft: { textAlign: 'left' },
+  alignSelfStart: { alignSelf: 'flex-start' },
   heroName: {
-    fontSize: 22,
-    fontWeight: '800',
+    ...typography.screenTitle,
     color: c.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
     textAlign: 'center',
   },
   heroUsername: {
-    fontSize: 14,
+    fontSize: 14.5,
     color: c.textMuted,
     fontWeight: '600',
     marginBottom: 8,
-  },
-  founderWrap: {
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  founderStars: {
-    fontSize: 11,
-    color: '#D4AF37',
-    letterSpacing: 3,
-    fontWeight: '700',
+    textAlign: 'center',
   },
   founderBadge: {
-    backgroundColor: '#FFF8E1',
-    borderWidth: 1.5,
-    borderColor: '#D4AF37',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 9,
-    shadowColor: '#D4AF37',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    backgroundColor: c.cardHoney,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 4,
+    marginBottom: 6,
   },
   founderBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#7C5C00',
-    letterSpacing: 0.3,
-  },
-  founderStarsBottom: {
-    fontSize: 13,
-    color: '#D4AF37',
-    letterSpacing: 4,
-  },
-  roleBadge: {
-    backgroundColor: c.roleBadge,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  roleBadgeText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: c.primaryText,
+    color: c.honey,
   },
   heroBio: {
     fontSize: 14,
@@ -1326,15 +1338,20 @@ function makeStyles(c: Colors) {
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: c.sage,
-    paddingTop: 14,
+    gap: 28,
     width: '100%',
+    justifyContent: 'center',
     marginTop: 4,
   },
+  statsRowWide: {
+    justifyContent: 'flex-start',
+    width: 'auto',
+  },
   statItem: {
-    flex: 1,
     alignItems: 'center',
+  },
+  statItemWide: {
+    alignItems: 'flex-start',
   },
   statNum: {
     fontSize: 15,
@@ -1346,11 +1363,6 @@ function makeStyles(c: Colors) {
     fontSize: 11,
     color: c.textMuted,
     fontWeight: '500',
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: c.cardSage,
   },
 
   // edit mode
@@ -1388,13 +1400,13 @@ function makeStyles(c: Colors) {
   },
   usernameError: {
     fontSize: 12,
-    color: '#DC2626',
+    color: c.signOut,
     marginTop: -4,
     paddingHorizontal: 4,
   },
   saveError: {
     fontSize: 13,
-    color: '#DC2626',
+    color: c.signOut,
     textAlign: 'center',
     lineHeight: 18,
     marginTop: 4,
@@ -1450,8 +1462,7 @@ function makeStyles(c: Colors) {
 
   // ── Section title
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...typography.sectionTitle,
     color: c.textSecondary,
     marginBottom: 12,
   },
@@ -1547,128 +1558,55 @@ function makeStyles(c: Colors) {
     fontWeight: '700',
     color: c.editBtn,
   },
+  journalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: c.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: c.separator,
+    padding: 14,
+    marginTop: 12,
+  },
+  journalRowIcon: { fontSize: 24 },
+  journalRowTitle: { fontSize: 14.5, fontWeight: '700', color: c.textPrimary },
+  journalRowSubtitle: { fontSize: 12.5, color: c.textMuted, marginTop: 1 },
 
-  // ── Posts
+  // ── Posts / Media / Saved tabs
   emptyPosts: {
     backgroundColor: c.card,
     borderRadius: 16,
     padding: 28,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: c.separator,
+  },
+  emptyPostsTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: c.textPrimary,
   },
   emptyPostsText: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: c.textMuted,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 19,
   },
-  postCard: {
-    backgroundColor: c.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  postCardPinned: {
-    borderTopWidth: 2,
-    borderTopColor: c.primary,
-  },
-  pinnedBanner: {
-    marginBottom: 8,
-  },
-  pinnedBannerText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: c.primary,
-    letterSpacing: 0.3,
-  },
-  postCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  postTypeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  postTypeBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: c.textSecondary,
-  },
-  postDeleteBtn: {
-    padding: 4,
-  },
-  postDeleteIcon: {
-    fontSize: 15,
-  },
-  postContent: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: c.textSecondary,
-    marginBottom: 10,
-  },
-  postImage: {
-    width: 160,
-    height: 210,
-    alignSelf: 'center',
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  postCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: c.separator,
-    paddingTop: 8,
-  },
-  postTimestamp: {
-    fontSize: 11,
+  postIconBtn: { padding: 4 },
+  postIconBtnText: { fontSize: 14 },
+  savedPrivacyNote: {
+    fontSize: 12.5,
     color: c.textMuted,
-  },
-  postLikes: {
-    fontSize: 12,
-    color: c.textMuted,
-    fontWeight: '500',
-  },
-
-  // ── Villages on own profile
-  villageChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 12,
-    justifyContent: 'center',
-  },
-  villageChip: {
-    backgroundColor: c.cardLavender,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: c.lavender,
-  },
-  villageChipText: {
-    fontSize: 12,
-    color: c.textSecondary,
     fontWeight: '600',
   },
-  villagesPrivateNote: {
-    fontSize: 12,
-    color: c.textMuted,
-    marginTop: 8,
-    fontStyle: 'italic',
+  journalModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
 
   // ── Privacy toggle

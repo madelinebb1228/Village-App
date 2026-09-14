@@ -7,6 +7,7 @@ export function VideoPostPlayer({ uri }: { uri: string }) {
     <VideoView
       player={player}
       style={{ width: '100%', height: 240, borderRadius: 12, marginBottom: 12, backgroundColor: '#000' }}
+      contentFit="cover"
       allowsFullscreen
       allowsPictureInPicture
     />

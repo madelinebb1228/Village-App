@@ -501,9 +501,9 @@ export const VILLAGES: Village[] = [
   { id: 'tricare_echo_families',    name: 'TRICARE ECHO Families Patch',              emoji: '🎖️', description: 'Military families using TRICARE Extended Care Health Option for special needs', hidden: true },
   { id: 'uninsured_parents',        name: 'Uninsured Families Patch',                 emoji: '🤝', description: 'Finding resources and support without health coverage', hidden: true },
   { id: 'community_health_parents', name: 'Community Health & Free Clinic Parents',     emoji: '🏥', description: 'Families relying on community health centers and free clinics', hidden: true },
-  { id: 'chosen_family_parents',       name: 'Friends Are My Patch',                   emoji: '💛', description: 'When your village is made of friends, not family — and that\'s everything' },
+  { id: 'chosen_family_parents',       name: 'Friends Are My Patch',                   emoji: '💛', description: 'When your patch is made of friends, not family — and that\'s everything' },
   { id: 'long_distance_family_parents', name: 'Long-Distance Family Parents Patch',    emoji: '✈️', description: 'Raising kids far from family — navigating love, guilt, and FaceTime calls' },
-  { id: 'recently_relocated_parents',  name: 'Recently Relocated Parents Patch',       emoji: '📦', description: 'New to the area and building your parenting village from scratch', hidden: true },
+  { id: 'recently_relocated_parents',  name: 'Recently Relocated Parents Patch',       emoji: '📦', description: 'New to the area and building your parenting patch from scratch', hidden: true },
   { id: 'estranged_family_parents',    name: 'Estranged From Family Parents Patch',    emoji: '💙', description: 'Parenting without family — by circumstance or by choice', hidden: true },
   { id: 'family_doesnt_get_it_parents', name: '"My Family Doesn\'t Get It" Parents',    emoji: '😔', description: 'When your family can\'t understand your child\'s needs or your journey', hidden: true },
   { id: 'rural_parents',               name: 'Rural Parents Patch',                    emoji: '🌾', description: 'Parenting in rural and remote areas — long drives, limited resources, tight community', hidden: true },
@@ -722,4 +722,16 @@ export const VILLAGES: Village[] = [
 export const VILLAGE_MAP: Record<string, { name: string; emoji: string }> = {};
 for (const v of VILLAGES) {
   VILLAGE_MAP[v.id] = { name: v.name, emoji: v.emoji };
+}
+
+const VILLAGE_BY_ID: Record<string, Village> = {};
+for (const v of VILLAGES) {
+  VILLAGE_BY_ID[v.id] = v;
+}
+
+// Resolves membership ids (from user_villages rows) to full Village objects —
+// e.g. for opening VillageFeedSheet from a profile's Patch chips, which needs
+// more than the {name, emoji} VILLAGE_MAP provides. Unknown ids are skipped.
+export function villagesByIds(ids: string[]): Village[] {
+  return ids.map(id => VILLAGE_BY_ID[id]).filter((v): v is Village => !!v);
 }

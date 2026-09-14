@@ -8,7 +8,6 @@ interface HomeIconRowProps {
   unreadMessageCount: number;
   onPressNotifications: () => void;
   onPressMessages: () => void;
-  onPressEvents: () => void;
   onPressSearch: () => void;
   containerRef?: React.RefObject<View>;
 }
@@ -18,7 +17,6 @@ function HomeIconRow({
   unreadMessageCount,
   onPressNotifications,
   onPressMessages,
-  onPressEvents,
   onPressSearch,
   containerRef,
 }: HomeIconRowProps) {
@@ -49,12 +47,14 @@ function HomeIconRow({
       <TouchableOpacity
         onPress={onPressMessages}
         activeOpacity={0.75}
-        style={styles.searchBtn}
+        style={styles.notifBtn}
         hitSlop={hitSlopFor(40)}
         accessibilityRole="button"
         accessibilityLabel={unreadMessageCount > 0 ? `Messages, ${unreadMessageCount} unread` : 'Messages'}
       >
-        <Text style={styles.searchBtnIcon}>💬</Text>
+        <View style={styles.notifBtnClip}>
+          <Image source={require('../../assets/messages-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
+        </View>
         {unreadMessageCount > 0 && (
           <View style={[styles.badge, { backgroundColor: c.primary }]}>
             <Text style={styles.badgeText}>
@@ -62,17 +62,6 @@ function HomeIconRow({
             </Text>
           </View>
         )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.notifBtn}
-        onPress={onPressEvents}
-        activeOpacity={0.75}
-        hitSlop={hitSlopFor(40)}
-        accessibilityRole="button" accessibilityLabel="Events"
-      >
-        <View style={styles.notifBtnClip}>
-          <Image source={require('../../assets/events-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-        </View>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.notifBtn}
@@ -101,20 +90,6 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 2,
     },
     badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-    searchBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: c.card,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    searchBtnIcon: { fontSize: 24 },
     notifBtn: {
       width: 40,
       height: 40,

@@ -135,11 +135,33 @@ export default function SuppliesSection({
     if (!userId) return;
     const day14 = new Date(); day14.setDate(day14.getDate() - 14);
 
-    const [supplyRes, partsRes, milkRes, medRes] = await Promise.all([
+    // These three groups don't depend on one another's results (the usage-rate
+    // queries only need userId/babyId/day14, already known upfront), so they
+    // were previously fetched as three sequential round trips for no reason —
+    // one Promise.all now fires everything at once.
+    const [supplyRes, partsRes, milkRes, medRes, feedRes, diaperRes, foodRes] = await Promise.all([
       supabase.from('supply_items').select('supply_type,quantity_remaining,unit,low_threshold').eq('user_id', userId),
       supabase.from('pump_parts').select('id,part_name,last_replaced,sessions_since_replaced').eq('user_id', userId),
       supabase.from('milk_stash').select('id,amount_ml,stored_date,location,notes').eq('user_id', userId).order('stored_date', { ascending: true }),
       (supabase.from('medications') as any).select('id,name,color,frequency_hours,category').eq('user_id', userId).eq('active', true).eq('category', 'baby').order('created_at'),
+      babyId
+        ? supabase.from('feeds')
+            .select('formula_oz, bottle_amount_oz, bottle_source')
+            .eq('baby_id', babyId)
+            .gte('logged_at', day14.toISOString())
+        : Promise.resolve({ data: null } as any),
+      babyId
+        ? supabase.from('diaper_logs')
+            .select('id', { count: 'exact', head: true })
+            .eq('baby_id', babyId)
+            .gte('logged_at', day14.toISOString())
+        : Promise.resolve({ count: null } as any),
+      babyId
+        ? supabase.from('baby_food_logs' as any)
+            .select('id', { count: 'exact', head: true })
+            .eq('baby_id', babyId)
+            .gte('tried_at', day14.toISOString())
+        : Promise.resolve({ count: null } as any),
     ]);
     if (supplyRes.data) setSupplies(supplyRes.data);
     if (partsRes.data) setPumpParts(partsRes.data);
@@ -148,19 +170,8 @@ export default function SuppliesSection({
 
     // Usage rates for days-remaining estimate
     if (babyId) {
-      const [feedRes, diaperRes] = await Promise.all([
-        supabase.from('feeds')
-          .select('formula_oz, bottle_amount_oz, bottle_source')
-          .eq('baby_id', babyId)
-          .gte('logged_at', day14.toISOString()),
-        supabase.from('diaper_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('baby_id', babyId)
-          .gte('logged_at', day14.toISOString()),
-      ]);
-
       if (feedRes.data) {
-        const totalOz = feedRes.data.reduce((sum, f) => {
+        const totalOz = feedRes.data.reduce((sum: number, f: any) => {
           if (f.formula_oz != null) return sum + f.formula_oz;
           if (f.bottle_source === 'formula' && f.bottle_amount_oz != null) return sum + f.bottle_amount_oz;
           return sum;
@@ -172,10 +183,6 @@ export default function SuppliesSection({
         setDiaperDailyCount(diaperRes.count > 0 ? diaperRes.count / 14 : null);
       }
 
-      const foodRes = await supabase.from('baby_food_logs' as any)
-        .select('id', { count: 'exact', head: true })
-        .eq('baby_id', babyId)
-        .gte('tried_at', day14.toISOString());
       if ((foodRes as any).count != null) {
         setFoodDailyCount((foodRes as any).count > 0 ? (foodRes as any).count / 14 : null);
       }
