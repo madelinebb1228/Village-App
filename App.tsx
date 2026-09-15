@@ -149,7 +149,9 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
                 backgroundColor: c.primary,
               }}
             >
-              <Ionicons name="add" size={22} color="#fff" />
+              <View style={{ width: 22, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="add" size={26} color="#fff" />
+              </View>
               <Text
                 allowFontScaling
                 maxFontSizeMultiplier={MAX_FONT_SCALE}

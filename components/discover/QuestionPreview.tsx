@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import { typography } from '../../lib/typography';
 
@@ -23,11 +24,17 @@ export default function QuestionPreview({ question, topic, answerCount, onPress,
       accessibilityRole="button"
       accessibilityLabel={question}
     >
-      <Text style={s.question} numberOfLines={3}>{question}</Text>
+      <View style={s.questionRow}>
+        <Ionicons name="help-circle-outline" size={16} color={c.primary} style={{ marginTop: 1 }} />
+        <Text style={s.question} numberOfLines={3}>{question}</Text>
+      </View>
       <View style={s.metaRow}>
         {topic ? <Text style={s.topic}>{topic}</Text> : null}
         {typeof answerCount === 'number' && (
-          <Text style={s.meta}>💬 {answerCount} answer{answerCount === 1 ? '' : 's'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="chatbubble-outline" size={12} color={c.textMuted} />
+            <Text style={s.meta}>{answerCount} answer{answerCount === 1 ? '' : 's'}</Text>
+          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -45,7 +52,8 @@ function makeStyles(c: Colors) {
       gap: 8,
       minHeight: 96,
     },
-    question: { fontSize: 14, fontWeight: '700', color: c.textPrimary, lineHeight: 19 },
+    questionRow: { flexDirection: 'row', gap: 8 },
+    question: { flex: 1, fontSize: 14, fontWeight: '700', color: c.textPrimary, lineHeight: 19 },
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     topic: { ...typography.badge, color: c.primary },
     meta: { fontSize: 11, color: c.textMuted, fontWeight: '600' },

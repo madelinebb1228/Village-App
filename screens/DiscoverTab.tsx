@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../lib/theme';
 import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
@@ -22,14 +23,14 @@ import { useBaby } from '../lib/babyContext';
 import { getBabyAge } from '../lib/feedUtils';
 import { useSubscription } from '../lib/subscriptionContext';
 import { VILLAGES, Village, villagesByIds } from '../lib/villageData';
-import { RESOURCES, CATEGORIES, Category, categoriesForAgeMonths } from '../lib/resourcesData';
+import { RESOURCES, CATEGORIES, Category, categoriesForAgeMonths, categoryAccent } from '../lib/resourcesData';
 import { Activity } from '../lib/activitiesUtil';
 import {
   DiscoverSearchResults, emptyResults, searchAll, SearchQuestion,
   fetchTrendingPosts, trendingTagsFromPosts, fetchPopularPosts, fetchRecentQuestions,
   TrendingTag, joinPatch, leavePatch, FREE_PATCH_LIMIT,
 } from '../lib/discoverData';
-import { Post } from '../types/feed';
+import { Post, POST_TAGS } from '../types/feed';
 
 import DiscoverSearchBar from '../components/discover/DiscoverSearchBar';
 import DiscoverSection from '../components/discover/DiscoverSection';
@@ -441,6 +442,35 @@ export default function DiscoverTab({ route, navigation }: any) {
     ? RESOURCES.filter(r => r.category === categoryBrowse)
     : [];
 
+  type FamilyItem =
+    | { kind: 'activity'; activity: Activity }
+    | { kind: 'resource'; resource: typeof RESOURCES[number] };
+  const familyItems: FamilyItem[] = [
+    ...stageActivities.map(a => ({ kind: 'activity' as const, activity: a })),
+    ...stageResources.map(r => ({ kind: 'resource' as const, resource: r })),
+  ];
+
+  function renderFamilyItem(item: FamilyItem, featured: boolean, width?: number) {
+    if (item.kind === 'activity') {
+      return (
+        <ActivityCard
+          key={item.activity.id}
+          activity={item.activity}
+          onPress={() => setSelectedActivity(item.activity)}
+        />
+      );
+    }
+    return (
+      <ResourcePreviewCard
+        key={item.resource.id}
+        resource={item.resource}
+        onPress={() => setSelected(item.resource.id)}
+        width={featured ? undefined : width}
+        variant={featured ? 'featured' : 'default'}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={s.container}>
       <View style={{ flex: 1, width: '100%', maxWidth: discoverMaxWidth, alignSelf: 'center' }}>
@@ -467,12 +497,53 @@ export default function DiscoverTab({ route, navigation }: any) {
           <DiscoverSearchBar value={query} onChangeText={setQuery} />
         </View>
 
-        {/* 1. Trending Topics — moved here from Home's old always-visible
-             chip row. Real tag-frequency counts from actual trending posts
-             (trendingTagsFromPosts), never fabricated. Tapping one searches
-             Discover for it — the same real search already used everywhere
-             else here, not a new backend. */}
-        {trendingTags.length > 0 && (
+        {/* 1. For Your Family. Desktop gets an intentional asymmetric layout
+             (one large featured recommendation + two smaller supporting
+             cards stacked beside it, matched to the same total height) so
+             the section reads as "we picked something for you" rather than
+             a scroll row. Phone/tablet keep the horizontal carousel —
+             several scannable cards, swipeable, no awkward empty space.
+             Deliberately the first thing after search: personalized/resource
+             discovery leads, ahead of any single social post. */}
+        <View onLayout={e => setFamilyRowWidth(e.nativeEvent.layout.width)}>
+          <DiscoverSection
+            title={activeBaby?.name && ageMonths != null ? `For ${activeBaby.name}'s stage` : 'For Your Family'}
+            subtitle={ageMonths != null ? `Relevant for this stage (${ageMonths} mo)` : 'Commonly useful with Parent Patch families'}
+            horizontal={!isDesktop && stageActivities.length + stageResources.length > 0}
+          >
+            {landingLoading ? (
+              <ActivityIndicator color={c.primary} />
+            ) : familyItems.length === 0 ? (
+              <Text style={s.mutedNote}>You may find these helpful as you get started.</Text>
+            ) : isDesktop ? (
+              <View style={s.familyDesktopWrap}>
+                <View style={s.familyFeatured}>
+                  {renderFamilyItem(familyItems[0], true)}
+                </View>
+                {familyItems.length > 1 && (
+                  <View style={s.familyStack}>
+                    {familyItems.slice(1, 3).map(item => renderFamilyItem(item, false))}
+                  </View>
+                )}
+              </View>
+            ) : (
+              familyItems.map(item => (
+                <View key={item.kind === 'activity' ? item.activity.id : item.resource.id} style={{ width: familyCardWidth }}>
+                  {renderFamilyItem(item, false, familyCardWidth)}
+                </View>
+              ))
+            )}
+          </DiscoverSection>
+        </View>
+
+        {/* 2. Trending Topics when real tag-frequency data clears the
+             threshold (trendingTagsFromPosts — never fabricated); otherwise
+             Browse Topics using the app's real topic taxonomy (POST_TAGS,
+             the same list posts are actually tagged from) so topic
+             exploration is never empty just because nothing is
+             technically trending yet. Tapping either searches Discover —
+             the same real search used everywhere else here. */}
+        {trendingTags.length > 0 ? (
           <DiscoverSection title="Trending Topics" subtitle="What parents are tagging this week">
             <View style={s.tagRow}>
               {trendingTags.map(t => (
@@ -489,9 +560,67 @@ export default function DiscoverTab({ route, navigation }: any) {
               ))}
             </View>
           </DiscoverSection>
+        ) : (
+          <DiscoverSection title="Browse Topics" subtitle="Explore what other parents post about">
+            <View style={s.tagRow}>
+              {POST_TAGS.map(tag => (
+                <TouchableOpacity
+                  key={tag}
+                  style={s.tagChip}
+                  onPress={() => setQuery(tag)}
+                  hitSlop={hitSlopFor(30)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Search topic ${tag}`}
+                >
+                  <Text style={s.tagChipText}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </DiscoverSection>
         )}
 
-        {/* 2. Trending posts */}
+        {/* 3. Explore Categories — moved up from the bottom of the screen.
+             Parent Patch's resource depth should be apparent early, not
+             buried below several rounds of social content; this is the
+             clearest existing "we have a real library" signal, so it leads
+             the resource section rather than closing the screen. */}
+        <DiscoverSection title="Explore Categories" subtitle="Browse the full Parent Patch library">
+          <View style={s.categoryGrid}>
+            {CATEGORIES.map(cat => {
+              const active = categoryBrowse === cat;
+              const accent = categoryAccent(cat, c);
+              return (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    s.categoryTile,
+                    active ? { backgroundColor: accent.text, borderColor: accent.text } : { backgroundColor: accent.bg, borderColor: accent.bg },
+                  ]}
+                  onPress={() => setCategoryBrowse(active ? null : cat)}
+                  hitSlop={hitSlopFor(40)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`Browse ${cat} resources`}
+                >
+                  <Text style={[s.categoryTileText, { color: active ? c.textOnColored : accent.text }]}>{cat}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {categoryBrowse && (
+            <View style={{ marginTop: 14, gap: 10 }}>
+              {categoryBrowseResources.map(r => (
+                <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
+              ))}
+            </View>
+          )}
+        </DiscoverSection>
+
+        {/* 4. Trending posts — social discovery. Comes after the
+             personalized/resource sections above by design (see item 11):
+             Parent Patch's information depth should register before a
+             single social post gets full-width prominence. */}
         {trendingPosts.length > 0 && (
           <DiscoverSection title="Trending in Parent Patch" subtitle="What parents are talking about this week">
             {trendingPosts.slice(0, 3).map(post => (
@@ -502,36 +631,7 @@ export default function DiscoverTab({ route, navigation }: any) {
           </DiscoverSection>
         )}
 
-        {/* 3. For Your Family — a horizontal carousel rather than a vertical
-             stack, so each card only needs to be scannable (not the full
-             content width) and several are visible/swipeable at once. */}
-        <View onLayout={e => setFamilyRowWidth(e.nativeEvent.layout.width)}>
-          <DiscoverSection
-            title={activeBaby?.name && ageMonths != null ? `For ${activeBaby.name}'s stage` : 'For Your Family'}
-            subtitle={ageMonths != null ? `Popular for this stage (${ageMonths} mo)` : 'Popular with Parent Patch families'}
-            horizontal={stageActivities.length + stageResources.length > 0}
-          >
-            {landingLoading ? (
-              <ActivityIndicator color={c.primary} />
-            ) : (
-              <>
-                {stageActivities.length === 0 && stageResources.length === 0 ? (
-                  <Text style={s.mutedNote}>You may find these helpful as you get started.</Text>
-                ) : null}
-                {stageActivities.map(a => (
-                  <View key={a.id} style={{ width: familyCardWidth }}>
-                    <ActivityCard activity={a} onPress={() => setSelectedActivity(a)} />
-                  </View>
-                ))}
-                {stageResources.map(r => (
-                  <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} width={familyCardWidth} />
-                ))}
-              </>
-            )}
-          </DiscoverSection>
-        </View>
-
-        {/* 4. Popular in the Patch */}
+        {/* 5. Popular in the Patch */}
         <DiscoverSection title="Popular in the Patch" subtitle="The most-loved posts across Parent Patch">
           {landingLoading ? (
             <ActivityIndicator color={c.primary} />
@@ -544,7 +644,7 @@ export default function DiscoverTab({ route, navigation }: any) {
           )}
         </DiscoverSection>
 
-        {/* 5. Discover Patches */}
+        {/* 6. Discover Patches */}
         <DiscoverSection title="Discover Patches" seeAllLabel="See all" onSeeAll={goToPatchTab}>
           <Text style={s.patchGroupLabel}>Your Patches</Text>
           {myPatches.length === 0 ? (
@@ -585,25 +685,28 @@ export default function DiscoverTab({ route, navigation }: any) {
 
           <View style={s.patchActionsRow}>
             <TouchableOpacity style={s.patchActionChip} hitSlop={hitSlopFor(34)} onPress={focusPatchSearch} accessibilityRole="button" accessibilityLabel="Search Patches">
-              <Text style={s.patchActionChipText}>🔍 Search Patches</Text>
+              <Ionicons name="search-outline" size={14} color={c.textSecondary} />
+              <Text style={s.patchActionChipText}>Search Patches</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.patchActionChip} hitSlop={hitSlopFor(34)} onPress={goToPatchTab} accessibilityRole="button" accessibilityLabel="Find Your Patch quiz">
-              <Text style={s.patchActionChipText}>🧭 Find Your Patch</Text>
+              <Ionicons name="compass-outline" size={14} color={c.textSecondary} />
+              <Text style={s.patchActionChipText}>Find Your Patch</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.patchActionChip} hitSlop={hitSlopFor(34)} onPress={goToPatchTab} accessibilityRole="button" accessibilityLabel="Request a Patch">
-              <Text style={s.patchActionChipText}>💌 Request a Patch</Text>
+              <Ionicons name="mail-outline" size={14} color={c.textSecondary} />
+              <Text style={s.patchActionChipText}>Request a Patch</Text>
             </TouchableOpacity>
           </View>
         </DiscoverSection>
 
-        {/* 6. Watch & Learn */}
+        {/* 7. Watch & Learn */}
         <DiscoverSection title="Watch & Learn" seeAllLabel="See all" onSeeAll={() => setSelected('videos')} horizontal>
           {VIDEO_CATEGORIES.map(v => (
             <VideoPreview key={v.title} emoji={v.emoji} title={v.title} description={v.desc} onPress={() => setSelected('videos')} />
           ))}
         </DiscoverSection>
 
-        {/* 7. Parent Q+A */}
+        {/* 8. Parent Q+A */}
         <DiscoverSection title="Parent Q+A" seeAllLabel="See all Q+A" onSeeAll={() => setSelected('qa')}>
           {landingLoading ? (
             <ActivityIndicator color={c.primary} />
@@ -636,36 +739,6 @@ export default function DiscoverTab({ route, navigation }: any) {
           {RESOURCES.filter(r => r.id === 'local' || r.id === 'provider_reviews').map(r => (
             <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
           ))}
-        </DiscoverSection>
-
-        {/* 10. Explore Categories */}
-        <DiscoverSection title="Explore Categories" subtitle="Browse the full Parent Patch library">
-          <View style={s.categoryGrid}>
-            {CATEGORIES.map(cat => {
-              const active = categoryBrowse === cat;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  style={[s.categoryTile, active && s.categoryTileActive]}
-                  onPress={() => setCategoryBrowse(active ? null : cat)}
-                  hitSlop={hitSlopFor(40)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={`Browse ${cat} resources`}
-                >
-                  <Text style={[s.categoryTileText, active && s.categoryTileTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {categoryBrowse && (
-            <View style={{ marginTop: 14, gap: 10 }}>
-              {categoryBrowseResources.map(r => (
-                <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
-              ))}
-            </View>
-          )}
         </DiscoverSection>
       </ScrollView>
       </View>
@@ -871,12 +944,14 @@ const makeStyles = (c: Colors) =>
     patchGroupLabel: { fontSize: 13, fontWeight: '800', color: c.textMuted, marginBottom: 10, paddingHorizontal: 20, textTransform: 'uppercase', letterSpacing: 0.4 },
     patchRow: { paddingHorizontal: 20, gap: 12 },
     patchActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginTop: 16 },
-    patchActionChip: { borderWidth: 1.5, borderColor: c.separator, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: c.card },
+    patchActionChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: c.separator, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: c.card },
     patchActionChipText: { fontSize: 12.5, fontWeight: '700', color: c.textSecondary },
 
+    familyDesktopWrap: { flexDirection: 'row', paddingHorizontal: 20, gap: 16, alignItems: 'stretch' },
+    familyFeatured: { flex: 1.3 },
+    familyStack: { flex: 1, gap: 12, justifyContent: 'space-between' },
+
     categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20 },
-    categoryTile: { borderWidth: 1.5, borderColor: c.separator, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: c.card },
-    categoryTileActive: { backgroundColor: c.primary, borderColor: c.primary },
-    categoryTileText: { fontSize: 13.5, fontWeight: '700', color: c.textSecondary },
-    categoryTileTextActive: { color: c.primaryText },
+    categoryTile: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 },
+    categoryTileText: { fontSize: 13.5, fontWeight: '700' },
   });

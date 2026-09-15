@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 
 interface Props {
@@ -27,6 +28,9 @@ export default function VideoPreview({ emoji, title, description, onPress, width
     >
       <View style={s.thumb}>
         <Text style={s.thumbEmoji}>{emoji}</Text>
+        <View style={s.playBadge}>
+          <Ionicons name="play" size={12} color={c.textOnColored} />
+        </View>
       </View>
       <Text style={s.title} numberOfLines={1}>{title}</Text>
       <Text style={s.desc} numberOfLines={2}>{description}</Text>
@@ -47,6 +51,17 @@ function makeStyles(c: Colors) {
       justifyContent: 'center',
     },
     thumbEmoji: { fontSize: 34 },
+    playBadge: {
+      position: 'absolute',
+      bottom: 8,
+      right: 8,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: c.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     title: { fontSize: 13.5, fontWeight: '700', color: c.textPrimary },
     desc: { fontSize: 11.5, color: c.textMuted, lineHeight: 15 },
   });

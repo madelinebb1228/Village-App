@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import { hitSlopFor } from '../../lib/accessibility';
 
@@ -12,6 +13,10 @@ interface HomeIconRowProps {
   containerRef?: React.RefObject<View>;
 }
 
+// Same restrained Ionicons-outline language as the sidebar and Track —
+// these are functional chrome (open Notifications/Messages/Search), not
+// content, so they get plain vector icons in a subtle neutral circle rather
+// than the old illustrated pastel button artwork.
 function HomeIconRow({
   unreadNotifCount,
   unreadMessageCount,
@@ -27,15 +32,13 @@ function HomeIconRow({
     <View ref={containerRef} style={styles.iconRow}>
       <TouchableOpacity
         onPress={onPressNotifications}
-        activeOpacity={0.75}
-        style={styles.notifBtn}
+        activeOpacity={0.7}
+        style={styles.iconBtn}
         hitSlop={hitSlopFor(40)}
         accessibilityRole="button"
         accessibilityLabel={unreadNotifCount > 0 ? `Notifications, ${unreadNotifCount} unread` : 'Notifications'}
       >
-        <View style={styles.notifBtnClip}>
-          <Image source={require('../../assets/notification-bell.png')} style={styles.notifBtnImage} resizeMode="cover" />
-        </View>
+        <Ionicons name="notifications-outline" size={21} color={c.textPrimary} />
         {unreadNotifCount > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -46,15 +49,13 @@ function HomeIconRow({
       </TouchableOpacity>
       <TouchableOpacity
         onPress={onPressMessages}
-        activeOpacity={0.75}
-        style={styles.notifBtn}
+        activeOpacity={0.7}
+        style={styles.iconBtn}
         hitSlop={hitSlopFor(40)}
         accessibilityRole="button"
         accessibilityLabel={unreadMessageCount > 0 ? `Messages, ${unreadMessageCount} unread` : 'Messages'}
       >
-        <View style={styles.notifBtnClip}>
-          <Image source={require('../../assets/messages-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-        </View>
+        <Ionicons name="chatbubble-outline" size={21} color={c.textPrimary} />
         {unreadMessageCount > 0 && (
           <View style={[styles.badge, { backgroundColor: c.primary }]}>
             <Text style={styles.badgeText}>
@@ -64,15 +65,13 @@ function HomeIconRow({
         )}
       </TouchableOpacity>
       <TouchableOpacity
-        style={styles.notifBtn}
+        style={styles.iconBtn}
         onPress={onPressSearch}
-        activeOpacity={0.75}
+        activeOpacity={0.7}
         hitSlop={hitSlopFor(40)}
         accessibilityRole="button" accessibilityLabel="Search"
       >
-        <View style={styles.notifBtnClip}>
-          <Image source={require('../../assets/search-icon.png')} style={styles.notifBtnImage} resizeMode="cover" />
-        </View>
+        <Ionicons name="search-outline" size={21} color={c.textPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -90,23 +89,15 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 2,
     },
     badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-    notifBtn: {
+    iconBtn: {
       width: 40,
       height: 40,
       borderRadius: 20,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    notifBtnClip: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      overflow: 'hidden',
       backgroundColor: c.card,
+      borderWidth: 1.5,
+      borderColor: c.separator,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    notifBtnImage: { width: 40, height: 40 },
   });
 }

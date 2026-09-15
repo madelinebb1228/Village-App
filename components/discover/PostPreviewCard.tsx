@@ -91,9 +91,22 @@ export default function PostPreviewCard({ post, onPress, width, pinned, headerRi
         <>
           {post.content ? <Text style={s.content} numberOfLines={3}>{post.content}</Text> : null}
           <View style={s.footer}>
-            <Text style={s.footerText}>❤️ {post.likes || 0}</Text>
-            {post.image_url ? <Text style={s.footerText}>📷 Photo</Text> : null}
-            {post.video_url ? <Text style={s.footerText}>🎬 Video</Text> : null}
+            <View style={s.footerItem}>
+              <Ionicons name="heart" size={13} color={c.blush} />
+              <Text style={s.footerText}>{post.likes || 0}</Text>
+            </View>
+            {post.image_url ? (
+              <View style={s.footerItem}>
+                <Ionicons name="image-outline" size={13} color={c.textMuted} />
+                <Text style={s.footerText}>Photo</Text>
+              </View>
+            ) : null}
+            {post.video_url ? (
+              <View style={s.footerItem}>
+                <Ionicons name="videocam-outline" size={13} color={c.textMuted} />
+                <Text style={s.footerText}>Video</Text>
+              </View>
+            ) : null}
             {post.tags && post.tags.length > 0 ? <Text style={s.footerText}>#{post.tags[0]}</Text> : null}
           </View>
         </>
@@ -120,6 +133,7 @@ function makeStyles(c: Colors) {
     time: { ...typography.postMeta, color: c.textMuted, marginTop: 1 },
     content: { fontSize: 13.5, color: c.textPrimary, lineHeight: 19 },
     footer: { flexDirection: 'row', gap: 14 },
+    footerItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     footerText: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
     sensitiveBox: { backgroundColor: c.reminderWarning.bg, borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: c.reminderWarning.border },
     sensitiveTitle: { fontSize: 12, fontWeight: '800', color: c.reminderWarning.text },

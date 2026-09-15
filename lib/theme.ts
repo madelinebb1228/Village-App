@@ -217,7 +217,7 @@ export const darkColors: Colors = {
 
   textPrimary:     '#E8EEF4',
   textSecondary:   '#B8C8D8',
-  textMuted:       '#6A7E94',
+  textMuted:       '#93A8BE',
   textOnColored:   '#E8EEF4',
 
   blue:            '#7BA7BC',

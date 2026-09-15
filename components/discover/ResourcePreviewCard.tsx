@@ -1,37 +1,47 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../../lib/theme';
 import { typography } from '../../lib/typography';
-import { Resource } from '../../lib/resourcesData';
+import { Resource, categoryAccent } from '../../lib/resourcesData';
 
 interface Props {
   resource: Resource;
   onPress: () => void;
   width?: number;
+  /** 'featured' = larger editorial treatment for a single hero resource; default is the compact list/grid row. */
+  variant?: 'default' | 'featured';
 }
 
-// Neutral, content-first resource card — used both in Explore Categories and
-// in search results. Deliberately plain (white card, subtle border) rather
-// than the old bright pastel tile, per the "social/content = neutral" rule.
-export default function ResourcePreviewCard({ resource, onPress, width }: Props) {
+// Content-first resource card — a neutral white/dark card (per the
+// "social = neutral" rule) whose emoji bubble and category label carry a
+// restrained, category-specific accent color so the color communicates what
+// kind of resource this is (see lib/resourcesData#categoryAccent) rather
+// than just decorating the card. Used in Explore Categories, search
+// results, and Discover's "For Your Family" / featured placements.
+export default function ResourcePreviewCard({ resource, onPress, width, variant = 'default' }: Props) {
   const c = useColors();
   const s = makeStyles(c);
+  const accent = categoryAccent(resource.category, c);
+  const featured = variant === 'featured';
 
   return (
     <TouchableOpacity
-      style={[s.card, width ? { width } : null]}
+      style={[s.card, featured && s.cardFeatured, width ? { width } : null]}
       onPress={onPress}
       activeOpacity={0.8}
       accessibilityRole="button"
       accessibilityLabel={`${resource.title}. ${resource.category}. ${resource.description}`}
     >
-      <Text style={s.emoji}>{resource.emoji}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={s.title} numberOfLines={1}>{resource.title}</Text>
-        <Text style={s.category}>{resource.category}</Text>
-        <Text style={s.desc} numberOfLines={2}>{resource.description}</Text>
+      <View style={[s.emojiBubble, featured && s.emojiBubbleFeatured, { backgroundColor: accent.bg }]}>
+        <Text style={featured ? s.emojiFeatured : s.emoji}>{resource.emoji}</Text>
       </View>
-      <Text style={s.chevron}>›</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={[s.category, { color: accent.text }]}>{resource.category}</Text>
+        <Text style={[s.title, featured && s.titleFeatured]} numberOfLines={featured ? 2 : 1}>{resource.title}</Text>
+        <Text style={s.desc} numberOfLines={featured ? 3 : 2}>{resource.description}</Text>
+      </View>
+      {!featured && <Ionicons name="chevron-forward" size={18} color={c.textMuted} />}
     </TouchableOpacity>
   );
 }
@@ -48,10 +58,24 @@ function makeStyles(c: Colors) {
       borderRadius: 14,
       padding: 14,
     },
-    emoji: { fontSize: 26 },
+    cardFeatured: {
+      flex: 1,
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      borderRadius: 18,
+      padding: 18,
+      gap: 4,
+    },
+    emojiBubble: {
+      width: 44, height: 44, borderRadius: 14,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    emojiBubbleFeatured: { width: 56, height: 56, borderRadius: 16, marginBottom: 10 },
+    emoji: { fontSize: 22 },
+    emojiFeatured: { fontSize: 28 },
     title: { fontSize: 14.5, fontWeight: '700', color: c.textPrimary },
-    category: { ...typography.badge, color: c.primary, marginTop: 1, marginBottom: 3 },
+    titleFeatured: { fontSize: 19, fontWeight: '800', marginTop: 1 },
+    category: { ...typography.badge, marginTop: 1, marginBottom: 3 },
     desc: { ...typography.postMeta, color: c.textMuted, lineHeight: 16 },
-    chevron: { fontSize: 20, color: c.textMuted, fontWeight: '700' },
   });
 }

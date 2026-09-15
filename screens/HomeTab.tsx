@@ -39,7 +39,7 @@ import HandoffNotesSheet from '../components/HandoffNotesSheet';
 import { useBaby } from '../lib/babyContext';
 import { VILLAGE_MAP, Village, villagesByIds } from '../lib/villageData';
 import VillageFeedSheet from './VillageFeedSheet';
-import { joinPatch, leavePatch } from '../lib/discoverData';
+import { joinPatch, leavePatch, trendingTagsFromPosts } from '../lib/discoverData';
 import { useColors, Colors } from '../lib/theme';
 import { typography } from '../lib/typography';
 import LoadErrorBanner from '../components/LoadErrorBanner';
@@ -68,6 +68,7 @@ import TipOfTheDayCard from '../components/TipOfTheDayCard';
 import FeedInsert from '../components/feed/FeedInsert';
 import PatchLabel from '../components/feed/PatchLabel';
 import PostTypeBadge from '../components/feed/PostTypeBadge';
+import HomeRightRail from '../components/home/HomeRightRail';
 import { track, screenView } from '../lib/analytics';
 
 async function fetchLatestHandoffNote(babyId: string): Promise<string | null> {
@@ -89,7 +90,7 @@ export default function HomeTab() {
   const route = useRoute<any>();
   const styles = useMemo(() => makeStyles(c), [c]);
   const { isOneHanded } = useOneHanded();
-  const { width: windowWidth } = useResponsive();
+  const { width: windowWidth, isDesktop } = useResponsive();
   const feedMaxWidth = maxWidthFor(windowWidth, 'feed');
   const insets = useSafeAreaInsets();
   const { isSubscribed } = useSubscription();
@@ -145,6 +146,7 @@ export default function HomeTab() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
+  const [activePostType, setActivePostType] = useState<Post['post_type'] | null>(null);
 
   // The topic-chip row used to live here; it's moved to Discover's Trending
   // Topics now, which navigates back with this param instead — same filter
@@ -153,6 +155,13 @@ export default function HomeTab() {
   useEffect(() => {
     if (route?.params?.filterTag) setActiveTag(route.params.filterTag);
   }, [route?.params?.filterTag]);
+
+  // Set by tapping "See more <Type>s" in a PostTypeBadge's info popover,
+  // wherever that badge is rendered (Home, Discover previews, Search,
+  // Patch feed) — same route-param handoff as filterTag above.
+  useEffect(() => {
+    if (route?.params?.filterPostType) setActivePostType(route.params.filterPostType);
+  }, [route?.params?.filterPostType]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [baby, setBaby] = useState<{ name: string; birth_date: string | null; due_date: string | null; is_expecting: boolean | null; photo_url: string | null; gender: string | null } | null>(null);
@@ -261,10 +270,19 @@ export default function HomeTab() {
     }
     if (activeHashtag) result = result.filter(p => p.content?.toLowerCase().includes(`#${activeHashtag.toLowerCase()}`));
     if (activeTag) result = result.filter(p => p.tags?.includes(activeTag));
+    if (activePostType) result = result.filter(p => p.post_type === activePostType);
     return result;
-  }, [posts, followingPosts, friendsPosts, patchesPosts, feedMode, activeHashtag, activeTag, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
+  }, [posts, followingPosts, friendsPosts, patchesPosts, feedMode, activeHashtag, activeTag, activePostType, blockedUserIds, mutedUserIds, privateUnfollowedIds, currentUserId, wordFilter]);
 
   const greeting = greetingFor(new Date().getHours(), displayName ?? undefined);
+
+  // Desktop right rail data — reuses state Home already fetches for its own
+  // feed/trending carousel, never a separate fetch. See HomeRightRail.
+  const railJoinedVillages = useMemo(
+    () => villagesByIds([...myVillageIdsSet]).filter(v => !v.hidden),
+    [myVillageIdsSet],
+  );
+  const railTrendingTags = useMemo(() => trendingTagsFromPosts(trendingPosts, 8), [trendingPosts]);
 
   // ── Parent Patch feed inserts ─────────────────────────────────────────────
   // A small, deliberately limited set of branded utility cards woven into the
@@ -1895,7 +1913,8 @@ export default function HomeTab() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={{ flex: 1, width: '100%', maxWidth: feedMaxWidth, alignSelf: 'center' }}>
+      <View style={isDesktop ? styles.desktopRow : styles.mobileRow}>
+      <View style={isDesktop ? { width: feedMaxWidth } : { flex: 1, width: '100%', maxWidth: feedMaxWidth, alignSelf: 'center' }}>
       <ScrollView
         ref={mainScrollRef}
         style={styles.scroll}
@@ -1949,7 +1968,7 @@ export default function HomeTab() {
         </View>
 
         {/* Stories — directly below the feed tabs */}
-        <View ref={storiesRef} style={{ paddingTop: 8 }}>
+        <View ref={storiesRef} style={{ paddingTop: 6 }}>
           <StoriesBar
             currentUserId={currentUserId}
             myName={displayName}
@@ -1985,6 +2004,24 @@ export default function HomeTab() {
             <Ionicons name="close" size={14} color={c.blue} />
           </TouchableOpacity>
         )}
+
+        {/* Active post-type filter — set by "See more <Type>s" in a
+            PostTypeBadge popover, on Home or handed off from elsewhere. */}
+        {activePostType && (() => {
+          const label = activePostType === 'milestone' ? 'Celebration' : activePostType === 'question' ? 'Question' : activePostType === 'poll' ? 'Poll' : 'Update';
+          const tint = activePostType === 'milestone' ? c.postMilestone : activePostType === 'question' ? c.postQuestion : activePostType === 'poll' ? c.postPoll : c.postText;
+          return (
+            <TouchableOpacity
+              onPress={() => setActivePostType(null)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: tint + '1A', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}
+              accessibilityRole="button" accessibilityLabel={`Clear ${label} filter`}
+              hitSlop={hitSlopFor(32)}
+            >
+              <Text style={{ color: tint, fontWeight: '700', fontSize: 14 }}>{label} posts</Text>
+              <Ionicons name="close" size={14} color={tint} />
+            </TouchableOpacity>
+          );
+        })()}
 
         {/* Followed Q+A questions */}
         {feedMode !== 'patches' && followedQuestions.length > 0 && (
@@ -2123,6 +2160,21 @@ export default function HomeTab() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </View>
+
+      {/* Desktop-only contextual right rail — never rendered on phone/tablet */}
+      {isDesktop && (
+        <HomeRightRail
+          joinedVillages={railJoinedVillages}
+          trendingTags={railTrendingTags}
+          upcomingEvents={upcomingEvents}
+          activeTag={activeTag}
+          onSelectTag={(tag) => setActiveTag(prev => (prev === tag ? null : tag))}
+          onOpenPatch={(v) => setFeedVillage(v)}
+          onDiscoverPatches={() => navigation.navigate('Discover')}
+          onOpenCalendar={() => navigation.navigate('Calendar')}
+        />
+      )}
       </View>
 
       {/* Search sheet */}
@@ -3018,11 +3070,21 @@ function makeStyles(c: Colors) {
       flex: 1,
       backgroundColor: c.bg,
     },
+    desktopRow: {
+      flex: 1,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 28,
+    },
+    mobileRow: {
+      flex: 1,
+    },
     scroll: {
       flex: 1,
     },
     scrollContent: {
-      padding: 24,
+      paddingHorizontal: 24,
+      paddingTop: 14,
       paddingBottom: 40,
     },
     headerRow: {
@@ -3379,7 +3441,7 @@ function makeStyles(c: Colors) {
     feedToggleBtn: {
       flex: 1,
       alignItems: 'center',
-      paddingVertical: 10,
+      paddingVertical: 8,
       position: 'relative',
     },
     feedToggleText: {

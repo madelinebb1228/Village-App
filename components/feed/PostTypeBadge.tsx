@@ -1,15 +1,33 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, TouchableOpacity, StyleSheet, GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useColors, Colors } from '../../lib/theme';
+import { useResponsive } from '../../lib/responsive';
+import { hitSlopFor } from '../../lib/accessibility';
 import { Post } from '../../types/feed';
+import PostTypeInfoPopover from './PostTypeInfoPopover';
 
-type Config = { icon: keyof typeof Ionicons.glyphMap; label: string; color: (c: Colors) => string };
+type Config = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: (c: Colors) => string;
+  description: string;
+};
 
 const CONFIG: Partial<Record<Post['post_type'], Config>> = {
-  milestone: { icon: 'trophy', label: 'Celebration', color: c => c.postMilestone },
-  question:  { icon: 'help-circle', label: 'Question', color: c => c.postQuestion },
-  poll:      { icon: 'bar-chart', label: 'Poll', color: c => c.postPoll },
+  milestone: {
+    icon: 'trophy-outline', label: 'Celebration', color: c => c.postMilestone,
+    description: 'A parent is sharing something worth celebrating.',
+  },
+  question: {
+    icon: 'help-circle-outline', label: 'Question', color: c => c.postQuestion,
+    description: 'This parent is looking for advice or answers.',
+  },
+  poll: {
+    icon: 'bar-chart-outline', label: 'Poll', color: c => c.postPoll,
+    description: 'This parent is asking the community to vote.',
+  },
 };
 
 interface Props {
@@ -17,26 +35,67 @@ interface Props {
   size?: number;
 }
 
-// Compact system-metadata marker for a post's type — deliberately the same
-// small colored-circle-plus-icon shape everywhere it appears (feed cards,
-// trending cards, post detail, search results) so it reads as one
-// consistent piece of chrome rather than a decorative sticker that happens
-// to look different in each place it's used. Renders nothing for a plain
-// text post — there's nothing to mark.
-export default function PostTypeBadge({ postType, size = 14 }: Props) {
+// Compact system-metadata marker for a post's type — a plain outline
+// Ionicon (same family/weight as the sidebar and Track), colored with its
+// category accent, no container bubble. It's interactive: tapping it
+// explains what the icon means and offers "See more <Type>s" — reusing
+// Home's existing local post-type filter (see HomeTab's activePostType),
+// the same pattern already used for topic/tag filtering, not a new backend.
+export default function PostTypeBadge({ postType, size = 15 }: Props) {
   const c = useColors();
+  const { isDesktop } = useResponsive();
+  const navigation = useNavigation<any>();
   const cfg = CONFIG[postType];
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const btnRef = useRef<View>(null);
+
   if (!cfg) return null;
   const color = cfg.color(c);
-  const box = size + 12;
+
+  const openPopover = (e?: GestureResponderEvent) => {
+    e?.stopPropagation?.();
+    if (isDesktop && btnRef.current) {
+      (btnRef.current as any).measureInWindow?.((x: number, y: number, width: number, height: number) => {
+        setAnchor({ x, y, width, height });
+        setOpen(true);
+      });
+    } else {
+      setAnchor(null);
+      setOpen(true);
+    }
+  };
+
+  const handleSeeMore = () => {
+    setOpen(false);
+    navigation.navigate('Home', { filterPostType: postType });
+  };
+
   return (
-    <View
-      style={[styles.badge, { backgroundColor: color + '22', width: box, height: box, borderRadius: box / 2 }]}
-      accessible
-      accessibilityLabel={`${cfg.label} post`}
-    >
-      <Ionicons name={cfg.icon} size={size} color={color} />
-    </View>
+    <>
+      <TouchableOpacity
+        ref={btnRef}
+        onPress={openPopover}
+        activeOpacity={0.6}
+        hitSlop={hitSlopFor(size)}
+        style={styles.badge}
+        accessibilityRole="button"
+        accessibilityLabel={`${cfg.label} post. Activate for details.`}
+      >
+        <Ionicons name={cfg.icon} size={size} color={color} />
+      </TouchableOpacity>
+      <PostTypeInfoPopover
+        visible={open}
+        anchor={isDesktop ? anchor : null}
+        icon={cfg.icon}
+        label={cfg.label}
+        description={cfg.description}
+        ctaLabel={`See more ${cfg.label}s`}
+        color={color}
+        onClose={() => setOpen(false)}
+        onSeeMore={handleSeeMore}
+      />
+    </>
   );
 }
 

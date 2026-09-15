@@ -2,6 +2,8 @@
 // so both DiscoverTab (the browsing/search landing screen) and SearchSheet
 // (Home's search modal) can reference the same data without duplicating it.
 
+import type { Colors } from './theme';
+
 export const CATEGORIES = ['Safety', 'Feeding', 'Guides & Learning', 'Shopping & Gear', 'Community', 'Local & Reviews'] as const;
 export type Category = typeof CATEGORIES[number];
 
@@ -40,4 +42,20 @@ export function categoriesForAgeMonths(months: number): Category[] {
   if (months < 12) return ['Feeding', 'Guides & Learning'];
   if (months < 24) return ['Guides & Learning', 'Community'];
   return ['Guides & Learning', 'Shopping & Gear'];
+}
+
+// Restrained, semantic color-per-category mapping — color communicates what
+// kind of resource this is (not decoration). Reuses existing Parent Patch
+// theme tokens; Local & Reviews and Shopping & Gear share blue since both are
+// "practical/services" content rather than getting an invented sixth accent.
+export function categoryAccent(category: Category, c: Colors): { bg: string; text: string } {
+  switch (category) {
+    case 'Feeding':           return { bg: c.cardBlush,    text: c.blush };
+    case 'Safety':             return { bg: c.cardHoney,    text: c.honey };
+    case 'Guides & Learning':  return { bg: c.cardLavender, text: c.lavender };
+    case 'Community':          return { bg: c.cardSage,     text: c.sage };
+    case 'Local & Reviews':    return { bg: c.cardBlue,     text: c.blue };
+    case 'Shopping & Gear':    return { bg: c.cardBlue,     text: c.blue };
+    default:                   return { bg: c.card,         text: c.textSecondary };
+  }
 }

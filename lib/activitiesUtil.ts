@@ -32,6 +32,22 @@ export function areaEmoji(area: string): string {
   return AREA_META[area]?.emoji ?? '✨';
 }
 
+// Ionicon counterpart to areaEmoji — used where the developmental area needs
+// to read as a functional/UI marker (e.g. the card's icon bubble) rather
+// than as content, keeping it in the same outline-icon system as the rest
+// of Discover/Home chrome. areaEmoji itself is untouched — still used where
+// the emoji is genuinely content (filters, detail screens).
+const AREA_ICON: Record<string, keyof typeof import('@expo/vector-icons').Ionicons.glyphMap> = {
+  motor: 'walk-outline',
+  language: 'chatbubble-outline',
+  cognitive: 'bulb-outline',
+  social: 'people-outline',
+};
+
+export function areaIcon(area: string): keyof typeof import('@expo/vector-icons').Ionicons.glyphMap {
+  return AREA_ICON[area] ?? 'sparkles-outline';
+}
+
 export function areaLabel(area: string): string {
   return AREA_META[area]?.label ?? area;
 }

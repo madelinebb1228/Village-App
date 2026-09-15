@@ -569,7 +569,7 @@ export default function Profile() {
               <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn} activeOpacity={0.75}
                 hitSlop={hitSlopFor(36)}
                 accessibilityRole="button" accessibilityLabel="Open settings">
-                <Text style={{ fontSize: 20 }}>⚙️</Text>
+                <Ionicons name="settings-outline" size={20} color={c.textPrimary} />
               </TouchableOpacity>
             </View>
           )}
