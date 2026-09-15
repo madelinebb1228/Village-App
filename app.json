@@ -6,19 +6,27 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "icon": "./assets/icons/icon-light.png",
     "ios": {
       "supportsTablet": true,
+      "icon": {
+        "light": "./assets/icons/icon-light.png",
+        "dark": "./assets/icons/icon-dark.png"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#6366f1"
+        "foregroundImage": "./assets/icons/icon-foreground.png",
+        "backgroundColor": "#6366f1",
+        "monochromeImage": "./assets/icons/icon-monochrome.png"
       }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/logo.png"
     },
     "plugins": [
       "expo-video",
