@@ -16,15 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors, Colors } from '../lib/theme';
 import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
-import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { useResponsive, maxWidthFor, useMeasuredWidth, fitCardsToWidth } from '../lib/responsive';
 import { screenView, track } from '../lib/analytics';
 import { supabase } from '../lib/supabase';
 import { useBaby } from '../lib/babyContext';
-import { getBabyAge } from '../lib/feedUtils';
+import { getBabyAge, babyAgeLabel } from '../lib/feedUtils';
 import { useSubscription } from '../lib/subscriptionContext';
 import { VILLAGES, Village, villagesByIds } from '../lib/villageData';
-import { RESOURCES, CATEGORIES, Category, categoriesForAgeMonths, categoryAccent } from '../lib/resourcesData';
-import { Activity } from '../lib/activitiesUtil';
+import { RESOURCES, CATEGORIES, Category, categoriesForAgeMonths, categoryAccent, categoryIcon } from '../lib/resourcesData';
+import { Activity, areaIcon, cardPalette, difficultyLabel } from '../lib/activitiesUtil';
 import {
   DiscoverSearchResults, emptyResults, searchAll, SearchQuestion,
   fetchTrendingPosts, trendingTagsFromPosts, fetchPopularPosts, fetchRecentQuestions,
@@ -41,6 +41,8 @@ import VideoPreview from '../components/discover/VideoPreview';
 import PersonPreviewCard from '../components/discover/PersonPreviewCard';
 import PostPreviewCard from '../components/discover/PostPreviewCard';
 import DiscoverEmptyState from '../components/discover/DiscoverEmptyState';
+import CategoryNavTile from '../components/discover/CategoryNavTile';
+import StageItemRow from '../components/discover/StageItemRow';
 import { VillageCard } from '../components/village/VillageCard';
 import ActivityCard from '../components/ActivityCard';
 
@@ -78,6 +80,14 @@ const VIDEO_CATEGORIES = [
   { emoji: '🧸', title: 'Play & Development', desc: 'Tummy time, milestone activities by age' },
 ];
 
+// Near You renders these two RESOURCES entries as functional destination
+// chrome rather than content, so they get a specific Ionicon each instead
+// of their catalog emoji (see ResourcePreviewCard's `icon` prop).
+const NEAR_YOU_ICONS: Record<string, keyof typeof import('@expo/vector-icons').Ionicons.glyphMap> = {
+  local: 'location-outline',
+  provider_reviews: 'star-outline',
+};
+
 const FILTERS: { id: SearchFilter; label: string }[] = [
   { id: 'top', label: 'Top' },
   { id: 'posts', label: 'Posts' },
@@ -106,19 +116,40 @@ export default function DiscoverTab({ route, navigation }: any) {
     (landingScrollRef.current as any)?.getScrollableNode?.()?.focus?.();
   }, []));
 
-  const [familyRowWidth, setFamilyRowWidth] = useState(0);
-  // Desktop: size cards from the section's own measured width so ~3 full
-  // cards plus a small intentional peek of the next one show — avoids the
-  // coincidental near-full-card clipping a fixed width produces at odd
-  // container widths. Phone/tablet keep the original fixed card width.
-  const familyCardWidth = isDesktop && familyRowWidth > 0
-    ? Math.max(220, Math.floor((familyRowWidth - 20 - 12 * 3 - 50) / 3))
-    : 260;
+  // Phone/tablet stage-hub carousel fallback width, used only until the row
+  // below has measured itself (see stageCarouselRow/stageCarouselFit).
+  const familyCardWidth = 260;
+  const exploreCategoriesYRef = useRef(0);
+  // Measures the stage hub's own tablet/phone carousel row so its card
+  // width is computed from real rendered width rather than a fixed 260px —
+  // a fixed width against a variable-width column (especially right around
+  // the desktop breakpoint, e.g. with browser devtools open) produces an
+  // arbitrary, sometimes-tiny peek of the next card that reads as an
+  // accidental clip rather than an intentional "swipe for more" affordance.
+  // STAGE_PEEK_RESERVE is subtracted from the measured width before fitting
+  // whole cards, so whatever's left over for the next (partially visible)
+  // card is always a deliberate, consistent peek rather than a random
+  // modulo remainder.
+  const stageCarouselRow = useMeasuredWidth();
+
+  // Desktop row-fitting for the horizontal-carousel sections below (Watch &
+  // Learn, Discover Patches, Popular in the Patch, Activities & Ideas). A
+  // fixed card width against a variable-width column either clips a partial
+  // card at the edge or leaves a wide desktop row mostly empty — windowWidth
+  // alone can't tell us the real available width here (it depends on where
+  // it falls relative to the sidebar + Discover's own maxWidth column), so
+  // each row measures itself via onLayout instead. Phone/tablet keep the
+  // original fixed-width horizontal ScrollView.
+  const watchLearnRow = useMeasuredWidth();
+  const patchesRow = useMeasuredWidth();
+  const activitiesRow = useMeasuredWidth();
+  const popularRow = useMeasuredWidth();
 
   const initialResourceId = route?.params?.initialResourceId as ResourceId | undefined;
   const [selected, setSelected] = useState<ResourceId | null>(initialResourceId ?? null);
   const [pendingTermId, setPendingTermId] = useState<string | null>(null);
   const [pendingQuestionId, setPendingQuestionId] = useState<string | undefined>(undefined);
+  const [autoAskQA, setAutoAskQA] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [feedVillage, setFeedVillage] = useState<Village | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -177,6 +208,7 @@ export default function DiscoverTab({ route, navigation }: any) {
   }, []);
 
   const ageMonths = activeBaby?.birth_date ? getBabyAge(activeBaby.birth_date).monthsOld : null;
+  const stageCategories = ageMonths != null ? categoriesForAgeMonths(ageMonths) : null;
 
   const loadLanding = useCallback(async () => {
     setLandingLoading(true);
@@ -278,6 +310,13 @@ export default function DiscoverTab({ route, navigation }: any) {
     setSelected('qa');
   }
 
+  // Routes into QAScreen's own existing "Ask a question" modal (search →
+  // write, inserts into qa_questions) rather than building a second composer.
+  function askQuestion() {
+    setAutoAskQA(true);
+    setSelected('qa');
+  }
+
   function goToPatchTab() {
     navigation?.navigate?.('Patch');
   }
@@ -300,6 +339,15 @@ export default function DiscoverTab({ route, navigation }: any) {
   function openVillageById(villageId: string) {
     const [v] = villagesByIds([villageId]);
     if (v) setFeedVillage(v);
+  }
+
+  // Stage hub's "Explore more for this stage" — routes into the real
+  // Explore Categories browse for the most stage-relevant category rather
+  // than a fabricated destination, then scrolls it into view.
+  function exploreStageCategory() {
+    if (!stageCategories || stageCategories.length === 0) return;
+    setCategoryBrowse(stageCategories[0]);
+    landingScrollRef.current?.scrollTo({ y: Math.max(0, exploreCategoriesYRef.current - 12), animated: true });
   }
 
   // ─── Resource destination routing (unchanged behavior from ResourcesTab) ───
@@ -327,6 +375,8 @@ export default function DiscoverTab({ route, navigation }: any) {
       <QAScreen
         onBack={() => { setSelected(null); setPendingQuestionId(undefined); }}
         initialQuestionId={pendingQuestionId}
+        autoAsk={autoAskQA}
+        onAutoAskConsumed={() => setAutoAskQA(false)}
       />
     );
   }
@@ -433,7 +483,19 @@ export default function DiscoverTab({ route, navigation }: any) {
   const myPatches = VILLAGES.filter(v => joinedPatchIds.has(v.id) && !v.hidden);
   const suggestedPatches = VILLAGES.filter(v => !joinedPatchIds.has(v.id) && !v.hidden).slice(0, 8);
 
-  const stageCategories = ageMonths != null ? categoriesForAgeMonths(ageMonths) : null;
+  // "Trending in Parent Patch" reframed around the real trending TAG rather
+  // than a single post's own like count (a low-like post can legitimately be
+  // part of an actively-discussed topic). trendingTopic is just
+  // trendingTags[0] — real tag-frequency data, already computed in
+  // loadLanding via trendingTagsFromPosts, never fabricated. That count is
+  // only a frequency among the ~5 posts already loaded as "trending" (not a
+  // real "posts this week" total), so it's intentionally not shown as a
+  // number — see the "Trending topic" copy below instead.
+  const trendingTopic = trendingTags[0] ?? null;
+  const representativePost = trendingTopic
+    ? trendingPosts.find(p => p.tags?.includes(trendingTopic.tag)) ?? trendingPosts[0]
+    : null;
+
   const stageResources = stageCategories
     ? RESOURCES.filter(r => stageCategories.includes(r.category)).slice(0, 2)
     : RESOURCES.slice(0, 2);
@@ -445,10 +507,24 @@ export default function DiscoverTab({ route, navigation }: any) {
   type FamilyItem =
     | { kind: 'activity'; activity: Activity }
     | { kind: 'resource'; resource: typeof RESOURCES[number] };
-  const familyItems: FamilyItem[] = [
-    ...stageActivities.map(a => ({ kind: 'activity' as const, activity: a })),
-    ...stageResources.map(r => ({ kind: 'resource' as const, resource: r })),
-  ];
+  // Interleaved (not activities-then-resources) so the stage hub's featured
+  // slot and first few rows mix content types — otherwise, whenever there
+  // are 3+ stage activities, the hub reads as an activity-recommendation
+  // widget and resources never surface above the fold. See lib/activitiesUtil
+  // for areaIcon/cardPalette and lib/resourcesData for categoryIcon/Accent,
+  // reused below for the compact rows.
+  const familyItems: FamilyItem[] = [];
+  {
+    const maxLen = Math.max(stageActivities.length, stageResources.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (stageActivities[i]) familyItems.push({ kind: 'activity', activity: stageActivities[i] });
+      if (stageResources[i]) familyItems.push({ kind: 'resource', resource: stageResources[i] });
+    }
+  }
+
+  function familyItemKey(item: FamilyItem) {
+    return item.kind === 'activity' ? `activity-${item.activity.id}` : `resource-${item.resource.id}`;
+  }
 
   function renderFamilyItem(item: FamilyItem, featured: boolean, width?: number) {
     if (item.kind === 'activity') {
@@ -457,6 +533,7 @@ export default function DiscoverTab({ route, navigation }: any) {
           key={item.activity.id}
           activity={item.activity}
           onPress={() => setSelectedActivity(item.activity)}
+          variant={featured ? 'featured' : 'default'}
         />
       );
     }
@@ -470,6 +547,58 @@ export default function DiscoverTab({ route, navigation }: any) {
       />
     );
   }
+
+  // Compact row rendering for the stage hub's secondary items (desktop) —
+  // same underlying data as renderFamilyItem, lighter visual weight.
+  function renderFamilyRow(item: FamilyItem) {
+    if (item.kind === 'activity') {
+      const a = item.activity;
+      const palette = cardPalette(a, c);
+      return (
+        <StageItemRow
+          key={familyItemKey(item)}
+          icon={areaIcon(a.developmental_areas?.[0] ?? '')}
+          accentBg={palette.bg}
+          accentColor={palette.border}
+          title={a.title}
+          meta={`Activity · ${a.duration_minutes} min · ${difficultyLabel(a.difficulty)}`}
+          onPress={() => setSelectedActivity(a)}
+        />
+      );
+    }
+    const r = item.resource;
+    const accent = categoryAccent(r.category, c);
+    return (
+      <StageItemRow
+        key={familyItemKey(item)}
+        icon={categoryIcon(r.category)}
+        accentBg={accent.bg}
+        accentColor={accent.text}
+        title={r.title}
+        meta={r.category}
+        onPress={() => setSelected(r.id)}
+      />
+    );
+  }
+
+  const watchLearnFit = fitCardsToWidth(watchLearnRow.width, VIDEO_CATEGORIES.length, { gap: 12, minWidth: 140, maxWidth: 224, targetWidth: 200 });
+  const yourPatchesFit = fitCardsToWidth(patchesRow.width, myPatches.length, { gap: 12, minWidth: 230, maxWidth: 300, targetWidth: 260 });
+  const discoverPatchesFit = fitCardsToWidth(patchesRow.width, suggestedPatches.length, { gap: 12, minWidth: 230, maxWidth: 300, targetWidth: 260 });
+  const activitiesFit = fitCardsToWidth(activitiesRow.width, moreActivities.length, { gap: 12, minWidth: 230, maxWidth: 340, targetWidth: 260 });
+  const popularFit = fitCardsToWidth(popularRow.width, popularPosts.length, { gap: 12, minWidth: 230, maxWidth: 300, targetWidth: 260 });
+  const watchLearnFitted = isDesktop && watchLearnRow.width > 0;
+  const patchesFitted = isDesktop && patchesRow.width > 0;
+  const activitiesFitted = isDesktop && activitiesRow.width > 0;
+  const popularFitted = isDesktop && popularRow.width > 0;
+
+  const STAGE_PEEK_RESERVE = 56;
+  const stageCarouselMeasured = stageCarouselRow.width > 0;
+  const stageCarouselFit = fitCardsToWidth(
+    stageCarouselMeasured ? Math.max(0, stageCarouselRow.width - STAGE_PEEK_RESERVE) : 0,
+    familyItems.length,
+    { gap: 12, minWidth: 200, maxWidth: 280, targetWidth: 260 },
+  );
+  const stageCardWidth = stageCarouselMeasured ? stageCarouselFit.cardWidth : familyCardWidth;
 
   return (
     <SafeAreaView style={s.container}>
@@ -497,44 +626,74 @@ export default function DiscoverTab({ route, navigation }: any) {
           <DiscoverSearchBar value={query} onChangeText={setQuery} />
         </View>
 
-        {/* 1. For Your Family. Desktop gets an intentional asymmetric layout
-             (one large featured recommendation + two smaller supporting
-             cards stacked beside it, matched to the same total height) so
-             the section reads as "we picked something for you" rather than
-             a scroll row. Phone/tablet keep the horizontal carousel —
-             several scannable cards, swipeable, no awkward empty space.
+        {/* 1. Stage/family hub — "here's what across Parent Patch may be
+             useful for your family right now," not an activity widget. One
+             featured recommendation (interleaved activity/resource, so it
+             isn't always an activity) plus a few compact rows for the rest,
+             layered by scale rather than stacked as same-weight cards.
+             Desktop: row + column of rows side by side. Phone/tablet: the
+             original horizontal carousel, adapted rather than squeezed.
              Deliberately the first thing after search: personalized/resource
              discovery leads, ahead of any single social post. */}
-        <View onLayout={e => setFamilyRowWidth(e.nativeEvent.layout.width)}>
-          <DiscoverSection
-            title={activeBaby?.name && ageMonths != null ? `For ${activeBaby.name}'s stage` : 'For Your Family'}
-            subtitle={ageMonths != null ? `Relevant for this stage (${ageMonths} mo)` : 'Commonly useful with Parent Patch families'}
-            horizontal={!isDesktop && stageActivities.length + stageResources.length > 0}
-          >
-            {landingLoading ? (
-              <ActivityIndicator color={c.primary} />
-            ) : familyItems.length === 0 ? (
-              <Text style={s.mutedNote}>You may find these helpful as you get started.</Text>
-            ) : isDesktop ? (
-              <View style={s.familyDesktopWrap}>
-                <View style={s.familyFeatured}>
+        <DiscoverSection
+          title={activeBaby?.name && ageMonths != null ? `${activeBaby.name} · ${babyAgeLabel(activeBaby.birth_date!)}` : 'For Your Family'}
+          subtitle={ageMonths != null ? 'Relevant for this stage' : 'You might find this useful as you get started'}
+        >
+          {landingLoading ? (
+            <ActivityIndicator color={c.primary} />
+          ) : familyItems.length === 0 ? (
+            <Text style={s.mutedNote}>You may find these helpful as you get started.</Text>
+          ) : isDesktop ? (
+            <>
+              <View style={s.stageHubRow}>
+                <View style={s.stageFeatured}>
                   {renderFamilyItem(familyItems[0], true)}
                 </View>
                 {familyItems.length > 1 && (
-                  <View style={s.familyStack}>
-                    {familyItems.slice(1, 3).map(item => renderFamilyItem(item, false))}
+                  <View style={s.stageRows}>
+                    {familyItems.slice(1).map(item => renderFamilyRow(item))}
                   </View>
                 )}
               </View>
-            ) : (
-              familyItems.map(item => (
-                <View key={item.kind === 'activity' ? item.activity.id : item.resource.id} style={{ width: familyCardWidth }}>
-                  {renderFamilyItem(item, false, familyCardWidth)}
-                </View>
-              ))
-            )}
-          </DiscoverSection>
-        </View>
+              {stageCategories && (
+                <TouchableOpacity
+                  style={s.stageExploreLink}
+                  onPress={exploreStageCategory}
+                  hitSlop={hitSlopFor(20)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Explore more ${stageCategories[0]} resources for this stage`}
+                >
+                  <Text style={s.stageExploreLinkText}>Explore more for this stage</Text>
+                  <Ionicons name="arrow-forward" size={14} color={c.primary} />
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            <>
+              <View onLayout={stageCarouselRow.onLayout}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.stageHorizontalRow}>
+                  {familyItems.map(item => (
+                    <View key={familyItemKey(item)} style={{ width: stageCardWidth }}>
+                      {renderFamilyItem(item, false, stageCardWidth)}
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+              {stageCategories && (
+                <TouchableOpacity
+                  style={s.stageExploreLink}
+                  onPress={exploreStageCategory}
+                  hitSlop={hitSlopFor(20)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Explore more ${stageCategories[0]} resources for this stage`}
+                >
+                  <Text style={s.stageExploreLinkText}>Explore more for this stage</Text>
+                  <Ionicons name="arrow-forward" size={14} color={c.primary} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </DiscoverSection>
 
         {/* 2. Trending Topics when real tag-frequency data clears the
              threshold (trendingTagsFromPosts — never fabricated); otherwise
@@ -583,105 +742,143 @@ export default function DiscoverTab({ route, navigation }: any) {
              Parent Patch's resource depth should be apparent early, not
              buried below several rounds of social content; this is the
              clearest existing "we have a real library" signal, so it leads
-             the resource section rather than closing the screen. */}
-        <DiscoverSection title="Explore Categories" subtitle="Browse the full Parent Patch library">
-          <View style={s.categoryGrid}>
-            {CATEGORIES.map(cat => {
-              const active = categoryBrowse === cat;
-              const accent = categoryAccent(cat, c);
-              return (
-                <TouchableOpacity
+             the resource section rather than closing the screen. Rendered
+             as compact icon nav tiles (not text chips like Browse Topics
+             above, not the old giant color pills) so the distinction is
+             visible at a glance: Browse Topics = what parents are
+             discussing, Explore Categories = Parent Patch's own library. */}
+        <View onLayout={e => { exploreCategoriesYRef.current = e.nativeEvent.layout.y; }}>
+          <DiscoverSection title="Explore Categories" subtitle="Browse the full Parent Patch library">
+            <View style={s.categoryGrid}>
+              {CATEGORIES.map(cat => (
+                <CategoryNavTile
                   key={cat}
-                  style={[
-                    s.categoryTile,
-                    active ? { backgroundColor: accent.text, borderColor: accent.text } : { backgroundColor: accent.bg, borderColor: accent.bg },
-                  ]}
-                  onPress={() => setCategoryBrowse(active ? null : cat)}
-                  hitSlop={hitSlopFor(40)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={`Browse ${cat} resources`}
-                >
-                  <Text style={[s.categoryTileText, { color: active ? c.textOnColored : accent.text }]}>{cat}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {categoryBrowse && (
-            <View style={{ marginTop: 14, gap: 10 }}>
-              {categoryBrowseResources.map(r => (
-                <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
+                  category={cat}
+                  active={categoryBrowse === cat}
+                  onPress={() => setCategoryBrowse(categoryBrowse === cat ? null : cat)}
+                />
               ))}
             </View>
-          )}
-        </DiscoverSection>
+
+            {categoryBrowse && (
+              <View style={{ marginTop: 14, gap: 10 }}>
+                {categoryBrowseResources.map(r => (
+                  <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
+                ))}
+              </View>
+            )}
+          </DiscoverSection>
+        </View>
 
         {/* 4. Trending posts — social discovery. Comes after the
              personalized/resource sections above by design (see item 11):
              Parent Patch's information depth should register before a
-             single social post gets full-width prominence. */}
+             single social post gets full-width prominence.
+             Framed around the trending TOPIC (real tag frequency) rather
+             than presenting posts as individually "trending" — a topic can
+             be actively discussed even when its example post has few likes
+             yet, which read as a contradiction under the old per-post
+             framing. Falls back to the previous multi-post stack if there's
+             no tag data to build a topic from (e.g. untagged trending
+             posts), so this never shows less than before. */}
         {trendingPosts.length > 0 && (
           <DiscoverSection title="Trending in Parent Patch" subtitle="What parents are talking about this week">
-            {trendingPosts.slice(0, 3).map(post => (
-              <View key={post.id} style={{ marginBottom: 10 }}>
-                <PostPreviewCard post={post} onPress={() => openPost(post)} onPressVillage={openVillageById} />
-              </View>
-            ))}
+            {trendingTopic && representativePost ? (
+              <>
+                <View style={s.trendingTopicHeader}>
+                  <View style={s.trendingTopicBadge}>
+                    <Ionicons name="flame-outline" size={13} color={c.lavender} />
+                    <Text style={s.trendingTopicBadgeText}>Trending topic</Text>
+                  </View>
+                  <Text style={s.trendingTopicName} numberOfLines={1}>{trendingTopic.tag}</Text>
+                </View>
+                <PostPreviewCard post={representativePost} onPress={() => openPost(representativePost)} onPressVillage={openVillageById} />
+              </>
+            ) : (
+              trendingPosts.slice(0, 3).map(post => (
+                <View key={post.id} style={{ marginBottom: 10 }}>
+                  <PostPreviewCard post={post} onPress={() => openPost(post)} onPressVillage={openVillageById} />
+                </View>
+              ))
+            )}
           </DiscoverSection>
         )}
 
-        {/* 5. Popular in the Patch */}
-        <DiscoverSection title="Popular in the Patch" subtitle="The most-loved posts across Parent Patch">
-          {landingLoading ? (
-            <ActivityIndicator color={c.primary} />
-          ) : popularPosts.length === 0 ? (
-            <Text style={s.mutedNote}>No popular posts yet — be the first to share something!</Text>
-          ) : (
-            popularPosts.map(post => (
-              <PostPreviewCard key={post.id} post={post} onPress={() => openPost(post)} onPressVillage={openVillageById} />
-            ))
-          )}
-        </DiscoverSection>
-
-        {/* 6. Discover Patches */}
+        {/* 5. Discover Patches. Desktop sizes/caps visible cards to what the
+             measured row width actually fits (fitCardsToWidth) instead of a
+             fixed 260px card — a brittle width either clips a partial card
+             at the edge (the bug here) or wastes space. Showing fewer
+             complete cards is fine since the section already has "See all".
+             Phone/tablet keep the original fixed-width horizontal scroll. */}
         <DiscoverSection title="Discover Patches" seeAllLabel="See all" onSeeAll={goToPatchTab}>
-          <Text style={s.patchGroupLabel}>Your Patches</Text>
-          {myPatches.length === 0 ? (
-            <DiscoverEmptyState
-              emoji="🌱"
-              title="Find your people"
-              message="Join Patches for your parenting stage, interests, or local community."
-              actions={[{ label: 'Discover Patches', onPress: goToPatchTab }]}
-            />
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.patchRow}>
-              {myPatches.slice(0, 8).map(v => (
-                <PatchPreviewCard
-                  key={v.id}
-                  village={v}
-                  joined
-                  joining={joiningPatchId === v.id}
-                  onJoin={() => toggleJoinPatch(v.id)}
-                  onOpen={() => setFeedVillage(v)}
-                />
-              ))}
-            </ScrollView>
-          )}
-
-          <Text style={[s.patchGroupLabel, { marginTop: 16 }]}>Discover Patches</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.patchRow}>
-            {suggestedPatches.map(v => (
-              <PatchPreviewCard
-                key={v.id}
-                village={v}
-                joined={false}
-                joining={joiningPatchId === v.id}
-                onJoin={() => toggleJoinPatch(v.id)}
-                onOpen={() => setFeedVillage(v)}
+          <View onLayout={patchesRow.onLayout}>
+            <Text style={s.patchGroupLabel}>Your Patches</Text>
+            {myPatches.length === 0 ? (
+              <DiscoverEmptyState
+                emoji="🌱"
+                title="Find your people"
+                message="Join Patches for your parenting stage, interests, or local community."
+                actions={[{ label: 'Discover Patches', onPress: goToPatchTab }]}
               />
-            ))}
-          </ScrollView>
+            ) : patchesFitted ? (
+              <View style={s.fittedRow}>
+                {myPatches.slice(0, yourPatchesFit.visibleCount).map(v => (
+                  <PatchPreviewCard
+                    key={v.id}
+                    village={v}
+                    joined
+                    joining={joiningPatchId === v.id}
+                    onJoin={() => toggleJoinPatch(v.id)}
+                    onOpen={() => setFeedVillage(v)}
+                    width={yourPatchesFit.cardWidth}
+                  />
+                ))}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.patchRow}>
+                {myPatches.slice(0, 8).map(v => (
+                  <PatchPreviewCard
+                    key={v.id}
+                    village={v}
+                    joined
+                    joining={joiningPatchId === v.id}
+                    onJoin={() => toggleJoinPatch(v.id)}
+                    onOpen={() => setFeedVillage(v)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            <Text style={[s.patchGroupLabel, { marginTop: 16 }]}>Discover Patches</Text>
+            {patchesFitted ? (
+              <View style={s.fittedRow}>
+                {suggestedPatches.slice(0, discoverPatchesFit.visibleCount).map(v => (
+                  <PatchPreviewCard
+                    key={v.id}
+                    village={v}
+                    joined={false}
+                    joining={joiningPatchId === v.id}
+                    onJoin={() => toggleJoinPatch(v.id)}
+                    onOpen={() => setFeedVillage(v)}
+                    width={discoverPatchesFit.cardWidth}
+                  />
+                ))}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.patchRow}>
+                {suggestedPatches.map(v => (
+                  <PatchPreviewCard
+                    key={v.id}
+                    village={v}
+                    joined={false}
+                    joining={joiningPatchId === v.id}
+                    onJoin={() => toggleJoinPatch(v.id)}
+                    onOpen={() => setFeedVillage(v)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+          </View>
 
           <View style={s.patchActionsRow}>
             <TouchableOpacity style={s.patchActionChip} hitSlop={hitSlopFor(34)} onPress={focusPatchSearch} accessibilityRole="button" accessibilityLabel="Search Patches">
@@ -699,19 +896,49 @@ export default function DiscoverTab({ route, navigation }: any) {
           </View>
         </DiscoverSection>
 
-        {/* 7. Watch & Learn */}
-        <DiscoverSection title="Watch & Learn" seeAllLabel="See all" onSeeAll={() => setSelected('videos')} horizontal>
-          {VIDEO_CATEGORIES.map(v => (
-            <VideoPreview key={v.title} emoji={v.emoji} title={v.title} description={v.desc} onPress={() => setSelected('videos')} />
-          ))}
+        {/* 6. Watch & Learn. Desktop fits all 5 categories across the row
+             (shrinking card width within a readable range) rather than
+             clipping the last one in a carousel that doesn't need to be
+             one — there's room, so it shouldn't look like an accidental
+             mobile carousel. Phone/tablet keep horizontal scrolling. */}
+        <DiscoverSection title="Watch & Learn" seeAllLabel="See all" onSeeAll={() => setSelected('videos')}>
+          <View onLayout={watchLearnRow.onLayout}>
+            {watchLearnFitted ? (
+              <View style={s.fittedRow}>
+                {VIDEO_CATEGORIES.map(v => (
+                  <VideoPreview key={v.title} emoji={v.emoji} title={v.title} description={v.desc} onPress={() => setSelected('videos')} width={watchLearnFit.cardWidth} />
+                ))}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.horizontalScrollRow}>
+                {VIDEO_CATEGORIES.map(v => (
+                  <VideoPreview key={v.title} emoji={v.emoji} title={v.title} description={v.desc} onPress={() => setSelected('videos')} />
+                ))}
+              </ScrollView>
+            )}
+          </View>
         </DiscoverSection>
 
-        {/* 8. Parent Q+A */}
+        {/* 7. Parent Q+A. Empty state routes "Ask a question" into
+             QAScreen's own existing ask flow (autoAsk) rather than a
+             duplicate composer — see askQuestion above. */}
         <DiscoverSection title="Parent Q+A" seeAllLabel="See all Q+A" onSeeAll={() => setSelected('qa')}>
           {landingLoading ? (
             <ActivityIndicator color={c.primary} />
           ) : recentQuestions.length === 0 ? (
-            <Text style={s.mutedNote}>Be the first to ask a question in Parent Q+A.</Text>
+            <View style={s.qaEmptyState}>
+              <Text style={s.qaEmptyText}>No questions yet. Start the conversation.</Text>
+              <TouchableOpacity
+                style={s.qaEmptyBtn}
+                onPress={askQuestion}
+                hitSlop={hitSlopFor(20)}
+                accessibilityRole="button"
+                accessibilityLabel="Ask a question in Parent Q and A"
+              >
+                <Ionicons name="add" size={16} color={c.primaryText} />
+                <Text style={s.qaEmptyBtnText}>Ask a question</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             recentQuestions.map(q => (
               <QuestionPreview
@@ -725,19 +952,66 @@ export default function DiscoverTab({ route, navigation }: any) {
           )}
         </DiscoverSection>
 
-        {/* 8. Activities & Ideas */}
-        <DiscoverSection title="Activities & Ideas" seeAllLabel="See all" onSeeAll={() => setSelected('activities')} horizontal>
-          {moreActivities.map(a => (
-            <View key={a.id} style={{ width: 220 }}>
-              <ActivityCard activity={a} onPress={() => setSelectedActivity(a)} />
-            </View>
-          ))}
+        {/* 8. Popular in the Patch — deliberately kept apart from Trending
+             (above, near the top) and given a lighter/compact horizontal
+             treatment so two near-identical vertical post stacks never sit
+             back-to-back; this reads as a secondary, supporting signal. */}
+        <DiscoverSection title="Popular in the Patch" subtitle="More posts worth a look">
+          <View onLayout={popularRow.onLayout}>
+            {landingLoading ? (
+              <ActivityIndicator color={c.primary} />
+            ) : popularPosts.length === 0 ? (
+              <Text style={s.mutedNote}>No popular posts yet — be the first to share something!</Text>
+            ) : popularFitted ? (
+              <View style={s.fittedRow}>
+                {popularPosts.slice(0, popularFit.visibleCount).map(post => (
+                  <PostPreviewCard key={post.id} post={post} width={popularFit.cardWidth} onPress={() => openPost(post)} onPressVillage={openVillageById} />
+                ))}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.horizontalScrollRow}>
+                {popularPosts.map(post => (
+                  <PostPreviewCard key={post.id} post={post} width={260} onPress={() => openPost(post)} onPressVillage={openVillageById} />
+                ))}
+              </ScrollView>
+            )}
+          </View>
         </DiscoverSection>
 
-        {/* 9. Near You */}
+        {/* 9. Activities & Ideas. This had the opposite problem from Watch &
+             Learn/Discover Patches: only 2-3 fixed-220px cards in a much
+             wider desktop row, leaving it mostly empty. Desktop grows the
+             cards to fill the row (capped so they don't become giant
+             panels) instead of fabricating more content to fill the space. */}
+        <DiscoverSection title="Activities & Ideas" seeAllLabel="See all" onSeeAll={() => setSelected('activities')}>
+          <View onLayout={activitiesRow.onLayout}>
+            {activitiesFitted ? (
+              <View style={s.fittedRow}>
+                {moreActivities.slice(0, activitiesFit.visibleCount).map(a => (
+                  <View key={a.id} style={{ width: activitiesFit.cardWidth }}>
+                    <ActivityCard activity={a} onPress={() => setSelectedActivity(a)} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.horizontalScrollRow}>
+                {moreActivities.map(a => (
+                  <View key={a.id} style={{ width: 220 }}>
+                    <ActivityCard activity={a} onPress={() => setSelectedActivity(a)} />
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </DiscoverSection>
+
+        {/* 10. Near You. Functional chrome (not resource content identity,
+             unlike other ResourcePreviewCard emoji), so these two get an
+             explicit Ionicon per destination instead of their catalog
+             emoji — matching Explore Categories/Track/sidebar. */}
         <DiscoverSection title="Near You" subtitle="Local services and reviews from parents nearby">
           {RESOURCES.filter(r => r.id === 'local' || r.id === 'provider_reviews').map(r => (
-            <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} />
+            <ResourcePreviewCard key={r.id} resource={r} onPress={() => setSelected(r.id)} icon={NEAR_YOU_ICONS[r.id]} />
           ))}
         </DiscoverSection>
       </ScrollView>
@@ -947,11 +1221,34 @@ const makeStyles = (c: Colors) =>
     patchActionChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: c.separator, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: c.card },
     patchActionChipText: { fontSize: 12.5, fontWeight: '700', color: c.textSecondary },
 
-    familyDesktopWrap: { flexDirection: 'row', paddingHorizontal: 20, gap: 16, alignItems: 'stretch' },
-    familyFeatured: { flex: 1.3 },
-    familyStack: { flex: 1, gap: 12, justifyContent: 'space-between' },
+    stageHubRow: { flexDirection: 'row', gap: 16, alignItems: 'stretch' },
+    stageFeatured: { flex: 1.3 },
+    stageRows: { flex: 1, gap: 8 },
+    stageHorizontalRow: { gap: 12 },
+    stageExploreLink: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4 },
+    stageExploreLinkText: { ...typography.tabLabel, color: c.primary },
 
-    categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20 },
-    categoryTile: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 },
-    categoryTileText: { fontSize: 13.5, fontWeight: '700' },
+    categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+
+    // Shared by the desktop-fitted rows (Watch & Learn, Discover Patches,
+    // Popular in the Patch, Activities & Ideas) and their phone/tablet
+    // horizontal-scroll fallback — see fitCardsToWidth in lib/responsive.
+    fittedRow: { flexDirection: 'row', gap: 12 },
+    horizontalScrollRow: { gap: 12 },
+
+    trendingTopicHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' },
+    trendingTopicBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      backgroundColor: c.cardLavender, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+    },
+    trendingTopicBadgeText: { fontSize: 11.5, fontWeight: '700', color: c.lavender },
+    trendingTopicName: { fontSize: 16, fontWeight: '800', color: c.textPrimary, flexShrink: 1 },
+
+    qaEmptyState: { gap: 10 },
+    qaEmptyText: { fontSize: 13, color: c.textMuted, lineHeight: 18 },
+    qaEmptyBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+      backgroundColor: c.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
+    },
+    qaEmptyBtnText: { fontSize: 13, fontWeight: '700', color: c.primaryText },
   });

@@ -38,6 +38,7 @@ import { Post as FeedPost } from '../types/feed';
 import PostPreviewCard from '../components/discover/PostPreviewCard';
 import ProfileMediaGrid from '../components/profile/ProfileMediaGrid';
 import PatchChipRow from '../components/profile/PatchChipRow';
+import PostOptionsButton from '../components/feed/PostOptionsButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
 
@@ -583,7 +584,19 @@ export default function Profile() {
             {headerDisplayUri ? (
               <Image source={{ uri: headerDisplayUri }} style={[s.headerBannerImage, isWideProfile && s.headerBannerImageWide]} resizeMode="cover" />
             ) : (
-              <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide, isGoldTier && s.headerBannerPlaceholderAdmin]} />
+              // Branded default cover for accounts with no uploaded photo —
+              // a quiet neutral base plus a few soft, low-opacity color
+              // blobs from the existing Parent Patch palette (no text, no
+              // emoji, no new assets) so it reads as designed rather than
+              // an unfinished flat placeholder, without competing with the
+              // avatar/name that overlap it. Same treatment regardless of
+              // account tier — the Official badge is the status indicator.
+              <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide]}>
+                <View style={[s.coverBlob, s.coverBlobLavender]} />
+                <View style={[s.coverBlob, s.coverBlobSage]} />
+                <View style={[s.coverBlob, s.coverBlobBlush]} />
+                <View style={[s.coverBlob, s.coverBlobHoney]} />
+              </View>
             )}
             {editing && (
               <TouchableOpacity style={s.headerBannerEditBtn} onPress={pickHeader} activeOpacity={0.8}
@@ -593,11 +606,14 @@ export default function Profile() {
             )}
           </View>
 
-          <View style={isWideProfile ? s.heroWideRow : undefined}>
-          {/* Avatar overlapping header */}
+          {/* Avatar overlapping header. Identity lives BELOW this (not
+              beside it) at every width — see heroContentWrap — so the
+              reading order stays cover → avatar → identity → stats
+              regardless of breakpoint; only alignment (centered vs.
+              left) changes for wide screens. */}
           <View style={[s.avatarOverlapRow, isWideProfile && s.avatarOverlapRowWide]}>
             <TouchableOpacity
-              style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}
+              style={s.avatarWrap}
               onPress={editing ? pickAvatar : undefined}
               activeOpacity={editing ? 0.75 : 1}
               accessibilityRole={editing ? 'button' : undefined}
@@ -854,7 +870,6 @@ export default function Profile() {
             </View>
           )}
           </View>
-          </View>
         </View>
 
         {/* ── Family & community — secondary to the social identity above ── */}
@@ -914,7 +929,7 @@ export default function Profile() {
           accessibilityRole="button"
           accessibilityLabel="Open Baby Journal"
         >
-          <Text style={s.journalRowIcon}>📖</Text>
+          <Ionicons name="book-outline" size={22} color={c.textSecondary} />
           <View style={{ flex: 1 }}>
             <Text style={s.journalRowTitle}>Baby Journal</Text>
             <Text style={s.journalRowSubtitle}>Memories and notes for {baby?.name || 'your baby'}</Text>
@@ -979,16 +994,24 @@ export default function Profile() {
                     onPress={() => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
                     onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
                     headerRight={
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <TouchableOpacity onPress={() => togglePin(post.id)} style={s.postIconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          accessibilityRole="button" accessibilityLabel={isPinned ? 'Unpin post' : 'Pin post'}>
-                          <Text style={s.postIconBtnText}>{isPinned ? '📌' : '📍'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => confirmDeletePost(post.id)} style={s.postIconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          accessibilityRole="button" accessibilityLabel="Delete post">
-                          <Text style={s.postIconBtnText}>🗑</Text>
-                        </TouchableOpacity>
-                      </View>
+                      <PostOptionsButton
+                        actions={[
+                          {
+                            key: 'pin',
+                            label: isPinned ? 'Unpin from profile' : 'Pin to profile',
+                            icon: isPinned ? 'pin' : 'pin-outline',
+                            onPress: () => togglePin(post.id),
+                          },
+                          {
+                            key: 'delete',
+                            label: 'Delete post',
+                            icon: 'trash-outline',
+                            destructive: true,
+                            accessibilityHint: 'This cannot be undone',
+                            onPress: () => confirmDeletePost(post.id),
+                          },
+                        ]}
+                      />
                     }
                   />
                 );
@@ -1195,10 +1218,31 @@ function makeStyles(c: Colors) {
   headerBannerPlaceholder: {
     width: '100%',
     height: 160,
-    backgroundColor: c.cardLavender,
+    backgroundColor: c.bgAlt,
+    overflow: 'hidden',
   },
-  headerBannerPlaceholderAdmin: {
-    backgroundColor: c.cardHoney,
+  // Soft, oversized circles clipped by the cover's own bounds — an
+  // abstract, patch-inspired motif built entirely from theme color tokens
+  // at low opacity, not an illustration or the app logo.
+  coverBlob: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  coverBlobLavender: {
+    width: 190, height: 190, top: -70, right: '6%',
+    backgroundColor: c.lavender + '29',
+  },
+  coverBlobSage: {
+    width: 150, height: 150, bottom: -55, left: '14%',
+    backgroundColor: c.sage + '24',
+  },
+  coverBlobBlush: {
+    width: 130, height: 130, top: 10, left: '-6%',
+    backgroundColor: c.blush + '20',
+  },
+  coverBlobHoney: {
+    width: 110, height: 110, bottom: -35, right: '22%',
+    backgroundColor: c.honey + '22',
   },
   headerBannerEditBtn: {
     position: 'absolute',
@@ -1214,6 +1258,11 @@ function makeStyles(c: Colors) {
     fontWeight: '700',
     color: '#fff',
   },
+  // Avatar and identity always stack vertically (cover → avatar → identity
+  // → stats) regardless of breakpoint — isWideProfile only switches
+  // centered/phone alignment to left-aligned/wide, never to a side-by-side
+  // row. That row (avatar beside name/bio) is what previously trapped the
+  // identity block inside the cover-overlap area on tablet/desktop.
   avatarOverlapRow: {
     width: '100%',
     alignItems: 'center',
@@ -1221,18 +1270,8 @@ function makeStyles(c: Colors) {
     marginBottom: 8,
   },
   avatarOverlapRowWide: {
-    width: 'auto',
     alignItems: 'flex-start',
-    marginTop: 0,
-    marginBottom: 0,
-    marginLeft: 0,
-  },
-  heroWideRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 20,
     paddingHorizontal: 24,
-    marginTop: -48,
   },
   heroContentWrap: {
     width: '100%',
@@ -1242,12 +1281,9 @@ function makeStyles(c: Colors) {
     paddingTop: 4,
   },
   heroContentWrapWide: {
-    flex: 1,
-    width: undefined,
     alignItems: 'flex-start',
-    paddingLeft: 0,
-    paddingBottom: 24,
-    paddingTop: 14,
+    paddingBottom: 20,
+    paddingTop: 4,
   },
   avatarWrap: {
     width: 104,
@@ -1259,15 +1295,6 @@ function makeStyles(c: Colors) {
     overflow: 'hidden',
     borderWidth: 4,
     borderColor: c.bg,
-  },
-  avatarWrapAdmin: {
-    borderWidth: 3,
-    borderColor: '#D4AF37',
-    shadowColor: '#D4AF37',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
-    elevation: 8,
   },
   avatarImage: {
     width: 96,
@@ -1569,7 +1596,6 @@ function makeStyles(c: Colors) {
     padding: 14,
     marginTop: 12,
   },
-  journalRowIcon: { fontSize: 24 },
   journalRowTitle: { fontSize: 14.5, fontWeight: '700', color: c.textPrimary },
   journalRowSubtitle: { fontSize: 12.5, color: c.textMuted, marginTop: 1 },
 
@@ -1594,8 +1620,6 @@ function makeStyles(c: Colors) {
     textAlign: 'center',
     lineHeight: 19,
   },
-  postIconBtn: { padding: 4 },
-  postIconBtnText: { fontSize: 14 },
   savedPrivacyNote: {
     fontSize: 12.5,
     color: c.textMuted,

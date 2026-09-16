@@ -45,7 +45,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ErrorBoundary from './components/ErrorBoundary';
 import CreateOptionsSheet, { CreateOption } from './components/CreateOptionsSheet';
-import { restoreScrollFocus, installWebKeyboardScrollFallback } from './lib/webFocus';
+import { restoreScrollFocus, installWebKeyboardScrollFallback, installFocusVisibleStyles } from './lib/webFocus';
 
 import AuthScreen from './screens/Auth';
 import OnboardingEntry from './screens/OnboardingEntry';
@@ -122,11 +122,12 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
       paddingHorizontal: 14,
       zIndex: 100,
     }}>
-      <View style={{ paddingHorizontal: 10, marginBottom: 40 }}>
+      <View style={{ paddingHorizontal: 10, marginBottom: 32 }}>
         <Image
-          source={require('./assets/logo.png')}
-          style={{ width: 120, height: 120 }}
+          source={require('./assets/icons/icon-foreground.png')}
+          style={{ width: 56, height: 56 }}
           resizeMode="contain"
+          accessibilityLabel="Parent Patch"
         />
       </View>
 
@@ -412,6 +413,7 @@ function App() {
     registerNotificationResponseListener();
     restoreAnalyticsOptOut();
     installWebKeyboardScrollFallback();
+    installFocusVisibleStyles();
   }, []);
 
   React.useEffect(() => {

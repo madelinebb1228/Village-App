@@ -29,7 +29,12 @@ export function VillageCard({
       ]}
       onPress={onOpen}
       activeOpacity={onOpen ? 0.78 : 1}
-      accessibilityRole={onOpen ? 'button' : undefined}
+      // 'link' (not 'button') — this card navigates to the Patch feed, and
+      // it contains its own nested Join/Leave button below. React Native
+      // Web renders accessibilityRole="button" as a real <button>; nesting
+      // one <button> inside another is invalid HTML and was logging a
+      // validateDOMNesting warning on every render of every card.
+      accessibilityRole={onOpen ? 'link' : undefined}
       accessibilityLabel={`${village.name}. ${village.description}`}
     >
       <Text style={s.villageEmoji}>{village.emoji}</Text>

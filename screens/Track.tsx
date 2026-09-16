@@ -1827,7 +1827,7 @@ export default function Track({ route, navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.timeline}>
+        <View style={[styles.timeline, entries.length === 0 && !timelineError && styles.timelineEmpty]}>
           {timelineError ? (
             <LoadErrorBanner message="Couldn't load today's entries." onRetry={fetchTimeline} />
           ) : entries.length === 0 ? (
@@ -2662,7 +2662,11 @@ function makeStyles(c: Colors) {
                       borderWidth: 1.5, borderColor: c.cardBorder,
                       shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
                       shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-    empty:          { fontSize: 15, color: c.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 24 },
+    // Slightly more visible border just for the empty state — the populated
+    // timeline gets plenty of definition from each entry's own colored row,
+    // but an empty box has nothing else to read as "a real container".
+    timelineEmpty:  { borderColor: c.textSecondary + '80' },
+    empty:          { fontSize: 15, color: c.textSecondary, fontStyle: 'italic', textAlign: 'center', padding: 24 },
     entry:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18 },
     entryBorder:    { borderBottomWidth: 1, borderBottomColor: c.cardBorder },
     entryEmoji:     { fontSize: 24, marginRight: 14 },

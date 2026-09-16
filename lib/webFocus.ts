@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { lightColors, darkColors } from './theme';
 
 // Web only: react-native-web's root/body don't scroll (each screen owns its
 // own ScrollView instead), so the browser's native arrow-key/PageUp/PageDown
@@ -133,4 +134,40 @@ export function installWebKeyboardScrollFallback() {
   if (installed) return;
   installed = true;
   window.addEventListener('keydown', handleKeydown, true);
+}
+
+// ─── Focus-visible ring ─────────────────────────────────────────────────────
+//
+// React Native Web doesn't style :focus at all, so every focusable element
+// (the sidebar's nav items included) is left showing the browser's own
+// default focus ring — which a plain mouse click leaves sitting on top of
+// the app's actual selected-state styling (a filled background) as if it
+// were an unstyled accident, not a deliberate indicator. This installs one
+// small stylesheet, once, that hands the ring over to the browser's own
+// :focus-visible heuristic (real keyboard/programmatic focus only, not a
+// mouse click) with a Parent Patch–colored ring, and suppresses the plain
+// :focus ring a click leaves behind. Selected-state styling is untouched —
+// this only adds a ring on top of whatever's already there.
+let focusStylesInstalled = false;
+
+export function installFocusVisibleStyles() {
+  if (Platform.OS !== 'web') return;
+  if (typeof document === 'undefined') return;
+  if (focusStylesInstalled) return;
+  focusStylesInstalled = true;
+
+  const style = document.createElement('style');
+  style.setAttribute('data-parent-patch', 'focus-visible');
+  style.textContent = `
+    :focus:not(:focus-visible) { outline: none; }
+    :focus-visible {
+      outline: 2px solid ${lightColors.primary};
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :focus-visible { outline-color: ${darkColors.primary}; }
+    }
+  `;
+  document.head.appendChild(style);
 }

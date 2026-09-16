@@ -11,6 +11,11 @@ interface Props {
   width?: number;
   /** 'featured' = larger editorial treatment for a single hero resource; default is the compact list/grid row. */
   variant?: 'default' | 'featured';
+  /** Overrides the resource's own emoji with a functional Ionicon — for
+   *  placements (e.g. Near You) where this card stands in for category
+   *  navigation chrome rather than the resource's own content identity.
+   *  Omit to keep the default emoji. */
+  icon?: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
 }
 
 // Content-first resource card — a neutral white/dark card (per the
@@ -19,7 +24,7 @@ interface Props {
 // kind of resource this is (see lib/resourcesData#categoryAccent) rather
 // than just decorating the card. Used in Explore Categories, search
 // results, and Discover's "For Your Family" / featured placements.
-export default function ResourcePreviewCard({ resource, onPress, width, variant = 'default' }: Props) {
+export default function ResourcePreviewCard({ resource, onPress, width, variant = 'default', icon }: Props) {
   const c = useColors();
   const s = makeStyles(c);
   const accent = categoryAccent(resource.category, c);
@@ -34,7 +39,11 @@ export default function ResourcePreviewCard({ resource, onPress, width, variant 
       accessibilityLabel={`${resource.title}. ${resource.category}. ${resource.description}`}
     >
       <View style={[s.emojiBubble, featured && s.emojiBubbleFeatured, { backgroundColor: accent.bg }]}>
-        <Text style={featured ? s.emojiFeatured : s.emoji}>{resource.emoji}</Text>
+        {icon ? (
+          <Ionicons name={icon} size={featured ? 26 : 20} color={accent.text} />
+        ) : (
+          <Text style={featured ? s.emojiFeatured : s.emoji}>{resource.emoji}</Text>
+        )}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[s.category, { color: accent.text }]}>{resource.category}</Text>

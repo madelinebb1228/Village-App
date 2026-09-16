@@ -89,11 +89,15 @@ export function timeAgo(dateString: string): string {
 export interface QAScreenProps {
   onBack?: () => void;
   initialQuestionId?: string;
+  /** Opens the existing ask-a-question modal on mount (e.g. from Discover's
+   *  Q+A empty-state CTA) instead of a duplicate composer. */
+  autoAsk?: boolean;
+  onAutoAskConsumed?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
+export default function QAScreen({ onBack, initialQuestionId, autoAsk, onAutoAskConsumed }: QAScreenProps) {
   const c = useColors();
   const s = makeStyles(c);
 
@@ -161,6 +165,12 @@ export default function QAScreen({ onBack, initialQuestionId }: QAScreenProps) {
     supabase.from('qa_questions').select('*').eq('id', initialQuestionId).maybeSingle()
       .then(({ data }) => { if (data) openQuestion(data as QAQuestion); });
   }, [initialQuestionId]);
+
+  useEffect(() => {
+    if (!autoAsk) return;
+    openAskModal();
+    onAutoAskConsumed?.();
+  }, [autoAsk]);
 
   // Debounced search while in the ask-search step
   useEffect(() => {

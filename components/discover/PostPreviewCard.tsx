@@ -45,7 +45,12 @@ export default function PostPreviewCard({ post, onPress, width, pinned, headerRi
       style={[s.card, { borderLeftColor: borderColor }, width ? { width } : null]}
       onPress={onPress}
       activeOpacity={0.8}
-      accessibilityRole="button"
+      // 'link' (not 'button') — this card opens the post, and can contain
+      // its own nested button (the sensitive-content reveal, or a
+      // headerRight like PostOptionsButton's ellipsis). Nesting a real
+      // <button> inside another is invalid HTML and logs a
+      // validateDOMNesting warning on every render.
+      accessibilityRole="link"
       accessibilityLabel={`Post by ${authorName}: ${isSensitiveHidden ? 'sensitive content hidden' : post.content}`}
     >
       {pinned && (

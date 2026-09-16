@@ -59,3 +59,21 @@ export function categoryAccent(category: Category, c: Colors): { bg: string; tex
     default:                   return { bg: c.card,         text: c.textSecondary };
   }
 }
+
+// Ionicon counterpart to each category — used for functional resource-library
+// navigation (Explore Categories tiles, the stage hub's compact item rows)
+// so that chrome stays in the same outline-icon system as the rest of
+// Discover/Home, matching the pattern established by activitiesUtil#areaIcon.
+// Individual resource cards keep their own emoji (content identity), which
+// this intentionally does not replace.
+export function categoryIcon(category: Category): keyof typeof import('@expo/vector-icons').Ionicons.glyphMap {
+  switch (category) {
+    case 'Feeding':           return 'nutrition-outline';
+    case 'Safety':             return 'shield-checkmark-outline';
+    case 'Guides & Learning':  return 'book-outline';
+    case 'Community':          return 'people-outline';
+    case 'Local & Reviews':    return 'location-outline';
+    case 'Shopping & Gear':    return 'bag-handle-outline';
+    default:                   return 'ellipse-outline';
+  }
+}

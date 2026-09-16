@@ -68,6 +68,7 @@ import TipOfTheDayCard from '../components/TipOfTheDayCard';
 import FeedInsert from '../components/feed/FeedInsert';
 import PatchLabel from '../components/feed/PatchLabel';
 import PostTypeBadge from '../components/feed/PostTypeBadge';
+import PostOptionsButton from '../components/feed/PostOptionsButton';
 import HomeRightRail from '../components/home/HomeRightRail';
 import { track, screenView } from '../lib/analytics';
 
@@ -1709,10 +1710,18 @@ export default function HomeTab() {
               </TouchableOpacity>
             )}
             {post.user_id === currentUserId && (
-              <TouchableOpacity onPress={() => handleDeletePost(post)} style={styles.postDeleteBtn}
-                accessibilityRole="button" accessibilityLabel="Delete post">
-                <Ionicons name="trash-outline" size={15} color={c.textMuted} />
-              </TouchableOpacity>
+              <PostOptionsButton
+                actions={[
+                  {
+                    key: 'delete',
+                    label: 'Delete post',
+                    icon: 'trash-outline',
+                    destructive: true,
+                    accessibilityHint: 'This cannot be undone',
+                    onPress: () => handleDeletePost(post),
+                  },
+                ]}
+              />
             )}
           </View>
         </View>
@@ -1929,7 +1938,7 @@ export default function HomeTab() {
       >
         <View style={styles.headerRow}>
           <View style={styles.brandRow}>
-            <Image source={require('../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+            <Image source={require('../assets/icons/icon-foreground.png')} style={styles.brandLogo} resizeMode="contain" accessibilityLabel="Parent Patch" />
             <Text style={styles.brandText}>Parent Patch</Text>
           </View>
           <HomeIconRow
@@ -3230,12 +3239,6 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 8,
       paddingVertical: 4,
       borderRadius: 12,
-    },
-    postDeleteBtn: {
-      padding: 4,
-    },
-    postDeleteText: {
-      fontSize: 15,
     },
     followBtn: {
       borderRadius: 14,
