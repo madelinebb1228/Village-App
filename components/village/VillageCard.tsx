@@ -4,7 +4,7 @@ import { useColors, Colors } from '../../lib/theme';
 import { Village } from '../../lib/villageData';
 
 export function VillageCard({
-  village, joining, joined = false, onJoin, onOpen, fullWidth = false, colorIndex,
+  village, joining, joined = false, onJoin, onOpen, fullWidth = false, colorIndex, soft = false,
 }: {
   village: Village;
   joining: boolean;
@@ -13,19 +13,28 @@ export function VillageCard({
   onOpen?: () => void;
   fullWidth?: boolean;
   colorIndex?: number;
+  /** Lighter fill (same identity border/accent, low-opacity tint instead of
+   * a flat saturated background) and slightly less vertical padding — for
+   * contexts like Search's discovery list where several of these sit in a
+   * row and shouldn't dominate the page. Discover's own usage is untouched
+   * (defaults to false). */
+  soft?: boolean;
 }) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
 
   const PALETTE = [c.reminderInfo, c.reminderWarning, c.reminderAlert, c.reminderMilestone, c.reminderStreak];
   const color = colorIndex !== undefined ? PALETTE[colorIndex % PALETTE.length] : null;
+  const bg = color ? color.bg : c.cardLavender;
+  const border = color ? color.border : c.lavender;
 
   return (
     <TouchableOpacity
       style={[
         s.villageCard,
         fullWidth && { width: '100%' },
-        color && { backgroundColor: color.bg, borderColor: color.border },
+        soft && s.villageCardSoft,
+        { backgroundColor: soft ? border + '14' : bg, borderColor: border },
       ]}
       onPress={onOpen}
       activeOpacity={onOpen ? 0.78 : 1}
@@ -86,6 +95,11 @@ function makeStyles(c: Colors) {
       borderWidth: 2,
       borderColor: c.lavender,
       gap: 12,
+    },
+    villageCardSoft: {
+      padding: 11,
+      borderWidth: 1.5,
+      marginBottom: 8,
     },
     villageEmoji: { fontSize: 28 },
     villageInfo: { flex: 1 },

@@ -120,24 +120,25 @@ function makeStyles(c: Colors) {
     headerBannerWrapWide: { height: 120 },
     headerBannerImage: { width: '100%', height: 160 },
     headerBannerImageWide: { height: 120 },
-    headerBannerPlaceholder: { width: '100%', height: 160, backgroundColor: c.cardLavender, overflow: 'hidden' },
-    // Subtle abstract accents for Founder/Official profiles that haven't
-    // uploaded a cover — replaces the old flat honey rectangle, which read as
-    // an unfinished placeholder rather than a designed cover. Two soft,
-    // low-opacity tinted circles bleeding off-canvas; no text/emoji/logo.
-    bannerAccentCircleA: {
-      position: 'absolute', width: 220, height: 220, borderRadius: 110,
-      top: -130, right: -50, backgroundColor: c.cardHoney, opacity: 0.55,
-    },
-    bannerAccentCircleB: {
-      position: 'absolute', width: 160, height: 160, borderRadius: 80,
-      bottom: -90, left: -40, backgroundColor: c.cardBlush, opacity: 0.4,
-    },
+    headerBannerPlaceholder: { width: '100%', height: 160, backgroundColor: c.bgAlt, overflow: 'hidden' },
+    // Same quiet abstract cover every account without an uploaded photo
+    // gets — Founder/Official tier is already communicated by the badge
+    // below, not by a different cover treatment. Matches the owner's own
+    // Profile screen exactly (see screens/Profile.tsx) so both read as the
+    // same social system. No text, no logo, no emoji — theme-color circles
+    // at low opacity only.
+    coverBlob: { position: 'absolute', borderRadius: 999 },
+    coverBlobLavender: { width: 190, height: 190, top: -70, right: '6%', backgroundColor: c.lavender + '29' },
+    coverBlobSage:     { width: 150, height: 150, bottom: -55, left: '14%', backgroundColor: c.sage + '24' },
+    coverBlobBlush:    { width: 130, height: 130, top: 10, left: '-6%', backgroundColor: c.blush + '20' },
+    coverBlobHoney:    { width: 110, height: 110, bottom: -35, right: '22%', backgroundColor: c.honey + '22' },
     avatarOverlapRow: { width: '100%', alignItems: 'center', marginTop: -52, marginBottom: 4 },
     avatarOverlapRowWide: { width: 'auto', alignItems: 'flex-start', marginTop: 0, marginBottom: 0 },
     heroWideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20, paddingHorizontal: 24, marginTop: -48 },
     heroContentWrap: { width: '100%', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 4 },
-    heroContentWrapWide: { flex: 1, width: undefined, alignItems: 'flex-start', paddingHorizontal: 0, paddingBottom: 4, paddingTop: 14 },
+    // maxWidth keeps name/bio readable instead of stretching into one very
+    // wide line once the desktop two-column layout widens the whole page.
+    heroContentWrapWide: { flex: 1, width: undefined, maxWidth: 560, alignItems: 'flex-start', paddingHorizontal: 0, paddingBottom: 4, paddingTop: 14 },
     avatarWrap: {
       width: 104,
       height: 104,
@@ -245,6 +246,19 @@ function makeStyles(c: Colors) {
     tabBtnTextActive: { color: c.textPrimary },
     emptyTabText: { fontSize: 13.5, color: c.textMuted, textAlign: 'center', paddingVertical: 20 },
 
+    moreMenuCard: { backgroundColor: c.bg, borderRadius: 16, paddingVertical: 6 },
+    moreMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16, minHeight: 44 },
+    moreMenuRowText: { fontSize: 14.5, fontWeight: '600', color: c.textPrimary },
+
+    // Desktop: primary column (identity + posts) beside a contextual rail
+    // (Family + Patches) — an asymmetric pair instead of one narrow column
+    // adrift in the rest of the window.
+    desktopProfileRow: { flexDirection: 'row', gap: 28, alignItems: 'flex-start' },
+    profileMainCol: { width: 680 },
+    profileRail: { width: 300, gap: 16 },
+    railCard: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.separator, padding: 16 },
+    railCardTitle: { ...typography.sectionTitle, fontSize: 15, color: c.textPrimary, marginBottom: 10 },
+
   });
 }
 
@@ -254,7 +268,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const { isSubscribed } = useSubscription();
   const navigation = useNavigation<any>();
   const { width: windowWidth, isDesktop, isTablet } = useResponsive();
-  const profileMaxWidth = maxWidthFor(windowWidth, 'profile');
+  // Desktop widens past the single-column profile cap to fit the main
+  // column + contextual rail side by side (680 + 28 gap + 300).
+  const profileMaxWidth = isDesktop ? 1008 : maxWidthFor(windowWidth, 'profile');
   const isWideProfile = isDesktop || isTablet;
   const { pushSecondary } = useContext(AppContext);
 
@@ -286,6 +302,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [reportUserSubmitting, setReportUserSubmitting] = useState(false);
   const [reportUserDone, setReportUserDone] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   useEffect(() => {
     if (!visible || !userId) return;
@@ -565,12 +582,10 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   <Image source={{ uri: profile.header_url }} style={[s.headerBannerImage, isWideProfile && s.headerBannerImageWide]} resizeMode="cover" />
                 ) : (
                   <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide]}>
-                    {isGoldTier && (
-                      <>
-                        <View style={s.bannerAccentCircleA} />
-                        <View style={s.bannerAccentCircleB} />
-                      </>
-                    )}
+                    <View style={[s.coverBlob, s.coverBlobLavender]} />
+                    <View style={[s.coverBlob, s.coverBlobSage]} />
+                    <View style={[s.coverBlob, s.coverBlobBlush]} />
+                    <View style={[s.coverBlob, s.coverBlobHoney]} />
                   </View>
                 )}
               </View>
@@ -628,7 +643,11 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   <Text style={s.statLbl}>Followers</Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {/* Follow + Message stay visible — the two actions someone
+                  actually comes to a profile to take. Mute/Report/Block move
+                  into a single overflow menu instead of five equal-weight
+                  pills competing for attention. */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, flexWrap: 'wrap', justifyContent: isWideProfile ? 'flex-start' : 'center' }}>
                 {!isBlocked && (
                   <TouchableOpacity
                     onPress={toggleFollow}
@@ -638,7 +657,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       backgroundColor: isFollowing || followRequestStatus === 'pending' ? c.card : c.primary,
-                      borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+                      borderRadius: 20, paddingHorizontal: 22, paddingVertical: 11,
                       borderWidth: isFollowing || followRequestStatus === 'pending' ? 1.5 : 0,
                       borderColor: c.separator,
                     }}
@@ -648,33 +667,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                       size={15}
                       color={isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText}
                     />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText }}>
+                    <Text style={{ fontSize: 14.5, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText }}>
                       {isFollowing ? 'Following' : followRequestStatus === 'pending' ? 'Requested' : 'Follow'}
                     </Text>
-                  </TouchableOpacity>
-                )}
-                {!isBlocked && (
-                  <TouchableOpacity
-                    onPress={toggleMute}
-                    disabled={muteLoading}
-                    activeOpacity={0.85}
-                    hitSlop={hitSlopFor(34)}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 6,
-                      backgroundColor: isMuted ? c.cardHoney : c.card, borderRadius: 20,
-                      paddingHorizontal: 16, paddingVertical: 10,
-                      borderWidth: 1.5, borderColor: isMuted ? c.honey : c.separator,
-                    }}
-                  >
-                    {muteLoading
-                      ? <ActivityIndicator size="small" color={c.textMuted} />
-                      : <>
-                          <Ionicons name={isMuted ? 'volume-mute' : 'volume-mute-outline'} size={15} color={c.textPrimary} />
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>
-                            {isMuted ? 'Unmute' : 'Mute'}
-                          </Text>
-                        </>
-                    }
                   </TouchableOpacity>
                 )}
                 {onMessage && userId && !isBlocked && (
@@ -685,54 +680,39 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       backgroundColor: c.card, borderRadius: 20,
-                      paddingHorizontal: 20, paddingVertical: 10,
+                      paddingHorizontal: 20, paddingVertical: 11,
                       borderWidth: 1.5, borderColor: c.separator,
                     }}
                   >
                     <Ionicons name="chatbubble-outline" size={15} color={c.textPrimary} />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Message</Text>
+                    <Text style={{ fontSize: 14.5, fontWeight: '700', color: c.textPrimary }}>Message</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  onPress={() => { setShowReportUser(true); setReportUserReason(''); setReportUserDone(false); }}
+                  onPress={() => setShowMoreMenu(true)}
                   activeOpacity={0.85}
                   hitSlop={hitSlopFor(34)}
                   style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6,
-                    backgroundColor: c.card, borderRadius: 20,
-                    paddingHorizontal: 16, paddingVertical: 10,
-                    borderWidth: 1.5, borderColor: c.separator,
+                    width: 40, height: 40, borderRadius: 20,
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: c.card, borderWidth: 1.5,
+                    borderColor: isBlocked ? c.signOut : c.separator,
                   }}
+                  accessibilityRole="button" accessibilityLabel="More profile options"
                 >
-                  <Ionicons name="flag-outline" size={15} color={c.textPrimary} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Report</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleBlock}
-                  disabled={blockLoading}
-                  activeOpacity={0.85}
-                  hitSlop={hitSlopFor(34)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6,
-                    backgroundColor: c.card, borderRadius: 20,
-                    paddingHorizontal: 16, paddingVertical: 10,
-                    borderWidth: 1.5, borderColor: isBlocked ? c.signOut : c.separator,
-                  }}
-                >
-                  {blockLoading
-                    ? <ActivityIndicator size="small" color={c.signOut} />
-                    : <>
-                        <Ionicons name="ban-outline" size={15} color={isBlocked ? c.signOut : c.textPrimary} />
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: isBlocked ? c.signOut : c.textPrimary }}>
-                          {isBlocked ? 'Unblock' : 'Block'}
-                        </Text>
-                      </>
-                  }
+                  <Ionicons name="ellipsis-horizontal" size={18} color={isBlocked ? c.signOut : c.textPrimary} />
                 </TouchableOpacity>
               </View>
               </View>
               </View>
             </View>
+
+            {/* Desktop: primary column (private banner + Posts/Media) beside
+                a contextual rail (Family + Patches) — real desktop
+                composition instead of one narrow column with dead space on
+                either side. Phone/tablet: everything stacks, unchanged. */}
+            <View style={isDesktop ? s.desktopProfileRow : undefined}>
+            <View style={isDesktop ? s.profileMainCol : undefined}>
 
             {/* Private account banner (shown if private and not following) */}
             {profile.is_private && !isFollowing && (
@@ -751,32 +731,36 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               </View>
             )}
 
-            {/* Family — secondary to the social identity above, respects baby_info_private */}
-            {baby && (
-              <View style={s.section}>
-                <Text style={s.sectionTitle}>Family</Text>
-                <View style={s.babySnippet}>
-                  <Text style={s.babySnippetText}>
-                    👶 {baby.is_expecting ? 'Expecting' : baby.name}
-                  </Text>
-                </View>
-              </View>
-            )}
+            {!isDesktop && (
+              <>
+                {/* Family — secondary to the social identity above, respects baby_info_private */}
+                {baby && (
+                  <View style={s.section}>
+                    <Text style={s.sectionTitle}>Family</Text>
+                    <View style={s.babySnippet}>
+                      <Text style={s.babySnippetText}>
+                        👶 {baby.is_expecting ? 'Expecting' : baby.name}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
-            {/* Patches — community identity, tappable into the real feed */}
-            <View style={s.section}>
-              {isSubscribed && showVillages && commonIds.length > 0 && (
-                <View style={s.commonBadge}>
-                  <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
+                {/* Patches — community identity, tappable into the real feed */}
+                <View style={s.section}>
+                  {isSubscribed && showVillages && commonIds.length > 0 && (
+                    <View style={s.commonBadge}>
+                      <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
+                    </View>
+                  )}
+                  <PatchChipRow
+                    title="Patches"
+                    villages={showVillages ? theirVillages : []}
+                    onPressVillage={(v) => openVillageFeed(v)}
+                    emptyTitle={showVillages ? 'No Patches yet' : "This user's patches are private."}
+                  />
                 </View>
-              )}
-              <PatchChipRow
-                title="Patches"
-                villages={showVillages ? theirVillages : []}
-                onPressVillage={(v) => openVillageFeed(v)}
-                emptyTitle={showVillages ? 'No Patches yet' : "This user's patches are private."}
-              />
-            </View>
+              </>
+            )}
 
             {/* Posts / Media — gated behind canViewPosts, which is false for
                 a private account the viewer doesn't follow (never fetched,
@@ -828,11 +812,82 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 )}
               </View>
             )}
+            </View>
+
+            {isDesktop && (
+              <View style={s.profileRail}>
+                {baby && (
+                  <View style={s.railCard}>
+                    <Text style={s.railCardTitle}>Family</Text>
+                    <View style={s.babySnippet}>
+                      <Text style={s.babySnippetText}>
+                        👶 {baby.is_expecting ? 'Expecting' : baby.name}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                <View style={s.railCard}>
+                  {isSubscribed && showVillages && commonIds.length > 0 && (
+                    <View style={s.commonBadge}>
+                      <Text style={s.commonBadgeText}>🏘️ {commonIds.length} in common</Text>
+                    </View>
+                  )}
+                  <PatchChipRow
+                    title="Patches"
+                    villages={showVillages ? theirVillages : []}
+                    onPressVillage={(v) => openVillageFeed(v)}
+                    emptyTitle={showVillages ? 'No Patches yet' : "This user's patches are private."}
+                  />
+                </View>
+              </View>
+            )}
+            </View>
 
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
       </SafeAreaView>
+
+      {/* More options — Mute/Report/Block behind one overflow trigger.
+          ConfinedOverlay (not a raw Modal) so it stays confined to the
+          desktop shell like every other dialog on this screen. */}
+      <ConfinedOverlay
+        visible={showMoreMenu}
+        presentation={presentation}
+        onRequestClose={() => setShowMoreMenu(false)}
+        maxWidth={280}
+      >
+        <View style={s.moreMenuCard}>
+          {!isBlocked && (
+            <TouchableOpacity
+              style={s.moreMenuRow}
+              onPress={() => { setShowMoreMenu(false); toggleMute(); }}
+              disabled={muteLoading}
+              accessibilityRole="button" accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
+            >
+              <Ionicons name={isMuted ? 'volume-mute' : 'volume-mute-outline'} size={18} color={c.textPrimary} />
+              <Text style={s.moreMenuRowText}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={s.moreMenuRow}
+            onPress={() => { setShowMoreMenu(false); setShowReportUser(true); setReportUserReason(''); setReportUserDone(false); }}
+            accessibilityRole="button" accessibilityLabel="Report"
+          >
+            <Ionicons name="flag-outline" size={18} color={c.textPrimary} />
+            <Text style={s.moreMenuRowText}>Report</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.moreMenuRow}
+            onPress={() => { setShowMoreMenu(false); handleBlock(); }}
+            disabled={blockLoading}
+            accessibilityRole="button" accessibilityLabel={isBlocked ? 'Unblock' : 'Block'}
+          >
+            <Ionicons name="ban-outline" size={18} color={c.signOut} />
+            <Text style={[s.moreMenuRowText, { color: c.signOut }]}>{isBlocked ? 'Unblock' : 'Block'}</Text>
+          </TouchableOpacity>
+        </View>
+      </ConfinedOverlay>
 
       {/* Report user modal */}
       <ConfinedOverlay

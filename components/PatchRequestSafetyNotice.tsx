@@ -32,25 +32,25 @@ function makeStyles(c: Colors) {
   return StyleSheet.create({
     wrap: {
       flexDirection: 'row',
-      gap: 10,
+      gap: 9,
       backgroundColor: c.cardBlue,
       borderWidth: 1,
       borderColor: c.blue,
       borderRadius: 14,
-      padding: 14,
+      padding: 12,
       marginHorizontal: 16,
-      marginBottom: 12,
+      marginBottom: 10,
     },
     icon: { marginTop: 1 },
     title: {
       fontSize: 13,
       fontWeight: '700',
       color: c.textPrimary,
-      marginBottom: 3,
+      marginBottom: 2,
     },
     body: {
       fontSize: 12.5,
-      lineHeight: 18,
+      lineHeight: 17,
       color: c.textSecondary,
     },
   });

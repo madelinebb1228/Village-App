@@ -16,13 +16,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
 import { AppContext } from '../lib/AppContext';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
 import { RESOURCES } from '../lib/resourcesData';
-import { Village } from '../lib/villageData';
+import { Village, VILLAGES } from '../lib/villageData';
 import { searchPatches, joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT, fetchTrendingPosts, trendingTagsFromPosts, TrendingTag } from '../lib/discoverData';
 import { useSubscription } from '../lib/subscriptionContext';
 import { VillageCard } from '../components/village/VillageCard';
@@ -120,6 +121,12 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
   // people" here since nothing in the app actually tracks either yet.
   const [trendingTags, setTrendingTags] = useState<TrendingTag[]>([]);
   const PRESEARCH_RESOURCES = useMemo(() => RESOURCES.slice(0, 6), []);
+  // Same real catalog filter Discover's own "Discover Patches" section
+  // uses — no new fetch, VILLAGES is a static import.
+  const suggestedPatches = useMemo(
+    () => VILLAGES.filter(v => !joinedPatchIds.has(v.id) && !v.hidden).slice(0, 8),
+    [joinedPatchIds],
+  );
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -343,31 +350,25 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
           </View>
 
           {/* ── Body ── */}
-          <View style={[s.body, columnStyle]}>
+          <View style={[s.body, trimmedQuery.length < 2 && isDesktop ? undefined : columnStyle]}>
           {loading ? (
             <View style={s.center}>
               <ActivityIndicator color={c.primary} size="large" />
             </View>
           ) : trimmedQuery.length < 2 ? (
-            <ScrollView contentContainerStyle={s.preSearchContent} showsVerticalScrollIndicator={false}>
-              <View style={s.preSearchHint}>
-                <Ionicons
-                  name={tab === 'people' ? 'people-outline' : tab === 'posts' ? 'chatbubble-outline' : tab === 'patches' ? 'leaf-outline' : tab === 'groups' ? 'people-circle-outline' : 'book-outline'}
-                  size={20}
-                  color={c.textMuted}
-                />
-                <Text style={s.hintText}>
-                  {tab === 'people'
-                    ? 'Search by username or name to find people in your community'
-                    : tab === 'posts'
-                    ? 'Search words or phrases to find posts'
-                    : tab === 'patches'
-                    ? 'Search by name or description to find Patches — the same communities you can join from Discover'
-                    : tab === 'groups'
-                    ? 'Search by name or description to find local Parent Groups and meetups'
-                    : 'Search topics like "choking" or "sleep" to find safety guides and resources'}
-                </Text>
-              </View>
+            // Pre-query: a real discovery workspace, not a search box sitting
+            // above a mostly-blank page. Three sections, three different
+            // visual treatments (chips / community cards / info rows) built
+            // entirely from data already loaded or statically bundled — no
+            // new fetches, nothing fabricated.
+            <ScrollView contentContainerStyle={[s.preSearchContent, isDesktop ? { maxWidth: 1040, alignSelf: 'center', width: '100%' } : columnStyle]} showsVerticalScrollIndicator={false}>
+              <Text style={s.preSearchGreeting}>
+                {tab === 'people' ? 'Find people in your community'
+                  : tab === 'posts' ? 'Search posts across Parent Patch'
+                  : tab === 'patches' ? 'Find your next Patch'
+                  : tab === 'groups' ? 'Find local Parent Groups'
+                  : 'Search safety guides and resources'}
+              </Text>
 
               {trendingTags.length > 0 && (
                 <View style={s.preSearchSection}>
@@ -388,24 +389,63 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
                 </View>
               )}
 
-              <View style={s.preSearchSection}>
-                <Text style={s.preSearchSectionTitle}>Resources</Text>
-                {PRESEARCH_RESOURCES.map(resource => (
-                  <TouchableOpacity
-                    key={resource.id}
-                    style={s.preSearchResourceRow}
-                    onPress={() => { setTab('resources'); setQuery(resource.title); }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${resource.title} in Resources`}
-                  >
-                    <Text style={s.postTypeBadge}>{resource.emoji}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.postAuthor}>{resource.title}</Text>
-                      <Text style={s.postTime} numberOfLines={1}>{resource.category}</Text>
+              {/* Asymmetric pair on desktop — Patches wider/identity-driven,
+                  Resources narrower/informational. Stacks on phone/tablet. */}
+              <View style={isDesktop ? s.preSearchSplitRow : undefined}>
+                {suggestedPatches.length > 0 && (
+                  <View style={[s.preSearchSection, isDesktop && s.preSearchSplitMain]}>
+                    <View style={s.preSearchSectionHeaderRow}>
+                      <Text style={s.preSearchSectionTitle}>Discover Patches</Text>
+                      <TouchableOpacity onPress={() => { setTab('patches'); setQuery('parent'); }} accessibilityRole="button" accessibilityLabel="See all Patches">
+                        <Text style={s.preSearchSeeAll}>Browse all</Text>
+                      </TouchableOpacity>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
-                  </TouchableOpacity>
-                ))}
+                    <ScrollView
+                      horizontal={!isDesktop}
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={isDesktop ? { gap: 10 } : { gap: 10, paddingRight: 12 }}
+                    >
+                      {suggestedPatches.slice(0, isDesktop ? 8 : 4).map((v, i) => (
+                        <View key={v.id} style={!isDesktop ? { width: 240 } : undefined}>
+                          <VillageCard
+                            village={v}
+                            joined={joinedPatchIds.has(v.id)}
+                            joining={joiningPatchId === v.id}
+                            onJoin={() => toggleJoinPatch(v.id)}
+                            onOpen={() => openVillageFeed(v)}
+                            fullWidth={isDesktop}
+                            colorIndex={i}
+                            soft
+                          />
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                <View style={[s.preSearchSection, isDesktop && s.preSearchSplitRail]}>
+                  <Text style={s.preSearchSectionTitle}>Resources</Text>
+                  <View style={{ gap: 8 }}>
+                    {PRESEARCH_RESOURCES.map(resource => (
+                      <TouchableOpacity
+                        key={resource.id}
+                        style={s.resourceRow}
+                        onPress={() => { setTab('resources'); setQuery(resource.title); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${resource.title} in Resources`}
+                      >
+                        <View style={s.resourceIconBubble}>
+                          <Text style={s.resourceEmoji}>{resource.emoji}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.resourceTitle} numberOfLines={1}>{resource.title}</Text>
+                          <Text style={s.resourceCategory} numberOfLines={1}>{resource.category}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={15} color={c.textMuted} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               </View>
             </ScrollView>
           ) : tab === 'people' ? (
@@ -475,22 +515,16 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
                 <Text style={s.emptyText}>No posts found for "{trimmedQuery}"</Text>
               ) : (
                 posts.map(post => (
+                  // Flat, borderless row — the same social-post language as
+                  // Home, not a bordered/shadowed "search result" card.
                   <TouchableOpacity
                     key={post.id}
-                    style={[
-                      s.postCard,
-                      {
-                        borderLeftColor:
-                          post.post_type === 'milestone' ? c.postMilestone
-                          : post.post_type === 'question' ? c.postQuestion
-                          : c.postText,
-                      },
-                    ]}
+                    style={s.socialPostRow}
                     onPress={() => openProfile(post.user_id)}
                     activeOpacity={0.78}
                   >
                     <View style={s.postCardHeader}>
-                      <UserAvatar userId={post.user_id} name={post.author} size={34} />
+                      <UserAvatar userId={post.user_id} name={post.author} size={36} />
                       <View style={{ flex: 1 }}>
                         <Text style={s.postAuthor}>{post.author}</Text>
                         <Text style={s.postTime}>{getTimeAgo(post.created_at)}</Text>
@@ -707,30 +741,38 @@ function makeStyles(c: Colors) {
     },
 
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-    hintIcon: { marginBottom: 12 },
-    hintTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
-    hintText: {
-      fontSize: 13.5,
-      color: c.textMuted,
-      lineHeight: 19,
-      flex: 1,
-    },
 
     // Pre-search state — top-anchored, real data only (see Search's fetch effect).
-    preSearchContent: { paddingTop: 20, paddingBottom: 40 },
-    preSearchHint: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 24 },
+    preSearchContent: { paddingTop: 20, paddingBottom: 40, paddingHorizontal: 16 },
+    preSearchGreeting: { ...typography.sectionTitle, fontSize: 19, color: c.textPrimary, marginBottom: 20 },
     preSearchSection: { marginBottom: 24 },
-    preSearchSectionTitle: { fontSize: 13, fontWeight: '800', color: c.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 },
+    preSearchSectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    preSearchSectionTitle: { fontSize: 13, fontWeight: '800', color: c.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
+    preSearchSeeAll: { fontSize: 12.5, fontWeight: '700', color: c.primary },
     trendingTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     trendingTagChip: {
       backgroundColor: c.cardLavender, borderRadius: 16,
       paddingHorizontal: 12, paddingVertical: 7,
     },
     trendingTagText: { fontSize: 13, fontWeight: '700', color: c.primary },
-    preSearchResourceRow: {
+
+    // Desktop asymmetric pair: Patches wider/left, Resources narrower/right.
+    preSearchSplitRow: { flexDirection: 'row', gap: 28, alignItems: 'flex-start' },
+    preSearchSplitMain: { flex: 1, marginBottom: 0 },
+    preSearchSplitRail: { width: 320, marginBottom: 0 },
+
+    resourceRow: {
       flexDirection: 'row', alignItems: 'center', gap: 12,
-      paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.separator,
+      backgroundColor: c.card, borderRadius: 13, borderWidth: 1, borderColor: c.separator,
+      paddingVertical: 10, paddingHorizontal: 11, minHeight: 56,
     },
+    resourceIconBubble: {
+      width: 34, height: 34, borderRadius: 11, backgroundColor: c.cardBlue,
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
+    resourceEmoji: { fontSize: 16 },
+    resourceTitle: { fontSize: 13.5, fontWeight: '700', color: c.textPrimary },
+    resourceCategory: { fontSize: 11.5, color: c.textMuted, fontWeight: '600', marginTop: 1 },
 
     listContent: { paddingVertical: 16, paddingBottom: 48 },
     emptyText: {
@@ -802,12 +844,16 @@ function makeStyles(c: Colors) {
       borderRadius: 14,
       padding: 14,
       marginBottom: 8,
-      borderLeftWidth: 4,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.05,
       shadowRadius: 4,
       elevation: 1,
+    },
+    // Post results specifically — flat, matches Home's own post row.
+    socialPostRow: {
+      paddingVertical: 14, paddingHorizontal: 2,
+      borderBottomWidth: 1, borderBottomColor: c.separator,
     },
     postCardHeader: {
       flexDirection: 'row',

@@ -418,11 +418,11 @@ export default function MessagesInbox({
                 onPress={() => setOpenConv(conv)}
                 activeOpacity={0.75}
                 style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 14,
-                  paddingHorizontal: 16, paddingVertical: 14,
+                  flexDirection: 'row', alignItems: 'center', gap: 13,
+                  paddingHorizontal: 16, paddingVertical: 12,
                   borderBottomWidth: 1, borderBottomColor: c.separator,
-                  borderLeftWidth: openConv?.id === conv.id ? 3 : 0,
-                  borderLeftColor: c.primary,
+                  borderLeftWidth: 3,
+                  borderLeftColor: openConv?.id === conv.id ? c.primary : 'transparent',
                   backgroundColor: openConv?.id === conv.id
                     ? c.card
                     : conv.unread > 0 ? c.cardBlush : 'transparent',
@@ -430,13 +430,13 @@ export default function MessagesInbox({
                 accessibilityRole="button"
                 accessibilityLabel={`Conversation with ${conv.otherName}${conv.unread > 0 ? ', unread' : ''}`}
               >
-                <Avatar name={conv.otherName} url={conv.otherAvatar} size={48} />
+                <Avatar name={conv.otherName} url={conv.otherAvatar} size={50} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <Text style={{ fontSize: 15, fontWeight: conv.unread > 0 ? '800' : '600', color: c.textPrimary }}>
+                    <Text style={{ fontSize: 15, fontWeight: conv.unread > 0 ? '800' : '700', color: c.textPrimary }}>
                       {conv.otherName}
                     </Text>
-                    <Text style={{ fontSize: 12, color: c.textMuted }}>{timeAgo(conv.lastMessageAt)}</Text>
+                    <Text style={{ fontSize: 11.5, color: c.textMuted }}>{timeAgo(conv.lastMessageAt)}</Text>
                   </View>
                   <Text
                     numberOfLines={1}
@@ -447,7 +447,7 @@ export default function MessagesInbox({
                 </View>
                 {conv.unread > 0 && (
                   <View style={{
-                    width: 10, height: 10, borderRadius: 5,
+                    width: 9, height: 9, borderRadius: 5,
                     backgroundColor: c.primary,
                   }} />
                 )}
@@ -779,18 +779,23 @@ export default function MessagesInbox({
   function EmptyRightPanel() {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-        <Ionicons name="chatbubble-ellipses-outline" size={36} color={c.textMuted} style={{ marginBottom: 14 }} />
-        <Text style={{ fontSize: 16, fontWeight: '700', color: c.textPrimary, marginBottom: 6 }}>Select a conversation</Text>
-        <Text style={{ fontSize: 13.5, color: c.textMuted, textAlign: 'center', lineHeight: 19, marginBottom: 18 }}>
+        <View style={{
+          width: 72, height: 72, borderRadius: 36, backgroundColor: c.cardLavender,
+          alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+        }}>
+          <Ionicons name="chatbubble-ellipses-outline" size={30} color={c.lavender} />
+        </View>
+        <Text style={{ fontSize: 17, fontWeight: '800', color: c.textPrimary, marginBottom: 6 }}>Your Messages</Text>
+        <Text style={{ fontSize: 13.5, color: c.textMuted, textAlign: 'center', lineHeight: 19, marginBottom: 20 }}>
           Choose someone from your messages, or start a new conversation.
         </Text>
         <TouchableOpacity
           onPress={() => setShowNewMessage(true)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.cardLavender, borderRadius: 22, paddingHorizontal: 18, paddingVertical: 10 }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.primary, borderRadius: 22, paddingHorizontal: 20, paddingVertical: 11 }}
           accessibilityRole="button" accessibilityLabel="New message"
         >
-          <Ionicons name="create-outline" size={16} color={c.lavender} />
-          <Text style={{ fontSize: 13.5, fontWeight: '700', color: c.lavender }}>New Message</Text>
+          <Ionicons name="create-outline" size={16} color="#fff" />
+          <Text style={{ fontSize: 13.5, fontWeight: '700', color: '#fff' }}>New Message</Text>
         </TouchableOpacity>
       </View>
     );

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
+import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
 import { Village, VILLAGES } from '../lib/villageData';
@@ -115,20 +116,37 @@ function TaskCard({
   const patchInfo   = task.village_id ? VILLAGES.find(v => v.id === task.village_id) : null
 
   return (
-    <View style={[s.taskCard, { backgroundColor: colors.bg, borderLeftColor: colors.border }]}>
-      {/* Category + urgency row */}
+    <View style={[s.taskCard, { borderLeftColor: colors.border }]}>
+      {/* Author identity first, like a real social post — the community
+          member asking is the headline, not the category tag. */}
       <View style={s.taskTopRow}>
-        <View style={[s.categoryChip, { backgroundColor: colors.border + '22', borderColor: colors.border }]}>
-          <Ionicons name={meta.icon} size={11} color={colors.border} />
-          <Text style={[s.categoryChipText, { color: colors.border }]}>{meta.label}</Text>
-        </View>
+        <TouchableOpacity
+          style={s.authorRow}
+          onPress={() => onOpenProfile(task.creator_id)}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${name}'s profile`}
+          disabled={isOwn}
+        >
+          <UserAvatar userId={task.creator_id} name={name} size={36} />
+          <View>
+            <Text style={s.taskAuthor}>{name}</Text>
+            <Text style={s.taskMeta}>
+              {patchInfo ? `${patchInfo.emoji} ${patchInfo.name}` : 'Parent Patch'} · {timeAgo(task.created_at)}
+            </Text>
+          </View>
+        </TouchableOpacity>
         {task.urgency !== 'normal' && (
           <View style={[s.urgencyBadge, { backgroundColor: getUrgencyColor(task.urgency) }]}>
             <Ionicons name={task.urgency === 'emergency' ? 'alert-circle-outline' : 'flash-outline'} size={11} color="#fff" />
             <Text style={s.urgencyBadgeText}>{task.urgency === 'emergency' ? 'ASAP' : 'Urgent'}</Text>
           </View>
         )}
-        <Text style={s.timeAgo}>{timeAgo(task.created_at)}</Text>
+      </View>
+
+      {/* Category — a small selective accent chip, not a full-card fill */}
+      <View style={[s.categoryChip, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+        <Ionicons name={meta.icon} size={11} color={colors.border} />
+        <Text style={[s.categoryChipText, { color: colors.border }]}>{meta.label}</Text>
       </View>
 
       {/* Title */}
@@ -139,19 +157,6 @@ function TaskCard({
         <Text style={s.taskDesc} numberOfLines={3}>{task.description}</Text>
       ) : null}
 
-      {/* Author — tappable, opens their profile like a real social post */}
-      <TouchableOpacity
-        style={s.authorRow}
-        onPress={() => onOpenProfile(task.creator_id)}
-        accessibilityRole="button"
-        accessibilityLabel={`View ${name}'s profile`}
-        disabled={isOwn}
-      >
-        <UserAvatar userId={task.creator_id} name={name} size={28} />
-        <Text style={s.taskAuthor}>
-          {name}{patchInfo ? ` · ${patchInfo.emoji} ${patchInfo.name}` : ''}
-        </Text>
-      </TouchableOpacity>
       {volunteerCount > 0 && (
         <View style={s.volunteerCountRow}>
           <Ionicons name="people-outline" size={12} color={c.textMuted} />
@@ -218,7 +223,13 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
   const s = useMemo(() => makeStyles(c), [c])
   const { width: windowWidth, isDesktop } = useResponsive()
   const { pushSecondary } = useContext(AppContext)
-  const feedColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const }
+  // Desktop: feed + a compact "Your Patches" rail form a deliberate
+  // asymmetric two-column composition instead of one centered column with
+  // dead space on either side. Phone/tablet keep the original single
+  // centered column, untouched.
+  const feedColumnStyle = isDesktop
+    ? { width: 640 as const }
+    : { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const }
   const formColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'form'), alignSelf: 'center' as const }
 
   // Mobile-only fallback targets for the dual-branch openProfile/openMessage
@@ -433,94 +444,157 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
 
         {/* ── Feed ── */}
         {view === 'feed' && (
-          <>
-            {/* Intro blurb — plain supporting text on the page background,
-                not a distinct colored bar (which read as a highlighted/
-                selected chip once its content was centered inside it). */}
-            <View style={s.introBannerWrap}>
-              <View style={[s.introBanner, feedColumnStyle]}>
-                <Text style={s.introText}>
-                  Neighbors helping neighbors — ask for anything, offer when you can.
-                </Text>
+          <View style={isDesktop ? s.desktopSplitRow : s.mobileFeedWrap}>
+            <ScrollView
+              style={isDesktop ? { width: 640, flexGrow: 0 } : { flex: 1 }}
+              contentContainerStyle={[s.feedScrollContent, !isDesktop && feedColumnStyle]}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Header block — a real page heading, not a thin utility
+                  strip, so this reads as its own destination rather than a
+                  sheet pasted beside the sidebar. */}
+              <View style={s.boardHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.boardTitle}>Community Help Board</Text>
+                  <Text style={s.boardSubtitle}>Ask for anything, or lend a hand when you can.</Text>
+                </View>
                 {openCount > 0 && (
                   <View style={s.openBadge}>
-                    <Text style={s.openBadgeText}>{openCount} open</Text>
+                    <Text style={s.openBadgeNum}>{openCount}</Text>
+                    <Text style={s.openBadgeText}>open</Text>
                   </View>
                 )}
               </View>
-            </View>
 
-            <View style={feedColumnStyle}>
-              <PatchRequestSafetyNotice />
-            </View>
+              <PatchRequestSafetyNotice style={{ marginHorizontal: 0 }} />
 
-            {/* Patch filter pills */}
-            {myVillages.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={s.filterScroll}
-                contentContainerStyle={[s.filterScrollContent, feedColumnStyle]}
-              >
-                <TouchableOpacity
-                  style={[s.filterPill, filterVillageId === null && s.filterPillActive]}
-                  onPress={() => setFilterVillageId(null)}
+              {/* Patch filter pills — phone/tablet only; desktop filters
+                  from the "Your Patches" rail instead (see below). */}
+              {!isDesktop && myVillages.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={s.filterScroll}
+                  contentContainerStyle={s.filterScrollContent}
                 >
-                  <Text style={[s.filterPillText, filterVillageId === null && s.filterPillTextActive]}>
-                    All Patches
-                  </Text>
-                </TouchableOpacity>
-                {myVillages.map(v => (
                   <TouchableOpacity
-                    key={v.id}
-                    style={[s.filterPill, filterVillageId === v.id && s.filterPillActive]}
-                    onPress={() => setFilterVillageId(prev => prev === v.id ? null : v.id)}
+                    style={[s.filterPill, filterVillageId === null && s.filterPillActive]}
+                    onPress={() => setFilterVillageId(null)}
                   >
-                    <Text style={[s.filterPillText, filterVillageId === v.id && s.filterPillTextActive]}>
-                      {v.emoji} {v.name}
+                    <Text style={[s.filterPillText, filterVillageId === null && s.filterPillTextActive]}>
+                      All Patches
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
+                  {myVillages.map(v => (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[s.filterPill, filterVillageId === v.id && s.filterPillActive]}
+                      onPress={() => setFilterVillageId(prev => prev === v.id ? null : v.id)}
+                    >
+                      <Text style={[s.filterPillText, filterVillageId === v.id && s.filterPillTextActive]}>
+                        {v.emoji} {v.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
 
-            {loading ? (
-              <View style={s.center}>
-                <ActivityIndicator color={c.primary} size="large" />
+              {isDesktop && filterVillageId !== null && (
+                <View style={s.activeFilterRow}>
+                  <Text style={s.activeFilterText}>
+                    Showing {VILLAGES.find(v => v.id === filterVillageId)?.name ?? 'this Patch'} only
+                  </Text>
+                  <TouchableOpacity onPress={() => setFilterVillageId(null)} hitSlop={hitSlopFor(20)}>
+                    <Text style={s.activeFilterClear}>Show all</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {loading ? (
+                <View style={s.center}>
+                  <ActivityIndicator color={c.primary} size="large" />
+                </View>
+              ) : sortedTasks.length === 0 ? (
+                <View style={s.emptyState}>
+                  <Ionicons name="home-outline" size={40} color={c.textMuted} style={{ marginBottom: 12 }} />
+                  <Text style={s.emptyTitle}>No requests yet</Text>
+                  <Text style={s.emptySub}>
+                    Be the first to ask for help or offer your neighbors something.
+                  </Text>
+                  <TouchableOpacity style={s.emptyBtn} onPress={() => setView('create')}>
+                    <Text style={s.emptyBtnText}>Post a Request</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View>
+                  {sortedTasks.map(task => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      myId={myId}
+                      volunteered={myVolunteered.has(task.id)}
+                      volunteerCount={volCounts[task.id] ?? 0}
+                      onVolunteer={handleVolunteer}
+                      onWithdraw={handleWithdraw}
+                      onComplete={handleComplete}
+                      onOpenProfile={openProfile}
+                      onMessage={openMessage}
+                      s={s}
+                      c={c}
+                    />
+                  ))}
+                </View>
+              )}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+
+            {/* Desktop-only contextual rail — real joined-Patch data already
+                loaded above, doubling as the desktop filter control instead
+                of repeating the mobile pill row beside a wide empty canvas. */}
+            {isDesktop && (
+              <View style={s.rail}>
+                <View style={s.railCard}>
+                  <Text style={s.railTitle}>Your Patches</Text>
+                  <TouchableOpacity
+                    style={[s.railRow, filterVillageId === null && s.railRowActive]}
+                    onPress={() => setFilterVillageId(null)}
+                    accessibilityRole="button" accessibilityLabel="Show requests from all your Patches"
+                  >
+                    <View style={[s.railEmojiBubble, { backgroundColor: c.cardLavender }]}>
+                      <Ionicons name="apps" size={14} color={c.primary} />
+                    </View>
+                    <Text style={[s.railRowText, filterVillageId === null && s.railRowTextActive]}>All Patches</Text>
+                  </TouchableOpacity>
+                  {myVillages.length === 0 ? (
+                    <Text style={s.railEmptyText}>Join a Patch to start asking for help.</Text>
+                  ) : (
+                    myVillages.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={[s.railRow, filterVillageId === v.id && s.railRowActive]}
+                        onPress={() => setFilterVillageId(prev => prev === v.id ? null : v.id)}
+                        accessibilityRole="button" accessibilityLabel={`Filter requests to ${v.name}`}
+                      >
+                        <View style={s.railEmojiBubble}>
+                          <Text style={s.railEmoji}>{v.emoji}</Text>
+                        </View>
+                        <Text style={[s.railRowText, filterVillageId === v.id && s.railRowTextActive]} numberOfLines={1}>{v.name}</Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+
+                <View style={s.railCard}>
+                  <Text style={s.railTitle}>Post a Request</Text>
+                  <Text style={s.railHint}>Need a hand? Your Patch is here for you.</Text>
+                  <TouchableOpacity style={s.railCta} onPress={() => setView('create')} accessibilityRole="button" accessibilityLabel="New request">
+                    <Ionicons name="add" size={15} color="#fff" />
+                    <Text style={s.railCtaText}>New Request</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            ) : sortedTasks.length === 0 ? (
-              <View style={s.emptyState}>
-                <Ionicons name="home-outline" size={40} color={c.textMuted} style={{ marginBottom: 12 }} />
-                <Text style={s.emptyTitle}>No requests yet</Text>
-                <Text style={s.emptySub}>
-                  Be the first to ask for help or offer your neighbors something.
-                </Text>
-                <TouchableOpacity style={s.emptyBtn} onPress={() => setView('create')}>
-                  <Text style={s.emptyBtnText}>Post a Request</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <ScrollView contentContainerStyle={[s.feedContent, feedColumnStyle]} showsVerticalScrollIndicator={false}>
-                {sortedTasks.map(task => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    myId={myId}
-                    volunteered={myVolunteered.has(task.id)}
-                    volunteerCount={volCounts[task.id] ?? 0}
-                    onVolunteer={handleVolunteer}
-                    onWithdraw={handleWithdraw}
-                    onComplete={handleComplete}
-                    onOpenProfile={openProfile}
-                    onMessage={openMessage}
-                    s={s}
-                    c={c}
-                  />
-                ))}
-                <View style={{ height: 40 }} />
-              </ScrollView>
             )}
-          </>
+          </View>
         )}
 
         {/* ── Create Form ── */}
@@ -546,10 +620,11 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
           >
             <ScrollView contentContainerStyle={[s.createContent, formColumnStyle]} showsVerticalScrollIndicator={false}>
 
-              <PatchRequestSafetyNotice style={{ marginHorizontal: 0, marginBottom: 20 }} />
+              <Text style={s.composerTitle}>New Request</Text>
+              <Text style={s.composerSubtitle}>Share what you need with your Patch.</Text>
 
               {/* Post to (patch selector) — required */}
-              <Text style={s.formLabel}>What Patch should see this?</Text>
+              <Text style={s.formLabel}>Where should this go?</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -587,33 +662,8 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                   : 'Only members of this Patch will see your request.'}
               </Text>
 
-              {/* Category */}
-              <Text style={s.formLabel}>What kind of help?</Text>
-              <View style={s.categoryGrid}>
-                {CATEGORIES.map(cat => {
-                  const active = formCategory === cat.value
-                  const colors = getCategoryColors(cat.value, c)
-                  return (
-                    <TouchableOpacity
-                      key={cat.value}
-                      style={[
-                        s.categoryBtn,
-                        { borderColor: active ? colors.border : c.separator },
-                        active && { backgroundColor: colors.bg },
-                      ]}
-                      onPress={() => setFormCategory(cat.value)}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name={cat.icon} size={15} color={active ? colors.border : c.textMuted} />
-                      <Text style={[s.categoryBtnLabel, active && { color: colors.border, fontWeight: '700' }]}>
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </View>
-
-              {/* Title */}
+              {/* Compose block — title + details are the actual request,
+                  front and center; category/urgency are refinements below. */}
               <Text style={s.formLabel}>What do you need?</Text>
               <TextInput
                 style={s.titleInput}
@@ -630,12 +680,9 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                 onChangeText={setFormTitle}
                 maxLength={100}
               />
-
-              {/* Description */}
-              <Text style={s.formLabel}>Details <Text style={s.formLabelOpt}>(optional)</Text></Text>
               <TextInput
                 style={s.descInput}
-                placeholder="Any extra info that would help people who want to help you..."
+                placeholder="Add details that would help people who want to help you... (optional)"
                 placeholderTextColor={c.textMuted}
                 value={formDescription}
                 onChangeText={setFormDescription}
@@ -656,14 +703,39 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                 </View>
               )}
 
-              {/* Urgency */}
+              {/* Category — light, mostly borderless chips; color only on
+                  the selected one. */}
+              <Text style={s.formLabel}>What kind of help?</Text>
+              <View style={s.categoryGrid}>
+                {CATEGORIES.map(cat => {
+                  const active = formCategory === cat.value
+                  const colors = getCategoryColors(cat.value, c)
+                  return (
+                    <TouchableOpacity
+                      key={cat.value}
+                      style={[s.categoryBtn, active && { backgroundColor: colors.bg, borderColor: colors.border }]}
+                      onPress={() => setFormCategory(cat.value)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name={cat.icon} size={15} color={active ? colors.border : c.textMuted} />
+                      <Text style={[s.categoryBtnLabel, active && { color: colors.border, fontWeight: '700' }]}>
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              {/* Urgency — one segmented control instead of three separate
+                  bordered boxes. */}
               <Text style={s.formLabel}>How urgent?</Text>
               <View style={s.urgencyRow}>
-                {URGENCY.map(u => (
+                {URGENCY.map((u, i) => (
                   <TouchableOpacity
                     key={u.value}
                     style={[
-                      s.urgencyBtn,
+                      s.urgencySeg,
+                      i > 0 && { borderLeftWidth: 1, borderLeftColor: c.separator },
                       formUrgency === u.value && { backgroundColor: getUrgencyColor(u.value) || c.primary },
                     ]}
                     onPress={() => setFormUrgency(u.value)}
@@ -681,6 +753,8 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <PatchRequestSafetyNotice style={{ marginHorizontal: 0, marginTop: 24, marginBottom: 0 }} />
 
               {/* Submit */}
               <TouchableOpacity
@@ -750,42 +824,80 @@ function makeStyles(c: Colors) {
     },
     newBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
-    // Intro banner — full-bleed border to match the header above it; the
-    // text/badge row inside is what gets width-constrained, not this wrapper.
-    introBannerWrap: {
-      paddingVertical: 10,
-      borderBottomWidth: 1, borderBottomColor: c.separator,
-    },
-    introBanner: {
-      flexDirection: 'row', alignItems: 'center', gap: 8,
-      paddingHorizontal: 16,
-    },
-    introText:     { flex: 1, fontSize: 13, color: c.textMuted, lineHeight: 18 },
-    openBadge:     { backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-    openBadgeText: { fontSize: 12, fontWeight: '700', color: c.sage },
+    // Desktop: feed column + contextual rail, asymmetric and centered as a
+    // pair rather than one column stretched or pinned to the far left.
+    desktopSplitRow: { flex: 1, flexDirection: 'row', gap: 28, justifyContent: 'center', paddingTop: 20 },
+    mobileFeedWrap: { flex: 1 },
+    feedScrollContent: { paddingHorizontal: 16, paddingBottom: 8 },
 
-    // Feed
-    feedContent: { padding: 14, gap: 0 },
+    // Board header — a real page heading, not the small nav strip above it.
+    boardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16, marginTop: 4 },
+    boardTitle: { ...typography.sectionTitle, fontSize: 20, color: c.textPrimary, marginBottom: 3 },
+    boardSubtitle: { fontSize: 13.5, color: c.textMuted, lineHeight: 19 },
+    openBadge: {
+      alignItems: 'center', backgroundColor: c.cardSage, borderRadius: 14,
+      paddingHorizontal: 12, paddingVertical: 6, flexShrink: 0,
+    },
+    openBadgeNum: { fontSize: 15, fontWeight: '800', color: c.sage, lineHeight: 18 },
+    openBadgeText: { fontSize: 10.5, fontWeight: '700', color: c.sage, textTransform: 'uppercase', letterSpacing: 0.3 },
+
+    activeFilterRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      marginTop: 14, marginBottom: 4,
+    },
+    activeFilterText: { fontSize: 12.5, fontWeight: '600', color: c.textMuted },
+    activeFilterClear: { fontSize: 12.5, fontWeight: '700', color: c.primary },
+
+    // Contextual rail — mirrors Home's right-rail card language (bordered
+    // neutral cards, small section titles) so this reads as the same
+    // desktop product, not a bespoke widget.
+    rail: { width: 280, gap: 16, paddingTop: 20 },
+    railCard: {
+      backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.separator,
+      padding: 16,
+    },
+    railTitle: { ...typography.sectionTitle, fontSize: 15, color: c.textPrimary, marginBottom: 10 },
+    railRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      minHeight: 40, borderRadius: 10, paddingHorizontal: 6, marginHorizontal: -6,
+    },
+    railRowActive: { backgroundColor: c.cardLavender },
+    railEmojiBubble: {
+      width: 28, height: 28, borderRadius: 14, backgroundColor: c.card,
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
+    railEmoji: { fontSize: 14 },
+    railRowText: { flex: 1, fontSize: 13.5, fontWeight: '600', color: c.textSecondary },
+    railRowTextActive: { color: c.primary, fontWeight: '700' },
+    railEmptyText: { fontSize: 12.5, color: c.textMuted, lineHeight: 18 },
+    railHint: { fontSize: 12.5, color: c.textMuted, lineHeight: 18, marginBottom: 12 },
+    railCta: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      backgroundColor: c.primary, borderRadius: 20, paddingVertical: 10,
+    },
+    railCtaText: { fontSize: 13.5, fontWeight: '700', color: '#fff' },
 
     // Task card
+    // Neutral by default — the community identity and the request itself
+    // carry the card, not a full-tile category color. Category keeps a
+    // slim left accent + its own small chip below, never a full-fill bg.
     taskCard: {
-      borderRadius: 14, padding: 14, marginBottom: 12,
-      borderLeftWidth: 5, borderLeftColor: c.lavender,
-      shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+      backgroundColor: c.card, borderRadius: 16, padding: 16, marginBottom: 12,
+      borderWidth: 1, borderColor: c.separator,
+      borderLeftWidth: 4,
     },
-    taskTopRow:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
-    categoryChip:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+    taskTopRow:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
+    categoryChip:      { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, marginBottom: 8 },
     categoryChipText:  { fontSize: 11, fontWeight: '700' },
-    urgencyBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+    urgencyBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
     urgencyBadgeText:  { fontSize: 11, fontWeight: '700', color: '#fff' },
-    timeAgo:           { fontSize: 11, color: c.textMuted, marginLeft: 'auto' },
-    taskTitle:         { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 5, lineHeight: 21 },
-    taskDesc:          { fontSize: 13, color: c.textSecondary, lineHeight: 19, marginBottom: 10 },
-    authorRow:         { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
-    taskAuthor:        { fontSize: 12.5, fontWeight: '600', color: c.textSecondary },
-    taskFooter:        { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-    volunteerCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+    taskTitle:         { fontSize: 16, fontWeight: '800', color: c.textPrimary, marginBottom: 5, lineHeight: 22 },
+    taskDesc:          { fontSize: 13.5, color: c.textSecondary, lineHeight: 20, marginBottom: 10 },
+    authorRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'flex-start', flexShrink: 1 },
+    taskAuthor:        { ...typography.postAuthor, color: c.textPrimary },
+    taskMeta:           { fontSize: 12, color: c.textMuted, marginTop: 1, fontWeight: '500' },
+    taskFooter:        { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.separator },
+    volunteerCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     volunteerCount:    { fontSize: 12, color: c.textMuted },
 
     // Action buttons
@@ -822,8 +934,11 @@ function makeStyles(c: Colors) {
     },
     emptyBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-    // Create form
+    // Create form — a composer, not a settings form: soft borderless
+    // fields, color reserved for the selected category/urgency only.
     createContent: { padding: 20, paddingBottom: 60 },
+    composerTitle: { ...typography.screenTitle, fontSize: 22, color: c.textPrimary, marginBottom: 3 },
+    composerSubtitle: { fontSize: 14, color: c.textMuted, marginBottom: 8 },
     formLabel:    { fontSize: 14, fontWeight: '700', color: c.textSecondary, marginBottom: 10, marginTop: 20 },
     formLabelOpt: { fontSize: 13, fontWeight: '400', color: c.textMuted },
 
@@ -833,21 +948,20 @@ function makeStyles(c: Colors) {
     categoryBtn: {
       flexDirection: 'row', alignItems: 'center', gap: 6,
       borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
-      borderWidth: 1.5, borderColor: c.separator,
+      borderWidth: 1.5, borderColor: 'transparent',
       backgroundColor: c.card,
     },
     categoryBtnLabel: { fontSize: 13, color: c.textMuted },
 
     titleInput: {
-      backgroundColor: c.card, borderRadius: 12,
-      borderWidth: 1.5, borderColor: c.separator,
-      padding: 14, fontSize: 15, color: c.textPrimary,
+      backgroundColor: c.card, borderRadius: 14,
+      padding: 14, fontSize: 16, fontWeight: '600', color: c.textPrimary,
+      marginBottom: 10,
     },
     descInput: {
-      backgroundColor: c.card, borderRadius: 12,
-      borderWidth: 1.5, borderColor: c.separator,
+      backgroundColor: c.card, borderRadius: 14,
       padding: 14, fontSize: 14, color: c.textPrimary,
-      minHeight: 100,
+      minHeight: 90,
     },
     childcareNudge: {
       flexDirection: 'row', gap: 8,
@@ -856,19 +970,24 @@ function makeStyles(c: Colors) {
     },
     childcareNudgeText: { flex: 1, fontSize: 12.5, lineHeight: 17, color: c.textSecondary },
 
-    urgencyRow: { flexDirection: 'row', gap: 8 },
-    urgencyBtn: {
-      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10,
-      borderRadius: 10, borderWidth: 1.5, borderColor: c.separator,
+    // One bordered container split into equal segments instead of three
+    // separate boxes — less visual noise, still fully functional.
+    urgencyRow: {
+      flexDirection: 'row', borderRadius: 12, borderWidth: 1.5, borderColor: c.separator,
+      overflow: 'hidden',
+    },
+    urgencySeg: {
+      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 11,
       backgroundColor: c.card,
     },
     urgencyBtnText: { fontSize: 13, color: c.textMuted },
 
     submitBtn: {
-      backgroundColor: c.primary, borderRadius: 16,
-      paddingVertical: 15, alignItems: 'center', marginTop: 28,
+      backgroundColor: c.primary, borderRadius: 18,
+      paddingVertical: 17, alignItems: 'center', marginTop: 22,
+      shadowColor: c.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 3,
     },
-    submitBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+    submitBtnText: { fontSize: 16.5, fontWeight: '800', color: '#fff' },
 
     // Feed filter pills
     filterScroll: { maxHeight: 44, borderBottomWidth: 1, borderBottomColor: c.separator },
