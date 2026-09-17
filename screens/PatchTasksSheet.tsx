@@ -4,27 +4,36 @@ import {
   ActivityIndicator, StyleSheet, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { hitSlopFor } from '../lib/accessibility';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
 import { Village, VILLAGES } from '../lib/villageData';
+import { fetchJoinedPatchIds } from '../lib/discoverData';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
-  { value: 'meal_train',     label: 'Meal Train',     emoji: '🍲' },
-  { value: 'errand',         label: 'Errand Run',     emoji: '🛒' },
-  { value: 'recommendation', label: 'Recommend',      emoji: '📋' },
-  { value: 'playdate',       label: 'Playdate',       emoji: '🛝' },
-  { value: 'emergency',      label: 'Emergency',      emoji: '🚨' },
-  { value: 'general',        label: 'General Help',   emoji: '💬' },
+const CATEGORIES: { value: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'meal_train',     label: 'Meal Train',     icon: 'restaurant-outline' },
+  { value: 'errand',         label: 'Errand Run',     icon: 'cart-outline' },
+  { value: 'recommendation', label: 'Recommend',      icon: 'bulb-outline' },
+  { value: 'playdate',       label: 'Playdate',       icon: 'happy-outline' },
+  { value: 'emergency',      label: 'Emergency',      icon: 'alert-circle-outline' },
+  { value: 'general',        label: 'General Help',   icon: 'chatbubble-outline' },
 ]
 
-const URGENCY = [
+const URGENCY: { value: string; label: string; icon?: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'normal',    label: 'Normal' },
-  { value: 'urgent',    label: '⚡ Urgent' },
-  { value: 'emergency', label: '🚨 ASAP' },
+  { value: 'urgent',    label: 'Urgent', icon: 'flash-outline' },
+  { value: 'emergency', label: 'ASAP', icon: 'alert-circle-outline' },
 ]
+
+// `null` = destination not chosen yet (blocks submit when there's a real
+// choice to make). `'all'` = explicit "post to every Patch I'm in" — a real,
+// existing broadcast option (village_id: null in the DB), not the same as
+// "unselected". A specific value is a Patch id.
+type Destination = string | 'all' | null;
 
 function getCategoryMeta(value: string) {
   return CATEGORIES.find(c => c.value === value) ?? CATEGORIES[5];
@@ -102,15 +111,13 @@ function TaskCard({
       {/* Category + urgency row */}
       <View style={s.taskTopRow}>
         <View style={[s.categoryChip, { backgroundColor: colors.border + '22', borderColor: colors.border }]}>
-          <Text style={[s.categoryChipText, { color: colors.border }]}>
-            {meta.emoji} {meta.label}
-          </Text>
+          <Ionicons name={meta.icon} size={11} color={colors.border} />
+          <Text style={[s.categoryChipText, { color: colors.border }]}>{meta.label}</Text>
         </View>
         {task.urgency !== 'normal' && (
           <View style={[s.urgencyBadge, { backgroundColor: getUrgencyColor(task.urgency) }]}>
-            <Text style={s.urgencyBadgeText}>
-              {task.urgency === 'emergency' ? '🚨 ASAP' : '⚡ Urgent'}
-            </Text>
+            <Ionicons name={task.urgency === 'emergency' ? 'alert-circle-outline' : 'flash-outline'} size={11} color="#fff" />
+            <Text style={s.urgencyBadgeText}>{task.urgency === 'emergency' ? 'ASAP' : 'Urgent'}</Text>
           </View>
         )}
         <Text style={s.timeAgo}>{timeAgo(task.created_at)}</Text>
@@ -131,15 +138,17 @@ function TaskCard({
             from {name}{patchInfo ? ` · ${patchInfo.emoji} ${patchInfo.name}` : ''}
           </Text>
           {volunteerCount > 0 && (
-            <Text style={s.volunteerCount}>
-              💛 {volunteerCount} {volunteerCount === 1 ? 'parent' : 'parents'} helping
-            </Text>
+            <View style={s.volunteerCountRow}>
+              <Ionicons name="people-outline" size={12} color={c.textMuted} />
+              <Text style={s.volunteerCount}>{volunteerCount} {volunteerCount === 1 ? 'parent' : 'parents'} helping</Text>
+            </View>
           )}
         </View>
 
         {task.status === 'completed' ? (
           <View style={s.completedBadge}>
-            <Text style={s.completedBadgeText}>✓ Done</Text>
+            <Ionicons name="checkmark" size={13} color={c.sage} />
+            <Text style={s.completedBadgeText}>Done</Text>
           </View>
         ) : isOwn ? (
           <TouchableOpacity style={[s.markDoneBtn, { borderColor: colors.border }]} onPress={() => onComplete(task.id)}>
@@ -147,14 +156,16 @@ function TaskCard({
           </TouchableOpacity>
         ) : volunteered ? (
           <TouchableOpacity style={s.helpingBtn} onPress={() => onWithdraw(task.id)}>
-            <Text style={s.helpingBtnText}>💛 Helping</Text>
+            <Ionicons name="checkmark-circle" size={14} color={c.honey} />
+            <Text style={s.helpingBtnText}>Helping</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
             style={[s.helpBtn, { backgroundColor: colors.border }]}
             onPress={() => onVolunteer(task.id)}
           >
-            <Text style={s.helpBtnText}>🙋 I Can Help!</Text>
+            <Ionicons name="hand-left-outline" size={14} color="#fff" />
+            <Text style={s.helpBtnText}>I Can Help!</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -167,12 +178,38 @@ function TaskCard({
 interface Props {
   visible: boolean
   onClose: () => void
-  myVillages?: Village[]
+  /** 'modal' (default): existing mobile full-screen Modal. 'inline': no
+   * Modal wrapper, for DesktopSecondaryHost to place beside the sidebar. */
+  presentation?: 'modal' | 'inline'
 }
 
-export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: Props) {
+export default function PatchTasksSheet({ visible, onClose, presentation = 'modal' }: Props) {
   const c = useColors()
   const s = useMemo(() => makeStyles(c), [c])
+  const { width: windowWidth } = useResponsive()
+  const feedColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const }
+  const formColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'form'), alignSelf: 'center' as const }
+
+  // Canonical Patch-membership source (same fetchJoinedPatchIds() +
+  // VILLAGES-catalog filter VillageTab.tsx uses) — fetched here directly so
+  // this sheet works correctly from ANY entry point (VillageTab's card, the
+  // global Create > Ask for Help flow, or DesktopSecondaryHost) without a
+  // parent needing to pass membership down as props. `membershipLoading`
+  // starts true so an empty `myVillages` is never mistaken for "genuinely
+  // zero Patches" before the fetch resolves.
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set())
+  const [membershipLoading, setMembershipLoading] = useState(true)
+  const myVillages = useMemo(() => VILLAGES.filter(v => joinedIds.has(v.id)), [joinedIds])
+
+  useEffect(() => {
+    if (!visible) return
+    let cancelled = false
+    setMembershipLoading(true)
+    fetchJoinedPatchIds().then(ids => {
+      if (!cancelled) { setJoinedIds(ids); setMembershipLoading(false) }
+    })
+    return () => { cancelled = true }
+  }, [visible])
 
   const [view,          setView]          = useState<SheetView>('feed')
   const [tasks,         setTasks]         = useState<PatchTask[]>([])
@@ -187,7 +224,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
   const [formTitle,       setFormTitle]       = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formUrgency,     setFormUrgency]     = useState('normal')
-  const [formVillageId,   setFormVillageId]   = useState<string | null>(null)
+  const [formVillageId,   setFormVillageId]   = useState<Destination>(myVillages.length === 1 ? myVillages[0].id : null)
 
   // Feed filter
   const [filterVillageId, setFilterVillageId] = useState<string | null>(null)
@@ -197,6 +234,14 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
       if (data.user) setMyId(data.user.id)
     })
   }, [])
+
+  // myVillages can arrive after this sheet first mounts (VillageTab loads
+  // membership async) — keep the single-Patch preselect in sync once it does.
+  useEffect(() => {
+    if (myVillages.length === 1 && formVillageId === null) {
+      setFormVillageId(myVillages[0].id)
+    }
+  }, [myVillages])
 
   const loadTasks = useCallback(async () => {
     setLoading(true)
@@ -242,15 +287,15 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
     setFormTitle('')
     setFormDescription('')
     setFormUrgency('normal')
-    setFormVillageId(null)
+    setFormVillageId(myVillages.length === 1 ? myVillages[0].id : null)
   }
 
   async function handleCreate() {
-    if (!formTitle.trim() || !myId) return
+    if (!formTitle.trim() || !myId || formVillageId === null) return
     setSubmitting('create')
     const { error } = await (supabase.from('patch_tasks') as any).insert({
       creator_id:  myId,
-      village_id:  formVillageId,
+      village_id:  formVillageId === 'all' ? null : formVillageId,
       category:    formCategory,
       title:       formTitle.trim(),
       description: formDescription.trim() || null,
@@ -307,41 +352,52 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
 
   const openCount = tasks.filter(t => t.status === 'open').length
 
+  if (presentation === 'inline' && !visible) return null
+  const Wrapper: any = presentation === 'modal' ? Modal : React.Fragment
+  const wrapperProps: any = presentation === 'modal'
+    ? { visible, animationType: 'slide', presentationStyle: 'pageSheet', onRequestClose: onClose }
+    : {}
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Wrapper {...wrapperProps}>
       <SafeAreaView style={s.safe}>
         {/* ── Header ── */}
         <View style={s.header}>
           <TouchableOpacity onPress={view === 'create' ? () => setView('feed') : onClose} style={s.headerLeft}
             hitSlop={hitSlopFor(20)} accessibilityRole="button"
             accessibilityLabel={view === 'create' ? 'Back' : 'Close'}>
-            <Text style={s.headerBackText}>{view === 'create' ? '← Back' : '✕'}</Text>
+            <Ionicons name={view === 'create' ? 'chevron-back' : 'close'} size={22} color={view === 'create' ? c.primary : c.textPrimary} />
           </TouchableOpacity>
-          <Text style={s.headerTitle}>
-            {view === 'create' ? '📝 New Request' : '🤝 Patch Requests'}
+          <Text style={[s.headerTitle, { flex: 1, textAlign: 'center' }]}>
+            {view === 'create' ? 'New Request' : 'Patch Requests'}
           </Text>
-          {view === 'feed' ? (
-            <TouchableOpacity style={s.newBtn} onPress={() => setView('create')}>
-              <Text style={s.newBtnText}>+ New</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 56 }} />
-          )}
+          <View style={s.headerRight}>
+            {view === 'feed' && (
+              <TouchableOpacity style={s.newBtn} onPress={() => setView('create')} accessibilityRole="button" accessibilityLabel="New request">
+                <Ionicons name="add" size={16} color="#fff" />
+                <Text style={s.newBtnText}>New</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* ── Feed ── */}
         {view === 'feed' && (
           <>
-            {/* Intro blurb */}
-            <View style={s.introBanner}>
-              <Text style={s.introText}>
-                Neighbors helping neighbors — ask for anything, offer when you can 💛
-              </Text>
-              {openCount > 0 && (
-                <View style={s.openBadge}>
-                  <Text style={s.openBadgeText}>{openCount} open</Text>
-                </View>
-              )}
+            {/* Intro blurb — plain supporting text on the page background,
+                not a distinct colored bar (which read as a highlighted/
+                selected chip once its content was centered inside it). */}
+            <View style={s.introBannerWrap}>
+              <View style={[s.introBanner, feedColumnStyle]}>
+                <Text style={s.introText}>
+                  Neighbors helping neighbors — ask for anything, offer when you can.
+                </Text>
+                {openCount > 0 && (
+                  <View style={s.openBadge}>
+                    <Text style={s.openBadgeText}>{openCount} open</Text>
+                  </View>
+                )}
+              </View>
             </View>
 
             {/* Patch filter pills */}
@@ -350,7 +406,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={s.filterScroll}
-                contentContainerStyle={s.filterScrollContent}
+                contentContainerStyle={[s.filterScrollContent, feedColumnStyle]}
               >
                 <TouchableOpacity
                   style={[s.filterPill, filterVillageId === null && s.filterPillActive]}
@@ -380,7 +436,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
               </View>
             ) : sortedTasks.length === 0 ? (
               <View style={s.emptyState}>
-                <Text style={s.emptyEmoji}>🏘️</Text>
+                <Ionicons name="home-outline" size={40} color={c.textMuted} style={{ marginBottom: 12 }} />
                 <Text style={s.emptyTitle}>No requests yet</Text>
                 <Text style={s.emptySub}>
                   Be the first to ask for help or offer your neighbors something.
@@ -390,7 +446,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
                 </TouchableOpacity>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={s.feedContent} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={[s.feedContent, feedColumnStyle]} showsVerticalScrollIndicator={false}>
                 {sortedTasks.map(task => (
                   <TaskCard
                     key={task.id}
@@ -412,55 +468,66 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
         )}
 
         {/* ── Create Form ── */}
-        {view === 'create' && (
+        {view === 'create' && membershipLoading ? (
+          <View style={s.center}>
+            <ActivityIndicator color={c.primary} size="large" />
+          </View>
+        ) : view === 'create' && myVillages.length === 0 ? (
+          <View style={s.emptyState}>
+            <Ionicons name="home-outline" size={40} color={c.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={s.emptyTitle}>Join a Patch first</Text>
+            <Text style={s.emptySub}>
+              Requests go out to a Patch you belong to — join one to start asking for help.
+            </Text>
+            <TouchableOpacity style={s.emptyBtn} onPress={onClose}>
+              <Text style={s.emptyBtnText}>Discover Patches</Text>
+            </TouchableOpacity>
+          </View>
+        ) : view === 'create' && (
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <ScrollView contentContainerStyle={s.createContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[s.createContent, formColumnStyle]} showsVerticalScrollIndicator={false}>
 
-              {/* Post to (patch selector) */}
-              {myVillages.length > 0 && (
-                <>
-                  <Text style={s.formLabel}>Post to</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={{ marginBottom: 4 }}
-                    contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+              {/* Post to (patch selector) — required */}
+              <Text style={s.formLabel}>What Patch should see this?</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 4 }}
+                contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+              >
+                {myVillages.length > 1 && (
+                  <TouchableOpacity
+                    style={[s.patchPill, formVillageId === 'all' && s.patchPillActive]}
+                    onPress={() => setFormVillageId('all')}
+                    accessibilityRole="button" accessibilityState={{ selected: formVillageId === 'all' }}
                   >
-                    <TouchableOpacity
-                      style={[s.patchPill, formVillageId === null && s.patchPillActive]}
-                      onPress={() => setFormVillageId(null)}
-                    >
-                      <Text style={[s.patchPillText, formVillageId === null && s.patchPillTextActive]}>
-                        🏘️ All Patches
-                      </Text>
-                    </TouchableOpacity>
-                    {myVillages.map(v => (
-                      <TouchableOpacity
-                        key={v.id}
-                        style={[s.patchPill, formVillageId === v.id && s.patchPillActive]}
-                        onPress={() => setFormVillageId(v.id)}
-                      >
-                        <Text style={[s.patchPillText, formVillageId === v.id && s.patchPillTextActive]}>
-                          {v.emoji} {v.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  {formVillageId !== null && (
-                    <Text style={s.patchPillHint}>
-                      Only members of this patch will see your request
+                    <Ionicons name="apps-outline" size={14} color={formVillageId === 'all' ? c.primary : c.textMuted} />
+                    <Text style={[s.patchPillText, formVillageId === 'all' && s.patchPillTextActive]}>All Patches</Text>
+                  </TouchableOpacity>
+                )}
+                {myVillages.map(v => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[s.patchPill, formVillageId === v.id && s.patchPillActive]}
+                    onPress={() => setFormVillageId(v.id)}
+                    accessibilityRole="button" accessibilityState={{ selected: formVillageId === v.id }}
+                  >
+                    <Text style={[s.patchPillText, formVillageId === v.id && s.patchPillTextActive]}>
+                      {v.emoji} {v.name}
                     </Text>
-                  )}
-                  {formVillageId === null && (
-                    <Text style={s.patchPillHint}>
-                      Visible to everyone in your patches
-                    </Text>
-                  )}
-                </>
-              )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Text style={s.patchPillHint}>
+                {formVillageId === null
+                  ? 'Choose where this request should go.'
+                  : formVillageId === 'all'
+                  ? 'Visible to everyone across all your Patches.'
+                  : 'Only members of this Patch will see your request.'}
+              </Text>
 
               {/* Category */}
               <Text style={s.formLabel}>What kind of help?</Text>
@@ -479,7 +546,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
                       onPress={() => setFormCategory(cat.value)}
                       activeOpacity={0.75}
                     >
-                      <Text style={s.categoryBtnEmoji}>{cat.emoji}</Text>
+                      <Ionicons name={cat.icon} size={15} color={active ? colors.border : c.textMuted} />
                       <Text style={[s.categoryBtnLabel, active && { color: colors.border, fontWeight: '700' }]}>
                         {cat.label}
                       </Text>
@@ -493,7 +560,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
               <TextInput
                 style={s.titleInput}
                 placeholder={
-                  formCategory === 'meal_train'      ? 'e.g. "Meal train for our new arrival 🍼"' :
+                  formCategory === 'meal_train'      ? 'e.g. "Meal train for our new arrival"' :
                   formCategory === 'errand'           ? 'e.g. "Can someone grab diapers? Running low!"' :
                   formCategory === 'recommendation'   ? 'e.g. "Best pediatrician near Elmwood Park?"' :
                   formCategory === 'playdate'         ? 'e.g. "Who\'s free Tuesday 10am for a playdate?"' :
@@ -533,6 +600,9 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
                     onPress={() => setFormUrgency(u.value)}
                     activeOpacity={0.8}
                   >
+                    {u.icon && (
+                      <Ionicons name={u.icon} size={13} color={formUrgency === u.value ? '#fff' : c.textMuted} />
+                    )}
                     <Text style={[
                       s.urgencyBtnText,
                       formUrgency === u.value && { color: '#fff', fontWeight: '700' },
@@ -545,14 +615,20 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
 
               {/* Submit */}
               <TouchableOpacity
-                style={[s.submitBtn, (!formTitle.trim() || submitting === 'create') && { opacity: 0.45 }]}
+                style={[s.submitBtn, (!formTitle.trim() || formVillageId === null || submitting === 'create') && { opacity: 0.45 }]}
                 onPress={handleCreate}
-                disabled={!formTitle.trim() || submitting === 'create'}
+                disabled={!formTitle.trim() || formVillageId === null || submitting === 'create'}
                 activeOpacity={0.85}
               >
                 {submitting === 'create'
                   ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={s.submitBtnText}>Share with Your Patch →</Text>
+                  : <Text style={s.submitBtnText}>
+                      {formVillageId === null
+                        ? 'Choose a Patch to continue'
+                        : formVillageId === 'all'
+                        ? 'Post Request'
+                        : `Share with ${myVillages.find(v => v.id === formVillageId)?.name ?? 'Patch'}`}
+                    </Text>
                 }
               </TouchableOpacity>
 
@@ -561,7 +637,7 @@ export default function PatchTasksSheet({ visible, onClose, myVillages = [] }: P
           </KeyboardAvoidingView>
         )}
       </SafeAreaView>
-    </Modal>
+    </Wrapper>
   )
 }
 
@@ -578,22 +654,25 @@ function makeStyles(c: Colors) {
       paddingHorizontal: 16, paddingVertical: 14,
       borderBottomWidth: 1, borderBottomColor: c.separator,
     },
-    headerLeft:     { width: 60 },
-    headerBackText: { fontSize: 15, color: c.primary, fontWeight: '600' },
-    headerTitle:    { fontSize: 17, fontWeight: '800', color: c.textPrimary },
+    headerLeft:     { width: 44, justifyContent: 'center' },
+    headerRight:    { minWidth: 44, alignItems: 'flex-end' },
+    headerTitle:    { fontSize: 16, fontWeight: '800', color: c.textPrimary },
     newBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 2,
       backgroundColor: c.primary, borderRadius: 16,
-      paddingHorizontal: 14, paddingVertical: 6,
+      paddingHorizontal: 12, paddingVertical: 6,
     },
     newBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
-    // Intro banner
-    introBanner: {
-      flexDirection: 'row', alignItems: 'center',
-      paddingHorizontal: 16, paddingVertical: 10,
-      backgroundColor: c.card,
+    // Intro banner — full-bleed border to match the header above it; the
+    // text/badge row inside is what gets width-constrained, not this wrapper.
+    introBannerWrap: {
+      paddingVertical: 10,
       borderBottomWidth: 1, borderBottomColor: c.separator,
-      gap: 8,
+    },
+    introBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingHorizontal: 16,
     },
     introText:     { flex: 1, fontSize: 13, color: c.textMuted, lineHeight: 18 },
     openBadge:     { backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
@@ -610,23 +689,26 @@ function makeStyles(c: Colors) {
       shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
     },
     taskTopRow:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
-    categoryChip:      { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+    categoryChip:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
     categoryChipText:  { fontSize: 11, fontWeight: '700' },
-    urgencyBadge:      { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+    urgencyBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
     urgencyBadgeText:  { fontSize: 11, fontWeight: '700', color: '#fff' },
     timeAgo:           { fontSize: 11, color: c.textMuted, marginLeft: 'auto' },
     taskTitle:         { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 5, lineHeight: 21 },
     taskDesc:          { fontSize: 13, color: c.textSecondary, lineHeight: 19, marginBottom: 10 },
     taskFooter:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
     taskAuthor:        { fontSize: 12, color: c.textMuted },
-    volunteerCount:    { fontSize: 12, color: c.textMuted, marginTop: 2 },
+    volunteerCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    volunteerCount:    { fontSize: 12, color: c.textMuted },
 
     // Action buttons
     helpBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
       borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
     },
     helpBtnText: { fontSize: 13, fontWeight: '800', color: '#fff' },
     helpingBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
       borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
       backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey,
     },
@@ -637,13 +719,13 @@ function makeStyles(c: Colors) {
     },
     markDoneBtnText: { fontSize: 12, fontWeight: '700' },
     completedBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
       backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5,
     },
     completedBadgeText: { fontSize: 12, fontWeight: '700', color: c.sage },
 
     // Empty state
-    emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-    emptyEmoji: { fontSize: 52, marginBottom: 12 },
+    emptyState: { alignItems: 'center', paddingHorizontal: 40, paddingTop: 56 },
     emptyTitle: { fontSize: 20, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
     emptySub:   { fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
     emptyBtn: {
@@ -666,7 +748,6 @@ function makeStyles(c: Colors) {
       borderWidth: 1.5, borderColor: c.separator,
       backgroundColor: c.card,
     },
-    categoryBtnEmoji: { fontSize: 16 },
     categoryBtnLabel: { fontSize: 13, color: c.textMuted },
 
     titleInput: {
@@ -683,7 +764,7 @@ function makeStyles(c: Colors) {
 
     urgencyRow: { flexDirection: 'row', gap: 8 },
     urgencyBtn: {
-      flex: 1, alignItems: 'center', paddingVertical: 10,
+      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10,
       borderRadius: 10, borderWidth: 1.5, borderColor: c.separator,
       backgroundColor: c.card,
     },
@@ -709,6 +790,7 @@ function makeStyles(c: Colors) {
 
     // Create form patch pills
     patchPill: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
       paddingHorizontal: 14, paddingVertical: 7,
       borderRadius: 20, borderWidth: 1.5, borderColor: c.separator,
       backgroundColor: c.card,

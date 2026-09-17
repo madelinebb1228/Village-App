@@ -5,6 +5,24 @@ import React from 'react';
 // (EventsScreen, PatchTasksSheet) and are opened directly at the app root.
 export type CreateAction = 'post' | 'question' | 'media' | 'story';
 
+// ─── Desktop secondary-destination stack ───────────────────────────────────
+//
+// On desktop web, Search/Messages/Notifications/PublicProfile/PatchRequests
+// render INSIDE the app shell (sidebar stays visible) instead of as a
+// full-screen Modal. This is a small LIFO stack — not a full navigator —
+// rendered by one root-level host (components/DesktopSecondaryHost.tsx)
+// sitting beside the sidebar. Pushing a destination shows it; popping (its
+// own Back/Close/Done control) reveals whatever was under it, or the normal
+// active tab if the stack becomes empty. Mobile ignores this entirely and
+// keeps using each screen's existing Modal presentation — see the
+// `presentation="modal"|"inline"` prop each hosted screen now accepts.
+export type SecondaryDestination =
+  | { type: 'search' }
+  | { type: 'messages'; openWithUserId?: string | null }
+  | { type: 'notifications' }
+  | { type: 'profile'; userId: string; onMessage?: (userId: string) => void }
+  | { type: 'patchRequests' };
+
 export type AppContextType = {
   markOnboardingComplete: () => Promise<void>;
   // Incremented each time something (e.g. Settings' "Take a Tour" row) asks for the
@@ -22,6 +40,10 @@ export type AppContextType = {
   // Home is the only consumer; it owns all the actual state/handlers for these.
   createAction: { action: CreateAction; requestId: number } | null;
   requestCreateAction: (action: CreateAction) => void;
+  secondaryStack: SecondaryDestination[];
+  pushSecondary: (d: SecondaryDestination) => void;
+  popSecondary: () => void;
+  closeAllSecondary: () => void;
 };
 
 export const AppContext = React.createContext<AppContextType>({
@@ -31,4 +53,8 @@ export const AppContext = React.createContext<AppContextType>({
   requestCreate: () => {},
   createAction: null,
   requestCreateAction: () => {},
+  secondaryStack: [],
+  pushSecondary: () => {},
+  popSecondary: () => {},
+  closeAllSecondary: () => {},
 });

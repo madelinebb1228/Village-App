@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,12 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 import { hitSlopFor } from '../lib/accessibility';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { AppContext } from '../lib/AppContext';
 import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
 import { RESOURCES } from '../lib/resourcesData';
@@ -25,6 +28,14 @@ import { useSubscription } from '../lib/subscriptionContext';
 import { VillageCard } from '../components/village/VillageCard';
 import VillageFeedSheet from './VillageFeedSheet';
 import PostTypeBadge from '../components/feed/PostTypeBadge';
+
+const TABS: { key: 'people' | 'posts' | 'patches' | 'groups' | 'resources'; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'people', label: 'People', icon: 'person-outline' },
+  { key: 'posts', label: 'Posts', icon: 'chatbubble-outline' },
+  { key: 'patches', label: 'Patches', icon: 'leaf-outline' },
+  { key: 'groups', label: 'Groups', icon: 'people-outline' },
+  { key: 'resources', label: 'Resources', icon: 'book-outline' },
+];
 
 type SearchResource = typeof RESOURCES[number];
 
@@ -64,6 +75,10 @@ interface SearchPost {
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** 'modal' (default) is the existing mobile full-screen Modal. 'inline'
+   * renders the same content with no Modal wrapper, for DesktopSecondaryHost
+   * to place beside the sidebar. */
+  presentation?: 'modal' | 'inline';
 }
 
 function getTimeAgo(dateString: string): string {
@@ -75,9 +90,12 @@ function getTimeAgo(dateString: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-export default function SearchSheet({ visible, onClose }: Props) {
+export default function SearchSheet({ visible, onClose, presentation = 'modal' }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const { width: windowWidth, isDesktop } = useResponsive();
+  const columnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const };
+  const { pushSecondary } = useContext(AppContext);
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'people' | 'posts' | 'patches' | 'groups' | 'resources'>('people');
@@ -213,6 +231,11 @@ export default function SearchSheet({ visible, onClose }: Props) {
     }
   }
 
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId });
+    else setProfileUserId(userId);
+  }
+
   async function toggleFollow(targetId: string) {
     if (!currentUserId) return;
     const isFollowing = followingIds.has(targetId);
@@ -246,19 +269,29 @@ export default function SearchSheet({ visible, onClose }: Props) {
     : tab === 'groups' ? groups.length > 0
     : resources.length > 0;
 
+  if (presentation === 'inline' && !visible) return null;
+  const Wrapper: any = presentation === 'modal' ? Modal : React.Fragment;
+  const wrapperProps: any = presentation === 'modal'
+    ? { visible, animationType: 'slide', presentationStyle: 'pageSheet', onRequestClose: onClose }
+    : {};
+
   return (
     <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={onClose}
-      >
+      <Wrapper {...wrapperProps}>
         <SafeAreaView style={s.safeArea}>
-          {/* ── Search bar ── */}
-          <View style={s.searchHeader}>
+          {/* ── Shell header ── */}
+          <View style={s.shellHeader}>
+            <Text style={s.shellTitle}>Search</Text>
+            <TouchableOpacity onPress={onClose} style={s.cancelBtn} hitSlop={hitSlopFor(20)}
+              accessibilityRole="button" accessibilityLabel="Close search">
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[s.content, columnStyle]}>
+            {/* ── Search bar ── */}
             <View style={s.searchInputWrap}>
-              <Text style={s.searchIcon}>🔍</Text>
+              <Ionicons name="search" size={17} color={c.textMuted} style={s.searchIcon} />
               <TextInput
                 style={s.searchInput}
                 placeholder="Search people, posts, patches, groups, resources..."
@@ -273,60 +306,45 @@ export default function SearchSheet({ visible, onClose }: Props) {
               {query.length > 0 && (
                 <TouchableOpacity onPress={() => setQuery('')} style={s.clearBtn} hitSlop={hitSlopFor(20)}
                   accessibilityRole="button" accessibilityLabel="Clear search">
-                  <Text style={s.clearBtnText}>✕</Text>
+                  <Ionicons name="close-circle" size={17} color={c.textMuted} />
                 </TouchableOpacity>
               )}
             </View>
-            <TouchableOpacity onPress={onClose} style={s.cancelBtn} hitSlop={hitSlopFor(20)}
-              accessibilityRole="button" accessibilityLabel="Close search">
-              <Text style={s.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+
+            {/* ── Tab bar ── */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarScroll} contentContainerStyle={s.tabBar}>
+              {TABS.map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={s.tabBtn}
+                  onPress={() => setTab(t.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tab === t.key }}
+                  accessibilityLabel={`${t.label} search results`}
+                >
+                  <Ionicons name={t.icon} size={16} color={tab === t.key ? c.primary : c.textMuted} />
+                  <Text style={[s.tabText, tab === t.key && s.tabTextActive]}>{t.label}</Text>
+                  {tab === t.key && <View style={s.tabUnderline} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
 
-          {/* ── Tab bar ── */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarScroll} contentContainerStyle={s.tabBar}>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'people' && s.tabBtnActive]}
-              onPress={() => setTab('people')}
-            >
-              <Text style={[s.tabText, tab === 'people' && s.tabTextActive]}>👤 People</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'posts' && s.tabBtnActive]}
-              onPress={() => setTab('posts')}
-            >
-              <Text style={[s.tabText, tab === 'posts' && s.tabTextActive]}>💬 Posts</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'patches' && s.tabBtnActive]}
-              onPress={() => setTab('patches')}
-            >
-              <Text style={[s.tabText, tab === 'patches' && s.tabTextActive]}>🩹 Patches</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'groups' && s.tabBtnActive]}
-              onPress={() => setTab('groups')}
-            >
-              <Text style={[s.tabText, tab === 'groups' && s.tabTextActive]}>👨‍👩‍👧 Groups</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.tabBtn, tab === 'resources' && s.tabBtnActive]}
-              onPress={() => setTab('resources')}
-            >
-              <Text style={[s.tabText, tab === 'resources' && s.tabTextActive]}>📚 Resources</Text>
-            </TouchableOpacity>
-          </ScrollView>
-
           {/* ── Body ── */}
+          <View style={[s.body, columnStyle]}>
           {loading ? (
             <View style={s.center}>
               <ActivityIndicator color={c.primary} size="large" />
             </View>
           ) : trimmedQuery.length < 2 ? (
             <View style={s.center}>
-              <Text style={s.hintEmoji}>
-                {tab === 'people' ? '👋' : tab === 'posts' ? '📝' : tab === 'patches' ? '🩹' : tab === 'groups' ? '👨‍👩‍👧' : '📚'}
-              </Text>
+              <Ionicons
+                name={tab === 'people' ? 'people-outline' : tab === 'posts' ? 'chatbubble-outline' : tab === 'patches' ? 'leaf-outline' : tab === 'groups' ? 'people-circle-outline' : 'book-outline'}
+                size={34}
+                color={c.textMuted}
+                style={s.hintIcon}
+              />
+              <Text style={s.hintTitle}>Search Parent Patch</Text>
               <Text style={s.hintText}>
                 {tab === 'people'
                   ? 'Search by username or name to find people in your community'
@@ -357,7 +375,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                     <TouchableOpacity
                       key={p.id}
                       style={s.personRow}
-                      onPress={() => setProfileUserId(p.id)}
+                      onPress={() => openProfile(p.id)}
                       activeOpacity={0.75}
                     >
                       <View style={s.personAvatar}>
@@ -417,7 +435,7 @@ export default function SearchSheet({ visible, onClose }: Props) {
                           : c.postText,
                       },
                     ]}
-                    onPress={() => setProfileUserId(post.user_id)}
+                    onPress={() => openProfile(post.user_id)}
                     activeOpacity={0.78}
                   >
                     <View style={s.postCardHeader}>
@@ -541,16 +559,20 @@ export default function SearchSheet({ visible, onClose }: Props) {
               )}
             </ScrollView>
           )}
+          </View>
         </SafeAreaView>
-      </Modal>
+      </Wrapper>
 
-      {/* Nested public profile viewer */}
-      <PublicProfileSheet
-        userId={profileUserId}
-        visible={profileUserId !== null}
-        onClose={() => setProfileUserId(null)}
-        dismissParents={onClose}
-      />
+      {/* Nested public profile viewer — mobile only; on desktop, openProfile()
+          pushes onto the shared secondary stack instead (see DesktopSecondaryHost). */}
+      {!isDesktop && (
+        <PublicProfileSheet
+          userId={profileUserId}
+          visible={profileUserId !== null}
+          onClose={() => setProfileUserId(null)}
+          dismissParents={onClose}
+        />
+      )}
 
       {/* Nested Patch feed viewer */}
       <VillageFeedSheet
@@ -568,32 +590,36 @@ function makeStyles(c: Colors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: c.bg },
 
-    searchHeader: {
+    shellHeader: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
-      gap: 10,
       borderBottomWidth: 1,
       borderBottomColor: c.separator,
     },
+    shellTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
+
+    content: { width: '100%', paddingHorizontal: 16 },
+    body: { flex: 1, paddingHorizontal: 16 },
+
     searchInputWrap: {
-      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: c.inputBg,
       borderRadius: 14,
       paddingHorizontal: 12,
       height: 44,
+      marginTop: 12,
     },
-    searchIcon: { fontSize: 15, marginRight: 6 },
+    searchIcon: { marginRight: 8 },
     searchInput: {
       flex: 1,
       fontSize: 15,
       color: c.textPrimary,
     },
     clearBtn: { padding: 4 },
-    clearBtnText: { fontSize: 13, color: c.textMuted },
     cancelBtn: { paddingHorizontal: 4 },
     cancelText: { fontSize: 15, color: c.primary, fontWeight: '600' },
 
@@ -601,26 +627,34 @@ function makeStyles(c: Colors) {
       flexGrow: 0,
       borderBottomWidth: 1,
       borderBottomColor: c.separator,
+      marginTop: 4,
     },
     tabBar: {
       flexDirection: 'row',
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      gap: 8,
+      gap: 20,
     },
     tabBtn: {
-      paddingVertical: 9,
-      paddingHorizontal: 16,
-      borderRadius: 12,
+      flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: c.inputBg,
+      gap: 6,
+      paddingVertical: 10,
+      position: 'relative',
     },
-    tabBtnActive: { backgroundColor: c.cardBlush },
-    tabText: { fontSize: 14, fontWeight: '600', color: c.textMuted },
-    tabTextActive: { color: c.primary },
+    tabText: { fontSize: 13.5, fontWeight: '600', color: c.textMuted },
+    tabTextActive: { color: c.primary, fontWeight: '700' },
+    tabUnderline: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 2.5,
+      borderRadius: 2,
+      backgroundColor: c.primary,
+    },
 
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-    hintEmoji: { fontSize: 36, marginBottom: 12 },
+    hintIcon: { marginBottom: 12 },
+    hintTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
     hintText: {
       fontSize: 14,
       color: c.textMuted,
@@ -628,7 +662,7 @@ function makeStyles(c: Colors) {
       lineHeight: 21,
     },
 
-    listContent: { padding: 16, paddingBottom: 48 },
+    listContent: { paddingVertical: 16, paddingBottom: 48 },
     emptyText: {
       fontSize: 15,
       color: c.textMuted,

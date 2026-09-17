@@ -65,6 +65,9 @@ interface Props {
   // of navigation focus. Callers that nest this sheet pass their own close
   // handler here so it's dismissed too.
   dismissParents?: () => void;
+  /** 'modal' (default): existing mobile full-screen Modal. 'inline': no
+   * Modal wrapper, for DesktopSecondaryHost to place beside the sidebar. */
+  presentation?: 'modal' | 'inline';
 }
 
 // Whichever tab is currently focused when this sheet is opened — used as the
@@ -90,14 +93,16 @@ function makeStyles(c: Colors) {
     safeArea: { flex: 1, backgroundColor: c.bg },
     topBar: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
-      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
       paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: c.separator,
     },
-    closeBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+    closeBtn: { paddingHorizontal: 4, paddingVertical: 4, minWidth: 30 },
     closeText: { fontSize: 16, fontWeight: '700', color: c.primary },
+    topBarTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
     ownProfileText: { fontSize: 15, color: c.textMuted, textAlign: 'center', lineHeight: 22 },
 
@@ -239,7 +244,7 @@ function makeStyles(c: Colors) {
   });
 }
 
-export default function PublicProfileSheet({ userId, visible, onClose, onMessage, dismissParents }: Props) {
+export default function PublicProfileSheet({ userId, visible, onClose, onMessage, dismissParents, presentation = 'modal' }: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
   const { isSubscribed } = useSubscription();
@@ -257,7 +262,6 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
-  const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
@@ -289,7 +293,6 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     setPostCount(0);
     setFollowerCount(0);
     setFollowingCount(0);
-    setIsOwnProfile(false);
     setIsFollowing(false);
     setIsBlocked(false);
     setIsMuted(false);
@@ -306,8 +309,16 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         setMyId(user.id);
 
         if (user.id === userId) {
-          setIsOwnProfile(true);
-          setLoading(false);
+          // Opening your own identity from a post/comment should land you on
+          // the real Profile tab rather than a dead-end "that's you"
+          // placeholder — same dismiss-then-navigate pattern as openPost()
+          // below. Done inline here (not as a separate effect watching an
+          // `isOwnProfile` boolean) so the decision is always based on the
+          // userId this exact fetch resolved for, never a stale flag left
+          // over from a previous, different profile that was open earlier.
+          onClose();
+          dismissParents?.();
+          navigation.navigate('Profile');
           return;
         }
 
@@ -495,23 +506,29 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   }, [posts, profile?.pinned_post_id]);
   const mediaPosts = useMemo(() => posts.filter(p => p.image_url || p.video_url), [posts]);
 
+  if (presentation === 'inline' && !visible) return null;
+  const Wrapper: any = presentation === 'modal' ? Modal : React.Fragment;
+  const wrapperProps: any = presentation === 'modal'
+    ? { visible, animationType: 'slide', presentationStyle: 'pageSheet', onRequestClose: onClose }
+    : {};
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Wrapper {...wrapperProps}>
       <SafeAreaView style={s.safeArea}>
         <View style={s.topBar}>
           <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7} hitSlop={hitSlopFor(24)}
-            accessibilityRole="button" accessibilityLabel="Close">
-            <Text style={s.closeText}>Done</Text>
+            accessibilityRole="button" accessibilityLabel={presentation === 'inline' ? 'Back' : 'Close'}>
+            {presentation === 'inline'
+              ? <Ionicons name="chevron-back" size={22} color={c.textPrimary} />
+              : <Text style={s.closeText}>Done</Text>}
           </TouchableOpacity>
+          <Text style={s.topBarTitle}>Profile</Text>
+          <View style={{ width: 30 }} />
         </View>
 
         {loading ? (
           <View style={s.center}>
             <ActivityIndicator color={c.primary} size="large" />
-          </View>
-        ) : isOwnProfile ? (
-          <View style={s.center}>
-            <Text style={s.ownProfileText}>That's you! Edit your profile from the Profile tab.</Text>
           </View>
         ) : loadError ? (
           <View style={s.center}>
@@ -548,7 +565,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               <View style={[s.heroContentWrap, isWideProfile && s.heroContentWrapWide]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={[s.heroName, isWideProfile && { textAlign: 'left' }]}>{displayName}</Text>
-                {profile.is_private && <Text style={{ fontSize: 16 }}>🔒</Text>}
+                {profile.is_private && <Ionicons name="lock-closed" size={15} color={c.textMuted} />}
               </View>
 
               {isGoldTier && (
@@ -602,9 +619,11 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                       borderColor: c.separator,
                     }}
                   >
-                    <Text style={{ fontSize: 14 }}>
-                      {isFollowing ? '✓' : followRequestStatus === 'pending' ? '⏳' : '+'}
-                    </Text>
+                    <Ionicons
+                      name={isFollowing ? 'checkmark' : followRequestStatus === 'pending' ? 'time-outline' : 'add'}
+                      size={15}
+                      color={isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText}
+                    />
                     <Text style={{ fontSize: 14, fontWeight: '700', color: isFollowing || followRequestStatus === 'pending' ? c.textPrimary : c.primaryText }}>
                       {isFollowing ? 'Following' : followRequestStatus === 'pending' ? 'Requested' : 'Follow'}
                     </Text>
@@ -626,7 +645,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     {muteLoading
                       ? <ActivityIndicator size="small" color={c.textMuted} />
                       : <>
-                          <Text style={{ fontSize: 14 }}>🔇</Text>
+                          <Ionicons name={isMuted ? 'volume-mute' : 'volume-mute-outline'} size={15} color={c.textPrimary} />
                           <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>
                             {isMuted ? 'Unmute' : 'Mute'}
                           </Text>
@@ -646,7 +665,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                       borderWidth: 1.5, borderColor: c.separator,
                     }}
                   >
-                    <Text style={{ fontSize: 14 }}>💬</Text>
+                    <Ionicons name="chatbubble-outline" size={15} color={c.textPrimary} />
                     <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Message</Text>
                   </TouchableOpacity>
                 )}
@@ -661,7 +680,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                     borderWidth: 1.5, borderColor: c.separator,
                   }}
                 >
-                  <Text style={{ fontSize: 14 }}>🚩</Text>
+                  <Ionicons name="flag-outline" size={15} color={c.textPrimary} />
                   <Text style={{ fontSize: 14, fontWeight: '700', color: c.textPrimary }}>Report</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -679,7 +698,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                   {blockLoading
                     ? <ActivityIndicator size="small" color={c.signOut} />
                     : <>
-                        <Text style={{ fontSize: 14 }}>🚫</Text>
+                        <Ionicons name="ban-outline" size={15} color={isBlocked ? c.signOut : c.textPrimary} />
                         <Text style={{ fontSize: 14, fontWeight: '700', color: isBlocked ? c.signOut : c.textPrimary }}>
                           {isBlocked ? 'Unblock' : 'Block'}
                         </Text>
@@ -806,12 +825,12 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
             <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report User</Text>
             <TouchableOpacity onPress={() => setShowReportUser(false)} hitSlop={hitSlopFor(18)}
               accessibilityRole="button" accessibilityLabel="Close">
-              <Text style={{ fontSize: 18, color: c.textMuted }}>✕</Text>
+              <Ionicons name="close" size={20} color={c.textMuted} />
             </TouchableOpacity>
           </View>
           {reportUserDone ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 }}>
-              <Text style={{ fontSize: 40 }}>✅</Text>
+              <Ionicons name="checkmark-circle" size={40} color={c.sage} />
               <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report Submitted</Text>
               <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20 }}>
                 Thank you for helping keep the community safe. We'll review this account.
@@ -867,6 +886,6 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
         joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
         onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
       />
-    </Modal>
+    </Wrapper>
   );
 }

@@ -28,6 +28,8 @@ import { VillageCard } from '../components/village/VillageCard';
 import { LocationPicker } from '../components/village/LocationPicker';
 import { track, screenView } from '../lib/analytics';
 import { joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT } from '../lib/discoverData';
+import { useResponsive } from '../lib/responsive';
+import { AppContext } from '../lib/AppContext';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ export default function VillageTab() {
   const s = useMemo(() => makeStyles(c), [c]);
   const lp = useMemo(() => makeLocationPickerStyles(c), [c]);
   const { isSubscribed, openPaywall } = useSubscription();
+  const { isDesktop } = useResponsive();
+  const { pushSecondary } = React.useContext(AppContext);
 
   const [joinedIds, setJoinedIds]       = useState<Set<string>>(new Set());
   const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
@@ -262,11 +266,11 @@ export default function VillageTab() {
           onClose={() => setShowFindPatch(false)}
         />
 
-        {/* Patch Tasks modal */}
+        {/* Patch Tasks modal — mobile only; desktop opens via
+            pushSecondary({type:'patchRequests'}) into DesktopSecondaryHost. */}
         <PatchTasksSheet
           visible={showPatchTasks}
           onClose={() => setShowPatchTasks(false)}
-          myVillages={myVillages}
         />
 
         {/* Search bar */}
@@ -426,7 +430,7 @@ export default function VillageTab() {
         {!search && (
           <TouchableOpacity
             style={s.patchTasksCard}
-            onPress={() => setShowPatchTasks(true)}
+            onPress={() => { if (isDesktop) pushSecondary({ type: 'patchRequests' }); else setShowPatchTasks(true); }}
             activeOpacity={0.88}
             accessibilityRole="button"
             accessibilityLabel="Patch Requests. Ask for help or offer it to a neighbor"
@@ -575,7 +579,7 @@ export default function VillageTab() {
           </>
         )}
 
-        {search && filtered.length === 0 && (
+        {search.length > 0 && filtered.length === 0 && (
           <View style={s.emptySearch}>
             <Text style={s.emptySearchEmoji}>🔍</Text>
             <Text style={s.emptySearchText}>No patches found for "{search}"</Text>

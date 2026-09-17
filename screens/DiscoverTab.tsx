@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { useColors, Colors } from '../lib/theme';
 import { typography } from '../lib/typography';
 import { hitSlopFor } from '../lib/accessibility';
 import { useResponsive, maxWidthFor, useMeasuredWidth, fitCardsToWidth } from '../lib/responsive';
+import { AppContext } from '../lib/AppContext';
 import { screenView, track } from '../lib/analytics';
 import { supabase } from '../lib/supabase';
 import { useBaby } from '../lib/babyContext';
@@ -153,6 +154,11 @@ export default function DiscoverTab({ route, navigation }: any) {
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [feedVillage, setFeedVillage] = useState<Village | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const { pushSecondary } = useContext(AppContext);
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId });
+    else setProfileUserId(userId);
+  }
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -452,7 +458,7 @@ export default function DiscoverTab({ route, navigation }: any) {
             joinedPatchIds={joinedPatchIds}
             joiningPatchId={joiningPatchId}
             onToggleFollow={toggleFollow}
-            onOpenPerson={setProfileUserId}
+            onOpenPerson={openProfile}
             onOpenPost={openPost}
             onOpenPatch={(v) => setFeedVillage(v)}
             onToggleJoinPatch={toggleJoinPatch}

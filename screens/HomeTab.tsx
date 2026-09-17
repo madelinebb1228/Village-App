@@ -176,6 +176,26 @@ export default function HomeTab() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+
+  // On desktop, these open inside the app shell via DesktopSecondaryHost
+  // (pushSecondary) instead of this screen's own full-screen Modal — see
+  // lib/AppContext.ts. Mobile behavior (below) is unchanged.
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId });
+    else setPublicProfileUserId(userId);
+  }
+  function openSearch() {
+    if (isDesktop) pushSecondary({ type: 'search' });
+    else setShowSearch(true);
+  }
+  function openMessages(targetUserId: string | null) {
+    if (isDesktop) pushSecondary({ type: 'messages', openWithUserId: targetUserId });
+    else { setMessageTargetUserId(targetUserId); setShowMessages(true); }
+  }
+  function openNotifications() {
+    if (isDesktop) pushSecondary({ type: 'notifications' });
+    else setShowNotifications(true);
+  }
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
     diapers: number | null; diapersLow: boolean;
@@ -200,7 +220,7 @@ export default function HomeTab() {
   useEffect(() => { screenView('HomeTab'); }, []);
 
   // App tour (coach marks)
-  const { tourRequestId, requestCreate, createAction } = useContext(AppContext);
+  const { tourRequestId, requestCreate, createAction, pushSecondary } = useContext(AppContext);
   const [tourVisible, setTourVisible] = useState(false);
   const lastHandledTourRequestId = useRef(0);
   const lastHandledCreateActionId = useRef(0);
@@ -956,7 +976,7 @@ export default function HomeTab() {
       .select('id')
       .eq('username', username)
       .maybeSingle();
-    if (data) setPublicProfileUserId((data as any).id);
+    if (data) openProfile((data as any).id);
   }
 
   async function doDeletePost(postId: string) {
@@ -1672,8 +1692,8 @@ export default function HomeTab() {
         <View style={styles.postHeader}>
           <View style={styles.postAuthorRow}>
             <TouchableOpacity
-              onPress={() => setPublicProfileUserId(post.user_id)}
-              activeOpacity={0.7}
+              onPress={() => post.user_id && openProfile(post.user_id)}
+              activeOpacity={post.user_id ? 0.7 : 1}
               accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
             >
               <UserAvatar userId={post.user_id} name={resolveAuthorName(post)} size={36} />
@@ -1681,7 +1701,7 @@ export default function HomeTab() {
             <View>
               <Text
                 style={styles.postAuthorName}
-                onPress={() => setPublicProfileUserId(post.user_id)}
+                onPress={() => post.user_id && openProfile(post.user_id)}
                 accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(post)}'s profile`}
               >
                 {resolveAuthorName(post)}
@@ -1945,9 +1965,9 @@ export default function HomeTab() {
             containerRef={iconRowRef}
             unreadNotifCount={unreadNotifCount}
             unreadMessageCount={unreadCount}
-            onPressNotifications={() => setShowNotifications(true)}
-            onPressMessages={() => { setMessageTargetUserId(null); setShowMessages(true); }}
-            onPressSearch={() => setShowSearch(true)}
+            onPressNotifications={openNotifications}
+            onPressMessages={() => openMessages(null)}
+            onPressSearch={openSearch}
           />
         </View>
 
@@ -2186,7 +2206,7 @@ export default function HomeTab() {
       )}
       </View>
 
-      {/* Search sheet */}
+      {/* Search sheet — mobile only; desktop opens via pushSecondary({type:'search'}) into DesktopSecondaryHost */}
       <SearchSheet visible={showSearch} onClose={() => { setShowSearch(false); restoreScrollFocus(); }} />
 
       <HandoffNotesSheet
@@ -2203,12 +2223,12 @@ export default function HomeTab() {
         onClose={() => setShowProfileSheet(false)}
       />
 
-      {/* Public profile sheet */}
+      {/* Public profile sheet — mobile only; desktop opens via pushSecondary({type:'profile'}) into DesktopSecondaryHost */}
       <PublicProfileSheet
         userId={publicProfileUserId}
         visible={publicProfileUserId !== null}
         onClose={() => setPublicProfileUserId(null)}
-        onMessage={(uid) => { setPublicProfileUserId(null); setMessageTargetUserId(uid); setShowMessages(true); }}
+        onMessage={(uid) => { setPublicProfileUserId(null); openMessages(uid); }}
       />
 
       {/* Patch feed sheet — opened by tapping a post's Patch tag */}
@@ -2220,7 +2240,7 @@ export default function HomeTab() {
         onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
       />
 
-      {/* Messages */}
+      {/* Messages — mobile only; desktop opens via pushSecondary({type:'messages'}) into DesktopSecondaryHost */}
       <Modal visible={showMessages} animationType="slide" presentationStyle="fullScreen">
         <MessagesInbox
           onBack={() => { setShowMessages(false); setMessageTargetUserId(null); if (currentUserId) fetchUnreadCount(currentUserId); restoreScrollFocus(); }}
@@ -2228,10 +2248,12 @@ export default function HomeTab() {
         />
       </Modal>
 
-      {/* Notifications */}
+      {/* Notifications — mobile only; desktop opens via pushSecondary({type:'notifications'}) into DesktopSecondaryHost */}
       <Modal visible={showNotifications} animationType="slide" presentationStyle="fullScreen">
         <NotificationsScreen
           onBack={() => { setShowNotifications(false); if (currentUserId) fetchUnreadNotifCount(currentUserId); restoreScrollFocus(); }}
+          onOpenPost={(postId) => { setShowNotifications(false); navigation.navigate('PostDetail', { postId, origin: 'Home' }); }}
+          onOpenProfile={(userId) => { setShowNotifications(false); openProfile(userId); }}
         />
       </Modal>
 
@@ -2258,7 +2280,7 @@ export default function HomeTab() {
                 <View style={styles.postHeader}>
                   <TouchableOpacity
                     style={styles.postAuthorRow}
-                    onPress={() => { setCommentPostId(null); setSelectedPost(null); setPublicProfileUserId(selectedPost.user_id); }}
+                    onPress={() => { setCommentPostId(null); setSelectedPost(null); openProfile(selectedPost.user_id); }}
                     activeOpacity={0.7}
                     accessibilityRole="button" accessibilityLabel={`View ${resolveAuthorName(selectedPost)}'s profile`}
                   >

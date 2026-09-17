@@ -26,7 +26,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Platform, Image, Modal } from 'react-native';
 import { useColors } from './lib/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { SyncProvider } from './lib/syncService';
 import OfflineBanner from './components/OfflineBanner';
 import { OneHandedProvider, useOneHanded } from './lib/OneHandedContext';
@@ -38,7 +38,9 @@ import { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabase';
 import { posthog, identifyUser, setUserProperties, resetAnalytics, restoreAnalyticsOptOut } from './lib/analytics';
-import { AppContext, CreateAction } from './lib/AppContext';
+import { AppContext, CreateAction, SecondaryDestination } from './lib/AppContext';
+import { useResponsive, SIDEBAR_WIDTH } from './lib/responsive';
+import DesktopSecondaryHost from './components/DesktopSecondaryHost';
 import { SubscriptionProvider } from './lib/subscriptionContext';
 import { BabyProvider } from './lib/babyContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -62,8 +64,6 @@ import MoreTrackersScreen from './screens/MoreTrackersScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
-
-const SIDEBAR_WIDTH = 230;
 
 function sidebarAware<T extends object>(Screen: React.ComponentType<T>): React.ComponentType<T> {
   if (Platform.OS !== 'web') return Screen;
@@ -105,7 +105,7 @@ const VISIBLE_TAB_NAMES = ['Home', 'Discover', 'Create', 'Track', 'Profile'];
 
 function WebSidebar({ state, navigation }: BottomTabBarProps) {
   const c = useColors();
-  const { requestCreate } = React.useContext(AppContext);
+  const { requestCreate, closeAllSecondary } = React.useContext(AppContext);
   const visibleRoutes = state.routes.filter(r => VISIBLE_TAB_NAMES.includes(r.name));
 
   return (
@@ -168,7 +168,7 @@ function WebSidebar({ state, navigation }: BottomTabBarProps) {
         return (
           <TouchableOpacity
             key={route.key}
-            onPress={() => navigation.navigate(route.name)}
+            onPress={() => { closeAllSecondary(); navigation.navigate(route.name); }}
             activeOpacity={0.75}
             accessibilityRole="tab"
             accessibilityLabel={tab.label}
@@ -484,12 +484,23 @@ function App() {
     setCreateAction({ action, requestId: createActionSeq.current });
   }, []);
 
+  const { isDesktop } = useResponsive();
+  const navigationRef = useNavigationContainerRef();
+  const [secondaryStack, setSecondaryStack] = React.useState<SecondaryDestination[]>([]);
+  const pushSecondary = React.useCallback((d: SecondaryDestination) => setSecondaryStack(prev => [...prev, d]), []);
+  const popSecondary = React.useCallback(() => setSecondaryStack(prev => prev.slice(0, -1)), []);
+  const closeAllSecondary = React.useCallback(() => setSecondaryStack([]), []);
+
   const handleCreateSelect = React.useCallback((option: CreateOption) => {
     setShowCreateSheet(false);
     if (option === 'event') { setShowEvents(true); return; }
-    if (option === 'help') { setShowPatchTasks(true); return; }
+    if (option === 'help') {
+      if (isDesktop) pushSecondary({ type: 'patchRequests' });
+      else setShowPatchTasks(true);
+      return;
+    }
     requestCreateAction(option);
-  }, [requestCreateAction]);
+  }, [requestCreateAction, isDesktop, pushSecondary]);
 
   if (onboardingDone === null) {
     return (
@@ -502,13 +513,13 @@ function App() {
   return (
     <PostHogProvider client={posthog} autocapture={{ captureTouches: true, captureScreens: false }}>
     <SafeAreaProvider>
-    <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour, requestCreate, createAction, requestCreateAction }}>
+    <AppContext.Provider value={{ markOnboardingComplete, tourRequestId, requestTour, requestCreate, createAction, requestCreateAction, secondaryStack, pushSecondary, popSecondary, closeAllSecondary }}>
       <OneHandedProvider>
       <SyncProvider>
       <SubscriptionProvider>
       <BabyProvider>
       <OfflineBanner />
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!session ? (
             <Stack.Screen name="Auth" component={AuthScreen} />
@@ -530,7 +541,11 @@ function App() {
         <Modal visible={showEvents} animationType="slide" presentationStyle="fullScreen">
           <EventsScreen onBack={() => { setShowEvents(false); restoreScrollFocus(); }} autoOpenCreate />
         </Modal>
+        {/* Mobile-only fallback for the global Create > Ask for Help flow —
+            on desktop this opens via pushSecondary({type:'patchRequests'})
+            into DesktopSecondaryHost instead (see handleCreateSelect above). */}
         <PatchTasksSheet visible={showPatchTasks} onClose={() => { setShowPatchTasks(false); restoreScrollFocus(); }} />
+        <DesktopSecondaryHost navigationRef={navigationRef} />
       </NavigationContainer>
       <OneHandedIndicator />
       </BabyProvider>

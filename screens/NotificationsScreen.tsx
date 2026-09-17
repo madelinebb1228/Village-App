@@ -4,8 +4,10 @@ import {
   ActivityIndicator, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
 
 interface NotifRow {
   id: string;
@@ -45,12 +47,18 @@ function Avatar({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-function NotifIcon({ type }: { type: NotifRow['type'] }) {
-  if (type === 'like') return <Text style={{ fontSize: 16 }}>❤️</Text>;
-  if (type === 'comment') return <Text style={{ fontSize: 16 }}>💬</Text>;
-  if (type === 'kudos') return <Text style={{ fontSize: 16 }}>💌</Text>;
-  if (type === 'handoff') return <Text style={{ fontSize: 16 }}>🤝</Text>;
-  return <Text style={{ fontSize: 16 }}>👋</Text>;
+function NotifIcon({ type, c }: { type: NotifRow['type']; c: ReturnType<typeof useColors> }) {
+  const icon =
+    type === 'like' ? 'heart' :
+    type === 'comment' ? 'chatbubble' :
+    type === 'kudos' ? 'heart-circle' :
+    type === 'handoff' ? 'people' :
+    'at';
+  const color =
+    type === 'like' ? c.primary :
+    type === 'kudos' ? c.primary :
+    c.textSecondary;
+  return <Ionicons name={icon as any} size={13} color={color} />;
 }
 
 function notifText(n: NotifRow): { bold: string; rest: string; sub?: string } {
@@ -62,7 +70,11 @@ function notifText(n: NotifRow): { bold: string; rest: string; sub?: string } {
     return { bold: actor, rest: ' commented on your post', sub: n.comment_preview ? `"${n.comment_preview}"` : undefined };
   }
   if (n.type === 'kudos') {
-    return { bold: actor, rest: ' sent you kudos', sub: n.kudos_preview ?? undefined };
+    // Kudos is a partner-only feature (see lib/relationshipUtil.ts + the
+    // "appreciation sent only to a real partner" RLS policy) — never fall
+    // back to the generic "Someone" used by the other notification types.
+    const kudosActor = n.actor?.display_name || n.actor?.username || 'Your partner';
+    return { bold: kudosActor, rest: ' sent you kudos', sub: n.kudos_preview ?? undefined };
   }
   if (n.type === 'handoff') {
     return { bold: '', rest: n.handoff_note || `${actor} logged an update for baby` };
@@ -70,8 +82,21 @@ function notifText(n: NotifRow): { bold: string; rest: string; sub?: string } {
   return { bold: actor, rest: ' mentioned you', sub: n.comment_preview ?? undefined };
 }
 
-export default function NotificationsScreen({ onBack }: { onBack: () => void }) {
+export default function NotificationsScreen({
+  onBack,
+  onOpenPost,
+  onOpenProfile,
+}: {
+  onBack: () => void;
+  onOpenPost?: (postId: string) => void;
+  onOpenProfile?: (userId: string) => void;
+  /** No Modal wrapper here to begin with — this prop just documents that
+   * DesktopSecondaryHost renders this screen directly (no behavior change). */
+  presentation?: 'modal' | 'inline';
+}) {
   const c = useColors();
+  const { width: windowWidth } = useResponsive();
+  const columnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const };
   const [myId, setMyId] = useState<string | null>(null);
   const [notifs, setNotifs] = useState<NotifRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,19 +132,30 @@ export default function NotificationsScreen({ onBack }: { onBack: () => void }) 
 
   const unreadCount = notifs.filter(n => !n.read).length;
 
+  function openNotif(n: NotifRow) {
+    markRead(n.id);
+    if ((n.type === 'like' || n.type === 'comment' || n.type === 'mention') && n.post_id) {
+      onOpenPost?.(n.post_id);
+    } else if (n.type === 'kudos' && n.actor_id) {
+      onOpenProfile?.(n.actor_id);
+    }
+    // handoff notifications carry no post/profile reference to route to —
+    // marking read is the only defined behavior for them today.
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 20, paddingVertical: 14,
+        paddingHorizontal: 16, paddingVertical: 12,
         borderBottomWidth: 1, borderBottomColor: c.separator,
       }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={{ fontSize: 22, color: c.textMuted }}>←</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Back">
+            <Ionicons name="chevron-back" size={24} color={c.textPrimary} />
           </TouchableOpacity>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: c.textPrimary }}>Notifications</Text>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary }}>Notifications</Text>
           {unreadCount > 0 && (
             <View style={{
               backgroundColor: c.primary, borderRadius: 10,
@@ -130,7 +166,7 @@ export default function NotificationsScreen({ onBack }: { onBack: () => void }) 
           )}
         </View>
         {unreadCount > 0 && (
-          <TouchableOpacity onPress={markAllRead} activeOpacity={0.7}>
+          <TouchableOpacity onPress={markAllRead} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Mark all notifications read">
             <Text style={{ fontSize: 13, fontWeight: '700', color: c.primary }}>Mark all read</Text>
           </TouchableOpacity>
         )}
@@ -141,63 +177,74 @@ export default function NotificationsScreen({ onBack }: { onBack: () => void }) 
           <ActivityIndicator color={c.primary} size="large" />
         </View>
       ) : notifs.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>🔔</Text>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary, marginBottom: 8 }}>No notifications yet</Text>
+        <View style={[{ alignItems: 'center', paddingHorizontal: 32, paddingTop: 64 }, columnStyle]}>
+          <Ionicons name="notifications-outline" size={34} color={c.textMuted} style={{ marginBottom: 12 }} />
+          <Text style={{ fontSize: 16, fontWeight: '800', color: c.textPrimary, marginBottom: 6 }}>No notifications yet</Text>
           <Text style={{ fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20 }}>
             When someone likes or comments on your posts, you'll see it here.
           </Text>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {notifs.map(n => {
-            const { bold, rest, sub } = notifText(n);
-            const actorName = n.actor?.display_name || n.actor?.username || 'Someone';
-            return (
-              <TouchableOpacity
-                key={n.id}
-                onPress={() => markRead(n.id)}
-                activeOpacity={0.75}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 14,
-                  paddingHorizontal: 20, paddingVertical: 14,
-                  borderBottomWidth: 1, borderBottomColor: c.separator,
-                  backgroundColor: n.read ? 'transparent' : c.cardBlush,
-                }}
-              >
-                <View style={{ position: 'relative' }}>
-                  <Avatar name={actorName} url={n.actor?.avatar_url ?? null} />
-                  <View style={{
-                    position: 'absolute', bottom: -2, right: -2,
-                    backgroundColor: c.bg, borderRadius: 10, padding: 1,
-                  }}>
-                    <NotifIcon type={n.type} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+          <View style={[{ paddingTop: 8 }, columnStyle]}>
+            {notifs.map(n => {
+              const { bold, rest, sub } = notifText(n);
+              const actorName = n.actor?.display_name || n.actor?.username || 'Someone';
+              return (
+                <TouchableOpacity
+                  key={n.id}
+                  onPress={() => openNotif(n)}
+                  activeOpacity={0.75}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 14,
+                    paddingHorizontal: 16, paddingVertical: 14,
+                    borderBottomWidth: 1, borderBottomColor: c.separator,
+                    backgroundColor: n.read ? 'transparent' : c.cardBlush,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${bold}${rest}${n.read ? '' : ', unread'}`}
+                >
+                  <View style={{ position: 'relative' }}>
+                    <Avatar name={actorName} url={n.actor?.avatar_url ?? null} />
+                    <View style={{
+                      position: 'absolute', bottom: -2, right: -2,
+                      backgroundColor: c.bg, borderRadius: 10, padding: 3,
+                      borderWidth: 1, borderColor: c.separator,
+                    }}>
+                      <NotifIcon type={n.type} c={c} />
+                    </View>
                   </View>
-                </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, color: c.textPrimary, lineHeight: 20 }}>
-                    <Text style={{ fontWeight: '800' }}>{bold}</Text>
-                    <Text style={{ fontWeight: '400' }}>{rest}</Text>
-                  </Text>
-                  {sub && (
-                    <Text
-                      numberOfLines={1}
-                      style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}
-                    >
-                      {sub}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, color: c.textPrimary, lineHeight: 20 }}>
+                      <Text style={{ fontWeight: '800' }}>{bold}</Text>
+                      <Text style={{ fontWeight: '400' }}>{rest}</Text>
                     </Text>
-                  )}
-                  <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 3 }}>{timeAgo(n.created_at)}</Text>
-                </View>
+                    {sub && (
+                      <Text
+                        numberOfLines={1}
+                        style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}
+                      >
+                        {sub}
+                      </Text>
+                    )}
+                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 3 }}>{timeAgo(n.created_at)}</Text>
+                  </View>
 
-                {!n.read && (
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary }} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-          <View style={{ height: 32 }} />
+                  {!n.read && (
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary }} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* A short list still ends on an intentional note rather than
+                trailing into empty page. */}
+            <View style={{ alignItems: 'center', paddingVertical: 28, gap: 6 }}>
+              <Ionicons name="checkmark-circle-outline" size={18} color={c.textMuted} />
+              <Text style={{ fontSize: 12.5, color: c.textMuted, fontWeight: '600' }}>You're all caught up</Text>
+            </View>
+          </View>
         </ScrollView>
       )}
     </SafeAreaView>

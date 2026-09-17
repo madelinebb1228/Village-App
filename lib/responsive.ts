@@ -14,6 +14,11 @@ export const BREAKPOINTS = {
   desktop: 1100,
 } as const;
 
+// Width of the persistent web sidebar (App.tsx's WebSidebar/sidebarAware).
+// Shared here so anything that needs to lay out beside it — e.g.
+// DesktopSecondaryHost — doesn't import it back out of App.tsx.
+export const SIDEBAR_WIDTH = 230;
+
 export type SizeClass = 'phone' | 'tablet' | 'desktop';
 
 export interface Responsive {
@@ -49,6 +54,8 @@ export const CONTENT_MAX_WIDTH = {
   discover: 1000, // Discover — grids/carousels want more room
   track: 960,     // Track — utility/timeline surface
   profile: 760,   // Profile / PublicProfileSheet
+  inbox: 820,     // Search, Messages, Notifications — list-style secondary surfaces
+  form: 760,      // New Patch Request and other centered forms
 } as const;
 
 // `undefined` on phone (no artificial narrowing), the surface's column width

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,8 @@ import {
 } from '../lib/feedUtils';
 import { timeAgo, joinPatch, leavePatch } from '../lib/discoverData';
 import { VILLAGE_MAP, Village, villagesByIds } from '../lib/villageData';
+import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { AppContext } from '../lib/AppContext';
 import UserAvatar from '../components/UserAvatar';
 import PublicProfileSheet from './PublicProfileSheet';
 import VillageFeedSheet from './VillageFeedSheet';
@@ -57,6 +59,10 @@ export default function PostDetailScreen({ route, navigation }: any) {
   const goBack = () => (origin ? navigation?.navigate?.(origin) : navigation?.goBack?.());
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const { width: windowWidth, isDesktop } = useResponsive();
+  const feedMaxWidth = maxWidthFor(windowWidth, 'feed');
+  const columnStyle = { width: '100%' as const, maxWidth: feedMaxWidth, alignSelf: 'center' as const };
+  const { pushSecondary } = useContext(AppContext);
 
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState<Post | null>(null);
@@ -83,6 +89,10 @@ export default function PostDetailScreen({ route, navigation }: any) {
   const [postingComment, setPostingComment] = useState(false);
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId });
+    else setProfileUserId(userId);
+  }
   const [feedVillage, setFeedVillage] = useState<Village | null>(null);
   const [myVillageIds, setMyVillageIds] = useState<Set<string>>(new Set());
   const [joiningVillageId, setJoiningVillageId] = useState<string | null>(null);
@@ -294,7 +304,7 @@ export default function PostDetailScreen({ route, navigation }: any) {
 
   function openMentionedUser(username: string) {
     supabase.from('profiles').select('id').eq('username', username).maybeSingle().then(({ data }) => {
-      if (data) setProfileUserId((data as any).id);
+      if (data) openProfile((data as any).id);
     });
   }
 
@@ -366,8 +376,9 @@ export default function PostDetailScreen({ route, navigation }: any) {
       />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity style={s.authorRow} onPress={() => setProfileUserId(post.user_id)} activeOpacity={0.75}>
+        <ScrollView contentContainerStyle={[s.scroll, columnStyle]} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity style={s.authorRow} onPress={() => post.user_id && openProfile(post.user_id)} activeOpacity={post.user_id ? 0.75 : 1}
+            accessibilityRole="button" accessibilityLabel={`View ${authorName}'s profile`}>
             <UserAvatar userId={post.user_id} name={authorName} size={44} />
             <View style={{ flex: 1 }}>
               <Text style={s.authorName}>{authorName}</Text>
@@ -437,7 +448,11 @@ export default function PostDetailScreen({ route, navigation }: any) {
           <View style={s.actionsRow}>
             <View style={{ position: 'relative' }}>
               <TouchableOpacity style={s.actionBtn} onPress={() => setShowReactionPicker(v => !v)} hitSlop={hitSlopFor(24)} accessibilityRole="button" accessibilityLabel="React to post">
-                <Text style={s.actionIcon}>{myReaction || '🤍'}</Text>
+                {myReaction ? (
+                  <Text style={s.actionEmoji}>{myReaction}</Text>
+                ) : (
+                  <Ionicons name="heart-outline" size={20} color={c.textSecondary} />
+                )}
                 <Text style={s.actionCount}>{Object.values(reactionCounts).reduce((a, b) => a + b, 0)}</Text>
               </TouchableOpacity>
               {showReactionPicker && (
@@ -452,21 +467,21 @@ export default function PostDetailScreen({ route, navigation }: any) {
             </View>
 
             <View style={s.actionBtn}>
-              <Text style={s.actionIcon}>💬</Text>
+              <Ionicons name="chatbubble-outline" size={19} color={c.textSecondary} />
               <Text style={s.actionCount}>{comments.reduce((n, cm) => n + 1 + (cm.replies?.length ?? 0), 0)}</Text>
             </View>
 
             <TouchableOpacity style={s.actionBtn} onPress={toggleRepost} hitSlop={hitSlopFor(24)} accessibilityRole="button" accessibilityLabel={isReposted ? 'Undo repost' : 'Repost'}>
-              <Text style={[s.actionIcon, isReposted && { color: c.sage }]}>🔁</Text>
+              <Ionicons name="repeat" size={20} color={isReposted ? c.sage : c.textSecondary} />
               <Text style={[s.actionCount, isReposted && { color: c.sage }]}>{repostCount}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={s.actionBtn} onPress={toggleSave} hitSlop={hitSlopFor(24)} accessibilityRole="button" accessibilityLabel={isSaved ? 'Unsave post' : 'Save post'}>
-              <Text style={s.actionIcon}>{isSaved ? '🔖' : '📑'}</Text>
+              <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={isSaved ? c.primary : c.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity style={s.actionBtn} onPress={handleShare} hitSlop={hitSlopFor(24)} accessibilityRole="button" accessibilityLabel="Share post">
-              <Text style={s.actionIcon}>↗️</Text>
+              <Ionicons name="arrow-redo-outline" size={19} color={c.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -484,7 +499,7 @@ export default function PostDetailScreen({ route, navigation }: any) {
                 s={s}
                 c={c}
                 onReply={setReplyingTo}
-                onOpenProfile={setProfileUserId}
+                onOpenProfile={openProfile}
                 onReport={setReportCommentId}
                 reportedIds={reportedCommentIds}
               />
@@ -493,34 +508,36 @@ export default function PostDetailScreen({ route, navigation }: any) {
         </ScrollView>
 
         <View style={s.composerRow}>
-          {replyingTo && (
-            <View style={s.replyingBanner}>
-              <Text style={s.replyingText}>Replying to {resolveAuthorName(replyingTo)}</Text>
-              <TouchableOpacity onPress={() => setReplyingTo(null)} accessibilityRole="button" accessibilityLabel="Cancel reply">
-                <Text style={s.replyingCancel}>✕</Text>
+          <View style={columnStyle}>
+            {replyingTo && (
+              <View style={s.replyingBanner}>
+                <Text style={s.replyingText}>Replying to {resolveAuthorName(replyingTo)}</Text>
+                <TouchableOpacity onPress={() => setReplyingTo(null)} accessibilityRole="button" accessibilityLabel="Cancel reply">
+                  <Text style={s.replyingCancel}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={s.composerInputRow}>
+              <TextInput
+                style={s.composerInput}
+                placeholder={replyingTo ? `Reply to @${resolveAuthorName(replyingTo)}...` : 'Add a comment...'}
+                placeholderTextColor={c.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+                accessibilityLabel="Write a comment"
+              />
+              <TouchableOpacity
+                style={[s.postCommentBtn, (!commentText.trim() || postingComment) && { opacity: 0.4 }]}
+                onPress={submitComment}
+                disabled={!commentText.trim() || postingComment}
+                hitSlop={hitSlopFor(34)}
+                accessibilityRole="button"
+                accessibilityLabel="Post comment"
+              >
+                {postingComment ? <ActivityIndicator size="small" color={c.textOnColored} /> : <Text style={s.postCommentBtnText}>Post</Text>}
               </TouchableOpacity>
             </View>
-          )}
-          <View style={s.composerInputRow}>
-            <TextInput
-              style={s.composerInput}
-              placeholder={replyingTo ? `Reply to @${resolveAuthorName(replyingTo)}...` : 'Add a comment...'}
-              placeholderTextColor={c.textMuted}
-              value={commentText}
-              onChangeText={setCommentText}
-              multiline
-              accessibilityLabel="Write a comment"
-            />
-            <TouchableOpacity
-              style={[s.postCommentBtn, (!commentText.trim() || postingComment) && { opacity: 0.4 }]}
-              onPress={submitComment}
-              disabled={!commentText.trim() || postingComment}
-              hitSlop={hitSlopFor(34)}
-              accessibilityRole="button"
-              accessibilityLabel="Post comment"
-            >
-              {postingComment ? <ActivityIndicator size="small" color={c.textOnColored} /> : <Text style={s.postCommentBtnText}>Post</Text>}
-            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -591,7 +608,8 @@ function CommentThread({
   const name = resolveAuthorName(comment);
   return (
     <View style={[s.commentWrap, { marginLeft: depth * 24 }]}>
-      <TouchableOpacity style={s.commentHeader} onPress={() => onOpenProfile(comment.user_id)} activeOpacity={0.75}>
+      <TouchableOpacity style={s.commentHeader} onPress={() => comment.user_id && onOpenProfile(comment.user_id)} activeOpacity={comment.user_id ? 0.75 : 1}
+        accessibilityRole="button" accessibilityLabel={`View ${name}'s profile`}>
         <UserAvatar userId={comment.user_id} name={name} size={28} />
         <Text style={s.commentAuthor}>{name}</Text>
         <Text style={s.commentTime}>{timeAgo(comment.created_at)}</Text>
@@ -671,7 +689,7 @@ const makeStyles = (c: Colors) =>
 
     actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 24, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.separator, borderBottomWidth: 1, borderBottomColor: c.separator, marginBottom: 16 },
     actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    actionIcon: { fontSize: 18, color: c.textSecondary },
+    actionEmoji: { fontSize: 18 },
     actionCount: { fontSize: 13, fontWeight: '700', color: c.textMuted },
 
     reactionPicker: {
