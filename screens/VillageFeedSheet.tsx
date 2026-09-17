@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,10 @@ import UserAvatar from '../components/UserAvatar';
 import { track } from '../lib/analytics';
 import { Ionicons } from '@expo/vector-icons';
 import PostTypeBadge from '../components/feed/PostTypeBadge';
+import { AppContext } from '../lib/AppContext';
+import { useResponsive } from '../lib/responsive';
+import { fetchJoinedPatchIds, joinPatch, leavePatch } from '../lib/discoverData';
+import ConfinedOverlay from '../components/ConfinedOverlay';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,8 +58,14 @@ interface Props {
   village: Village | null;
   visible: boolean;
   onClose: () => void;
-  joined: boolean;
-  onToggleJoin: () => void;
+  // Omit both when the caller doesn't already track membership itself (e.g.
+  // DesktopSecondaryHost, which has no per-caller membership state) — this
+  // sheet then fetches and manages its own, the same way PatchTasksSheet does.
+  joined?: boolean;
+  onToggleJoin?: () => void;
+  /** 'modal' (default): existing mobile full-screen Modal. 'inline': no
+   * Modal wrapper, for DesktopSecondaryHost to place beside the sidebar. */
+  presentation?: 'modal' | 'inline';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -89,9 +99,43 @@ async function uploadPostImage(uri: string, userId: string): Promise<string | nu
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function VillageFeedSheet({ village, visible, onClose, joined, onToggleJoin }: Props) {
+export default function VillageFeedSheet({
+  village, visible, onClose,
+  joined: joinedProp, onToggleJoin: onToggleJoinProp,
+  presentation = 'modal',
+}: Props) {
   const c = useColors();
   const s = useMemo(() => makeStyles(c), [c]);
+  const { isDesktop } = useResponsive();
+  const { pushSecondary } = useContext(AppContext);
+
+  // Self-managed membership, used only when the caller doesn't pass its own
+  // (see Props comment above).
+  const managesOwnMembership = joinedProp === undefined;
+  const [selfJoinedIds, setSelfJoinedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!managesOwnMembership || !visible) return;
+    fetchJoinedPatchIds().then(setSelfJoinedIds);
+  }, [managesOwnMembership, visible]);
+  const joined = managesOwnMembership ? (village ? selfJoinedIds.has(village.id) : false) : !!joinedProp;
+  async function selfToggleJoin() {
+    if (!village) return;
+    const wasJoined = selfJoinedIds.has(village.id);
+    const { error } = wasJoined ? await leavePatch(village.id) : await joinPatch(village.id);
+    if (!error) {
+      setSelfJoinedIds(prev => {
+        const next = new Set(prev);
+        if (wasJoined) next.delete(village.id); else next.add(village.id);
+        return next;
+      });
+    }
+  }
+  const onToggleJoin = managesOwnMembership ? selfToggleJoin : onToggleJoinProp!;
+
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId });
+    else setProfileUserId(userId);
+  }
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
@@ -282,9 +326,15 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
 
   if (!village) return null;
 
+  if (presentation === 'inline' && !visible) return null;
+  const Wrapper: any = presentation === 'modal' ? Modal : React.Fragment;
+  const wrapperProps: any = presentation === 'modal'
+    ? { visible, animationType: 'slide', presentationStyle: 'pageSheet', onRequestClose: onClose }
+    : {};
+
   return (
     <>
-      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <Wrapper {...wrapperProps}>
         <SafeAreaView style={s.safeArea}>
 
           {/* ── Header ── */}
@@ -353,7 +403,7 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
                   <View style={s.postHeader}>
                     <TouchableOpacity
                       style={s.postAuthorRow}
-                      onPress={() => setProfileUserId(post.user_id)}
+                      onPress={() => openProfile(post.user_id)}
                       activeOpacity={0.7}
                     >
                       <UserAvatar userId={post.user_id} name={post.author} size={36} />
@@ -398,13 +448,12 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
             </TouchableOpacity>
           )}
         </SafeAreaView>
-      </Modal>
+      </Wrapper>
 
       {/* ── Comments modal ── */}
-      <Modal
+      <ConfinedOverlay
         visible={commentPostId !== null}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        presentation={presentation}
         onRequestClose={() => setCommentPostId(null)}
       >
         <SafeAreaView style={s.modalSafeArea}>
@@ -447,13 +496,12 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
-      </Modal>
+      </ConfinedOverlay>
 
       {/* ── Create post modal ── */}
-      <Modal
+      <ConfinedOverlay
         visible={showCreatePost}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        presentation={presentation}
         onRequestClose={() => { setShowCreatePost(false); setPendingPostImageUri(null); }}
       >
         <SafeAreaView style={s.modalSafeArea}>
@@ -525,15 +573,18 @@ export default function VillageFeedSheet({ village, visible, onClose, joined, on
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
-      </Modal>
+      </ConfinedOverlay>
 
-      {/* ── Public profile viewer ── */}
-      <PublicProfileSheet
-        userId={profileUserId}
-        visible={profileUserId !== null}
-        onClose={() => setProfileUserId(null)}
-        dismissParents={onClose}
-      />
+      {/* ── Public profile viewer — mobile only; desktop opens via
+          openProfile()'s pushSecondary into DesktopSecondaryHost. ── */}
+      {!isDesktop && (
+        <PublicProfileSheet
+          userId={profileUserId}
+          visible={profileUserId !== null}
+          onClose={() => setProfileUserId(null)}
+          dismissParents={onClose}
+        />
+      )}
 
       {blockedContent && currentUserId && (
         <ContentBlockedModal

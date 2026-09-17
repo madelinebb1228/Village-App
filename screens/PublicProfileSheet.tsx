@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,8 @@ import VillageFeedSheet from './VillageFeedSheet';
 import { joinPatch, leavePatch } from '../lib/discoverData';
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
+import { AppContext } from '../lib/AppContext';
+import ConfinedOverlay from '../components/ConfinedOverlay';
 
 interface PublicProfile {
   id: string;
@@ -118,9 +120,20 @@ function makeStyles(c: Colors) {
     headerBannerWrapWide: { height: 120 },
     headerBannerImage: { width: '100%', height: 160 },
     headerBannerImageWide: { height: 120 },
-    headerBannerPlaceholder: { width: '100%', height: 160, backgroundColor: c.cardLavender },
-    headerBannerPlaceholderAdmin: { backgroundColor: c.cardHoney },
-    avatarOverlapRow: { width: '100%', alignItems: 'center', marginTop: -52, marginBottom: 6 },
+    headerBannerPlaceholder: { width: '100%', height: 160, backgroundColor: c.cardLavender, overflow: 'hidden' },
+    // Subtle abstract accents for Founder/Official profiles that haven't
+    // uploaded a cover — replaces the old flat honey rectangle, which read as
+    // an unfinished placeholder rather than a designed cover. Two soft,
+    // low-opacity tinted circles bleeding off-canvas; no text/emoji/logo.
+    bannerAccentCircleA: {
+      position: 'absolute', width: 220, height: 220, borderRadius: 110,
+      top: -130, right: -50, backgroundColor: c.cardHoney, opacity: 0.55,
+    },
+    bannerAccentCircleB: {
+      position: 'absolute', width: 160, height: 160, borderRadius: 80,
+      bottom: -90, left: -40, backgroundColor: c.cardBlush, opacity: 0.4,
+    },
+    avatarOverlapRow: { width: '100%', alignItems: 'center', marginTop: -52, marginBottom: 4 },
     avatarOverlapRowWide: { width: 'auto', alignItems: 'flex-start', marginTop: 0, marginBottom: 0 },
     heroWideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20, paddingHorizontal: 24, marginTop: -48 },
     heroContentWrap: { width: '100%', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 4 },
@@ -135,15 +148,6 @@ function makeStyles(c: Colors) {
       overflow: 'hidden',
       borderWidth: 4,
       borderColor: c.bg,
-    },
-    avatarWrapAdmin: {
-      borderWidth: 3,
-      borderColor: '#D4AF37',
-      shadowColor: '#D4AF37',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.6,
-      shadowRadius: 14,
-      elevation: 8,
     },
     avatarImage: { width: 96, height: 96, borderRadius: 48 },
     avatarInitial: { fontSize: 38, fontWeight: '800', color: c.primary },
@@ -252,6 +256,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const { width: windowWidth, isDesktop, isTablet } = useResponsive();
   const profileMaxWidth = maxWidthFor(windowWidth, 'profile');
   const isWideProfile = isDesktop || isTablet;
+  const { pushSecondary } = useContext(AppContext);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [postCount, setPostCount] = useState(0);
@@ -485,6 +490,11 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     navigation.navigate('PostDetail', { postId: post.id, origin: currentRouteName(navigation) });
   }
 
+  function openVillageFeed(v: Village) {
+    if (isDesktop) pushSecondary({ type: 'villageFeed', villageId: v.id });
+    else setFeedVillage(v);
+  }
+
   const commonIds = theirVillageIds.filter(id => myVillageIds.includes(id));
   const displayName = profile?.display_name || profile?.username || 'Parent';
   const initial = displayName.charAt(0).toUpperCase();
@@ -547,13 +557,20 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                 {profile.header_url ? (
                   <Image source={{ uri: profile.header_url }} style={[s.headerBannerImage, isWideProfile && s.headerBannerImageWide]} resizeMode="cover" />
                 ) : (
-                  <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide, isGoldTier && s.headerBannerPlaceholderAdmin]} />
+                  <View style={[s.headerBannerPlaceholder, isWideProfile && s.headerBannerImageWide]}>
+                    {isGoldTier && (
+                      <>
+                        <View style={s.bannerAccentCircleA} />
+                        <View style={s.bannerAccentCircleB} />
+                      </>
+                    )}
+                  </View>
                 )}
               </View>
 
               <View style={isWideProfile ? s.heroWideRow : undefined}>
               <View style={[s.avatarOverlapRow, isWideProfile && s.avatarOverlapRowWide]}>
-                <View style={[s.avatarWrap, isGoldTier && s.avatarWrapAdmin]}>
+                <View style={s.avatarWrap}>
                   {profile.avatar_url ? (
                     <Image source={{ uri: profile.avatar_url }} style={s.avatarImage} />
                   ) : (
@@ -749,7 +766,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               <PatchChipRow
                 title="Patches"
                 villages={showVillages ? theirVillages : []}
-                onPressVillage={(v) => setFeedVillage(v)}
+                onPressVillage={(v) => openVillageFeed(v)}
                 emptyTitle={showVillages ? 'No Patches yet' : "This user's patches are private."}
               />
             </View>
@@ -788,8 +805,9 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
                           key={post.id}
                           post={post}
                           pinned={profile.pinned_post_id === post.id}
+                          variant="profile"
                           onPress={() => openPost(post)}
-                          onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                          onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) openVillageFeed(v); }}
                         />
                       ))}
                     </View>
@@ -810,11 +828,11 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
       </SafeAreaView>
 
       {/* Report user modal */}
-      <Modal
+      <ConfinedOverlay
         visible={showReportUser}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        presentation={presentation}
         onRequestClose={() => setShowReportUser(false)}
+        maxWidth={480}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
           <View style={{
@@ -877,15 +895,17 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
             </ScrollView>
           )}
         </SafeAreaView>
-      </Modal>
+      </ConfinedOverlay>
 
-      <VillageFeedSheet
-        village={feedVillage}
-        visible={feedVillage !== null}
-        onClose={() => setFeedVillage(null)}
-        joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
-        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
-      />
+      {!isDesktop && (
+        <VillageFeedSheet
+          village={feedVillage}
+          visible={feedVillage !== null}
+          onClose={() => setFeedVillage(null)}
+          joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
+          onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+        />
+      )}
     </Wrapper>
   );
 }

@@ -342,9 +342,14 @@ export default function DiscoverTab({ route, navigation }: any) {
     navigation?.navigate?.('PostDetail', { postId: post.id, origin: 'Discover' });
   }
 
+  function openVillageFeed(v: Village) {
+    if (isDesktop) pushSecondary({ type: 'villageFeed', villageId: v.id });
+    else setFeedVillage(v);
+  }
+
   function openVillageById(villageId: string) {
     const [v] = villagesByIds([villageId]);
-    if (v) setFeedVillage(v);
+    if (v) openVillageFeed(v);
   }
 
   // Stage hub's "Explore more for this stage" — routes into the real
@@ -460,7 +465,7 @@ export default function DiscoverTab({ route, navigation }: any) {
             onToggleFollow={toggleFollow}
             onOpenPerson={openProfile}
             onOpenPost={openPost}
-            onOpenPatch={(v) => setFeedVillage(v)}
+            onOpenPatch={(v) => openVillageFeed(v)}
             onToggleJoinPatch={toggleJoinPatch}
             onOpenResource={(id) => setSelected(id as ResourceId)}
             onOpenQuestion={openQuestion}
@@ -473,13 +478,15 @@ export default function DiscoverTab({ route, navigation }: any) {
       </View>
 
         <PublicProfileSheet userId={profileUserId} visible={profileUserId !== null} onClose={() => setProfileUserId(null)} />
-        <VillageFeedSheet
-          village={feedVillage}
-          visible={feedVillage !== null}
-          onClose={() => setFeedVillage(null)}
-          joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
-          onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
-        />
+        {!isDesktop && (
+          <VillageFeedSheet
+            village={feedVillage}
+            visible={feedVillage !== null}
+            onClose={() => setFeedVillage(null)}
+            joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
+            onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
+          />
+        )}
       </SafeAreaView>
     );
   }
@@ -835,7 +842,7 @@ export default function DiscoverTab({ route, navigation }: any) {
                     joined
                     joining={joiningPatchId === v.id}
                     onJoin={() => toggleJoinPatch(v.id)}
-                    onOpen={() => setFeedVillage(v)}
+                    onOpen={() => openVillageFeed(v)}
                     width={yourPatchesFit.cardWidth}
                   />
                 ))}
@@ -849,7 +856,7 @@ export default function DiscoverTab({ route, navigation }: any) {
                     joined
                     joining={joiningPatchId === v.id}
                     onJoin={() => toggleJoinPatch(v.id)}
-                    onOpen={() => setFeedVillage(v)}
+                    onOpen={() => openVillageFeed(v)}
                   />
                 ))}
               </ScrollView>
@@ -865,7 +872,7 @@ export default function DiscoverTab({ route, navigation }: any) {
                     joined={false}
                     joining={joiningPatchId === v.id}
                     onJoin={() => toggleJoinPatch(v.id)}
-                    onOpen={() => setFeedVillage(v)}
+                    onOpen={() => openVillageFeed(v)}
                     width={discoverPatchesFit.cardWidth}
                   />
                 ))}
@@ -879,7 +886,7 @@ export default function DiscoverTab({ route, navigation }: any) {
                     joined={false}
                     joining={joiningPatchId === v.id}
                     onJoin={() => toggleJoinPatch(v.id)}
-                    onOpen={() => setFeedVillage(v)}
+                    onOpen={() => openVillageFeed(v)}
                   />
                 ))}
               </ScrollView>
@@ -1024,13 +1031,15 @@ export default function DiscoverTab({ route, navigation }: any) {
       </View>
 
       <PublicProfileSheet userId={profileUserId} visible={profileUserId !== null} onClose={() => setProfileUserId(null)} />
-      <VillageFeedSheet
-        village={feedVillage}
-        visible={feedVillage !== null}
-        onClose={() => setFeedVillage(null)}
-        joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
-        onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
-      />
+      {!isDesktop && (
+        <VillageFeedSheet
+          village={feedVillage}
+          visible={feedVillage !== null}
+          onClose={() => setFeedVillage(null)}
+          joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
+          onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
+        />
+      )}
     </SafeAreaView>
   );
 }

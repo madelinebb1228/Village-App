@@ -130,7 +130,7 @@ async function uploadAvatar(uri: string, userId: string): Promise<string | null>
 export default function Profile() {
   const c = useColors();
   const navigation = useNavigation<any>();
-  const { requestTour } = useContext(AppContext);
+  const { requestTour, pushSecondary } = useContext(AppContext);
   const { width: windowWidth, isDesktop, isTablet } = useResponsive();
   const profileMaxWidth = maxWidthFor(windowWidth, 'profile');
   const isWideProfile = isDesktop || isTablet;
@@ -475,6 +475,11 @@ export default function Profile() {
       setMyVillageIds(prev => [...prev, villageId]);
     }
     setJoiningVillageId(null);
+  }
+
+  function openVillageFeed(v: Village) {
+    if (isDesktop) pushSecondary({ type: 'villageFeed', villageId: v.id });
+    else setFeedVillage(v);
   }
 
   async function handleSignOut() {
@@ -941,7 +946,7 @@ export default function Profile() {
           <PatchChipRow
             title="Your Patches"
             villages={profile?.show_villages !== false ? myVillages : []}
-            onPressVillage={(v) => setFeedVillage(v)}
+            onPressVillage={(v) => openVillageFeed(v)}
             onSeeAll={() => navigation.navigate('Patch')}
             emptyTitle={profile?.show_villages === false ? 'Patches set to private' : "You haven't joined any Patches yet"}
             emptyMessage={profile?.show_villages === false ? undefined : 'Find communities that match your parenting stage or interests.'}
@@ -991,8 +996,9 @@ export default function Profile() {
                     key={post.id}
                     post={post}
                     pinned={isPinned}
+                    variant="profile"
                     onPress={() => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
-                    onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                    onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) openVillageFeed(v); }}
                     headerRight={
                       <PostOptionsButton
                         actions={[
@@ -1043,8 +1049,9 @@ export default function Profile() {
                 <PostPreviewCard
                   key={post.id}
                   post={post}
+                  variant="profile"
                   onPress={() => navigation.navigate('PostDetail', { postId: post.id, origin: 'Profile' })}
-                  onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) setFeedVillage(v); }}
+                  onPressVillage={(id) => { const [v] = villagesByIds([id]); if (v) openVillageFeed(v); }}
                 />
               ))}
             </View>
@@ -1089,13 +1096,15 @@ export default function Profile() {
         </SafeAreaView>
       </Modal>
 
-      <VillageFeedSheet
-        village={feedVillage}
-        visible={feedVillage !== null}
-        onClose={() => setFeedVillage(null)}
-        joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
-        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
-      />
+      {!isDesktop && (
+        <VillageFeedSheet
+          village={feedVillage}
+          visible={feedVillage !== null}
+          onClose={() => setFeedVillage(null)}
+          joined={feedVillage !== null && myVillageIds.includes(feedVillage.id)}
+          onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+        />
+      )}
 
       {blockedContent && currentUserId && (
         <ContentBlockedModal

@@ -8,6 +8,8 @@ import MessagesInbox from '../screens/MessagesInbox';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import PublicProfileSheet from '../screens/PublicProfileSheet';
 import PatchTasksSheet from '../screens/PatchTasksSheet';
+import VillageFeedSheet from '../screens/VillageFeedSheet';
+import { villagesByIds } from '../lib/villageData';
 
 // Renders the top of the desktop secondary-destination stack (see
 // lib/AppContext.ts) INSIDE the app shell — beside the persistent sidebar,
@@ -69,6 +71,9 @@ export default function DesktopSecondaryHost({ navigationRef }: { navigationRef:
       )}
       {top.type === 'patchRequests' && (
         <PatchTasksSheet presentation="inline" visible onClose={popSecondary} />
+      )}
+      {top.type === 'villageFeed' && (
+        <VillageFeedSheet presentation="inline" village={villagesByIds([top.villageId])[0] ?? null} visible onClose={popSecondary} />
       )}
     </View>
   );

@@ -21,7 +21,8 @@ export type SecondaryDestination =
   | { type: 'messages'; openWithUserId?: string | null }
   | { type: 'notifications' }
   | { type: 'profile'; userId: string; onMessage?: (userId: string) => void }
-  | { type: 'patchRequests' };
+  | { type: 'patchRequests' }
+  | { type: 'villageFeed'; villageId: string };
 
 export type AppContextType = {
   markOnboardingComplete: () => Promise<void>;

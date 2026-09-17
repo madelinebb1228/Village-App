@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   ActivityIndicator, Image,
@@ -21,6 +21,12 @@ interface NotifRow {
   handoff_note: string | null;
   read: boolean;
   created_at: string;
+}
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
 function timeAgo(iso: string) {
@@ -82,6 +88,68 @@ function notifText(n: NotifRow): { bold: string; rest: string; sub?: string } {
   return { bold: actor, rest: ' mentioned you', sub: n.comment_preview ?? undefined };
 }
 
+function NotifItem({ n, onPress, c }: { n: NotifRow; onPress: () => void; c: ReturnType<typeof useColors> }) {
+  const { bold, rest, sub } = notifText(n);
+  const actorName = n.actor?.display_name || n.actor?.username || 'Someone';
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        paddingHorizontal: 16, paddingVertical: 14,
+        borderBottomWidth: 1, borderBottomColor: c.separator,
+        backgroundColor: n.read ? 'transparent' : c.cardBlush,
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`${bold}${rest}${n.read ? '' : ', unread'}`}
+    >
+      <View style={{ position: 'relative' }}>
+        <Avatar name={actorName} url={n.actor?.avatar_url ?? null} />
+        <View style={{
+          position: 'absolute', bottom: -2, right: -2,
+          backgroundColor: c.bg, borderRadius: 10, padding: 3,
+          borderWidth: 1, borderColor: c.separator,
+        }}>
+          <NotifIcon type={n.type} c={c} />
+        </View>
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14, color: c.textPrimary, lineHeight: 20 }}>
+          <Text style={{ fontWeight: '800' }}>{bold}</Text>
+          <Text style={{ fontWeight: '400' }}>{rest}</Text>
+        </Text>
+        {sub && (
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}
+          >
+            {sub}
+          </Text>
+        )}
+        <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 3 }}>{timeAgo(n.created_at)}</Text>
+      </View>
+
+      {!n.read && (
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary }} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function NotifSectionHeader({ title, c }: { title: string; c: ReturnType<typeof useColors> }) {
+  return (
+    <Text style={{
+      fontSize: 12.5, fontWeight: '800', color: c.textMuted,
+      textTransform: 'uppercase', letterSpacing: 0.4,
+      paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8,
+    }}>
+      {title}
+    </Text>
+  );
+}
+
 export default function NotificationsScreen({
   onBack,
   onOpenPost,
@@ -131,6 +199,8 @@ export default function NotificationsScreen({
   }, [myId]);
 
   const unreadCount = notifs.filter(n => !n.read).length;
+  const todayNotifs = useMemo(() => notifs.filter(n => isToday(n.created_at)), [notifs]);
+  const earlierNotifs = useMemo(() => notifs.filter(n => !isToday(n.created_at)), [notifs]);
 
   function openNotif(n: NotifRow) {
     markRead(n.id);
@@ -187,56 +257,22 @@ export default function NotificationsScreen({
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
           <View style={[{ paddingTop: 8 }, columnStyle]}>
-            {notifs.map(n => {
-              const { bold, rest, sub } = notifText(n);
-              const actorName = n.actor?.display_name || n.actor?.username || 'Someone';
-              return (
-                <TouchableOpacity
-                  key={n.id}
-                  onPress={() => openNotif(n)}
-                  activeOpacity={0.75}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 14,
-                    paddingHorizontal: 16, paddingVertical: 14,
-                    borderBottomWidth: 1, borderBottomColor: c.separator,
-                    backgroundColor: n.read ? 'transparent' : c.cardBlush,
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${bold}${rest}${n.read ? '' : ', unread'}`}
-                >
-                  <View style={{ position: 'relative' }}>
-                    <Avatar name={actorName} url={n.actor?.avatar_url ?? null} />
-                    <View style={{
-                      position: 'absolute', bottom: -2, right: -2,
-                      backgroundColor: c.bg, borderRadius: 10, padding: 3,
-                      borderWidth: 1, borderColor: c.separator,
-                    }}>
-                      <NotifIcon type={n.type} c={c} />
-                    </View>
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, color: c.textPrimary, lineHeight: 20 }}>
-                      <Text style={{ fontWeight: '800' }}>{bold}</Text>
-                      <Text style={{ fontWeight: '400' }}>{rest}</Text>
-                    </Text>
-                    {sub && (
-                      <Text
-                        numberOfLines={1}
-                        style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}
-                      >
-                        {sub}
-                      </Text>
-                    )}
-                    <Text style={{ fontSize: 11, color: c.textMuted, marginTop: 3 }}>{timeAgo(n.created_at)}</Text>
-                  </View>
-
-                  {!n.read && (
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary }} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+            {todayNotifs.length > 0 && (
+              <>
+                <NotifSectionHeader title="Today" c={c} />
+                {todayNotifs.map(n => (
+                  <NotifItem key={n.id} n={n} onPress={() => openNotif(n)} c={c} />
+                ))}
+              </>
+            )}
+            {earlierNotifs.length > 0 && (
+              <>
+                <NotifSectionHeader title="Earlier" c={c} />
+                {earlierNotifs.map(n => (
+                  <NotifItem key={n.id} n={n} onPress={() => openNotif(n)} c={c} />
+                ))}
+              </>
+            )}
 
             {/* A short list still ends on an intentional note rather than
                 trailing into empty page. */}

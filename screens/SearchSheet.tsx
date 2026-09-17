@@ -23,7 +23,7 @@ import PublicProfileSheet from './PublicProfileSheet';
 import UserAvatar from '../components/UserAvatar';
 import { RESOURCES } from '../lib/resourcesData';
 import { Village } from '../lib/villageData';
-import { searchPatches, joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT } from '../lib/discoverData';
+import { searchPatches, joinPatch, leavePatch, fetchJoinedPatchIds, FREE_PATCH_LIMIT, fetchTrendingPosts, trendingTagsFromPosts, TrendingTag } from '../lib/discoverData';
 import { useSubscription } from '../lib/subscriptionContext';
 import { VillageCard } from '../components/village/VillageCard';
 import VillageFeedSheet from './VillageFeedSheet';
@@ -115,6 +115,12 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
   const [feedVillage, setFeedVillage] = useState<Village | null>(null);
   const { isSubscribed, openPaywall } = useSubscription();
 
+  // Pre-search content — only real data (see Discover's identical trending
+  // logic in lib/discoverData.ts). No recent-search history or "suggested
+  // people" here since nothing in the app actually tracks either yet.
+  const [trendingTags, setTrendingTags] = useState<TrendingTag[]>([]);
+  const PRESEARCH_RESOURCES = useMemo(() => RESOURCES.slice(0, 6), []);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -136,6 +142,7 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
       }
     });
     fetchJoinedPatchIds().then(setJoinedPatchIds);
+    fetchTrendingPosts(20).then(posts => setTrendingTags(trendingTagsFromPosts(posts, 6)));
   }, [visible]);
 
   async function loadFollowing(userId: string) {
@@ -234,6 +241,11 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
   function openProfile(userId: string) {
     if (isDesktop) pushSecondary({ type: 'profile', userId });
     else setProfileUserId(userId);
+  }
+
+  function openVillageFeed(v: Village) {
+    if (isDesktop) pushSecondary({ type: 'villageFeed', villageId: v.id });
+    else setFeedVillage(v);
   }
 
   async function toggleFollow(targetId: string) {
@@ -337,26 +349,65 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
               <ActivityIndicator color={c.primary} size="large" />
             </View>
           ) : trimmedQuery.length < 2 ? (
-            <View style={s.center}>
-              <Ionicons
-                name={tab === 'people' ? 'people-outline' : tab === 'posts' ? 'chatbubble-outline' : tab === 'patches' ? 'leaf-outline' : tab === 'groups' ? 'people-circle-outline' : 'book-outline'}
-                size={34}
-                color={c.textMuted}
-                style={s.hintIcon}
-              />
-              <Text style={s.hintTitle}>Search Parent Patch</Text>
-              <Text style={s.hintText}>
-                {tab === 'people'
-                  ? 'Search by username or name to find people in your community'
-                  : tab === 'posts'
-                  ? 'Search words or phrases to find posts'
-                  : tab === 'patches'
-                  ? 'Search by name or description to find Patches — the same communities you can join from Discover'
-                  : tab === 'groups'
-                  ? 'Search by name or description to find local Parent Groups and meetups'
-                  : 'Search topics like "choking" or "sleep" to find safety guides and resources'}
-              </Text>
-            </View>
+            <ScrollView contentContainerStyle={s.preSearchContent} showsVerticalScrollIndicator={false}>
+              <View style={s.preSearchHint}>
+                <Ionicons
+                  name={tab === 'people' ? 'people-outline' : tab === 'posts' ? 'chatbubble-outline' : tab === 'patches' ? 'leaf-outline' : tab === 'groups' ? 'people-circle-outline' : 'book-outline'}
+                  size={20}
+                  color={c.textMuted}
+                />
+                <Text style={s.hintText}>
+                  {tab === 'people'
+                    ? 'Search by username or name to find people in your community'
+                    : tab === 'posts'
+                    ? 'Search words or phrases to find posts'
+                    : tab === 'patches'
+                    ? 'Search by name or description to find Patches — the same communities you can join from Discover'
+                    : tab === 'groups'
+                    ? 'Search by name or description to find local Parent Groups and meetups'
+                    : 'Search topics like "choking" or "sleep" to find safety guides and resources'}
+                </Text>
+              </View>
+
+              {trendingTags.length > 0 && (
+                <View style={s.preSearchSection}>
+                  <Text style={s.preSearchSectionTitle}>Trending Topics</Text>
+                  <View style={s.trendingTagRow}>
+                    {trendingTags.map(t => (
+                      <TouchableOpacity
+                        key={t.tag}
+                        style={s.trendingTagChip}
+                        onPress={() => { setTab('posts'); setQuery(t.tag); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Search posts tagged ${t.tag}`}
+                      >
+                        <Text style={s.trendingTagText}>#{t.tag}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={s.preSearchSection}>
+                <Text style={s.preSearchSectionTitle}>Resources</Text>
+                {PRESEARCH_RESOURCES.map(resource => (
+                  <TouchableOpacity
+                    key={resource.id}
+                    style={s.preSearchResourceRow}
+                    onPress={() => { setTab('resources'); setQuery(resource.title); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${resource.title} in Resources`}
+                  >
+                    <Text style={s.postTypeBadge}>{resource.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.postAuthor}>{resource.title}</Text>
+                      <Text style={s.postTime} numberOfLines={1}>{resource.category}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
           ) : tab === 'people' ? (
             <ScrollView
               contentContainerStyle={s.listContent}
@@ -472,7 +523,7 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
                       joined={joinedPatchIds.has(village.id)}
                       joining={joiningPatchId === village.id}
                       onJoin={() => toggleJoinPatch(village.id)}
-                      onOpen={() => setFeedVillage(village)}
+                      onOpen={() => openVillageFeed(village)}
                       fullWidth
                     />
                   </View>
@@ -574,14 +625,17 @@ export default function SearchSheet({ visible, onClose, presentation = 'modal' }
         />
       )}
 
-      {/* Nested Patch feed viewer */}
-      <VillageFeedSheet
-        village={feedVillage}
-        visible={feedVillage !== null}
-        onClose={() => setFeedVillage(null)}
-        joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
-        onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
-      />
+      {/* Nested Patch feed viewer — mobile only; desktop opens via
+          pushSecondary({type:'villageFeed'}) into DesktopSecondaryHost. */}
+      {!isDesktop && (
+        <VillageFeedSheet
+          village={feedVillage}
+          visible={feedVillage !== null}
+          onClose={() => setFeedVillage(null)}
+          joined={feedVillage !== null && joinedPatchIds.has(feedVillage.id)}
+          onToggleJoin={() => feedVillage && toggleJoinPatch(feedVillage.id)}
+        />
+      )}
     </>
   );
 }
@@ -656,10 +710,26 @@ function makeStyles(c: Colors) {
     hintIcon: { marginBottom: 12 },
     hintTitle: { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
     hintText: {
-      fontSize: 14,
+      fontSize: 13.5,
       color: c.textMuted,
-      textAlign: 'center',
-      lineHeight: 21,
+      lineHeight: 19,
+      flex: 1,
+    },
+
+    // Pre-search state — top-anchored, real data only (see Search's fetch effect).
+    preSearchContent: { paddingTop: 20, paddingBottom: 40 },
+    preSearchHint: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 24 },
+    preSearchSection: { marginBottom: 24 },
+    preSearchSectionTitle: { fontSize: 13, fontWeight: '800', color: c.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 },
+    trendingTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    trendingTagChip: {
+      backgroundColor: c.cardLavender, borderRadius: 16,
+      paddingHorizontal: 12, paddingVertical: 7,
+    },
+    trendingTagText: { fontSize: 13, fontWeight: '700', color: c.primary },
+    preSearchResourceRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.separator,
     },
 
     listContent: { paddingVertical: 16, paddingBottom: 48 },

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors } from '../lib/theme';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
+import ConfinedOverlay from '../components/ConfinedOverlay';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -413,7 +414,11 @@ export default function MessagesInbox({
                   flexDirection: 'row', alignItems: 'center', gap: 14,
                   paddingHorizontal: 16, paddingVertical: 14,
                   borderBottomWidth: 1, borderBottomColor: c.separator,
-                  backgroundColor: conv.unread > 0 ? c.cardBlush : (openConv?.id === conv.id ? c.card : 'transparent'),
+                  borderLeftWidth: openConv?.id === conv.id ? 3 : 0,
+                  borderLeftColor: c.primary,
+                  backgroundColor: openConv?.id === conv.id
+                    ? c.card
+                    : conv.unread > 0 ? c.cardBlush : 'transparent',
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Conversation with ${conv.otherName}${conv.unread > 0 ? ', unread' : ''}`}
@@ -549,7 +554,7 @@ export default function MessagesInbox({
         </View>
 
         {/* Block menu */}
-        <Modal visible={showBlockMenu} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowBlockMenu(false)}>
+        <ConfinedOverlay visible={showBlockMenu} presentation={presentation} onRequestClose={() => setShowBlockMenu(false)} maxWidth={420}>
           <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>{conv.otherName}</Text>
@@ -580,10 +585,10 @@ export default function MessagesInbox({
               </TouchableOpacity>
             </View>
           </SafeAreaView>
-        </Modal>
+        </ConfinedOverlay>
 
         {/* Report user from DM modal */}
-        <Modal visible={showReportConv} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReportConv(false)}>
+        <ConfinedOverlay visible={showReportConv} presentation={presentation} onRequestClose={() => setShowReportConv(false)} maxWidth={420}>
           <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.separator }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: c.textPrimary }}>Report User</Text>
@@ -622,7 +627,7 @@ export default function MessagesInbox({
               </ScrollView>
             )}
           </SafeAreaView>
-        </Modal>
+        </ConfinedOverlay>
 
         {chatLoading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>

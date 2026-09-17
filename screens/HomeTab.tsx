@@ -196,6 +196,10 @@ export default function HomeTab() {
     if (isDesktop) pushSecondary({ type: 'notifications' });
     else setShowNotifications(true);
   }
+  function openVillageFeed(v: Village) {
+    if (isDesktop) pushSecondary({ type: 'villageFeed', villageId: v.id });
+    else setFeedVillage(v);
+  }
   const [suppliesSnap, setSuppliesSnap] = useState<{
     formula: number | null; formulaLow: boolean;
     diapers: number | null; diapersLow: boolean;
@@ -1751,7 +1755,7 @@ export default function HomeTab() {
             name={VILLAGE_MAP[post.village_id].name}
             onPress={() => {
               const [v] = villagesByIds([post.village_id!]);
-              if (v) setFeedVillage(v);
+              if (v) openVillageFeed(v);
             }}
           />
         )}
@@ -2199,7 +2203,7 @@ export default function HomeTab() {
           upcomingEvents={upcomingEvents}
           activeTag={activeTag}
           onSelectTag={(tag) => setActiveTag(prev => (prev === tag ? null : tag))}
-          onOpenPatch={(v) => setFeedVillage(v)}
+          onOpenPatch={(v) => openVillageFeed(v)}
           onDiscoverPatches={() => navigation.navigate('Discover')}
           onOpenCalendar={() => navigation.navigate('Calendar')}
         />
@@ -2231,14 +2235,17 @@ export default function HomeTab() {
         onMessage={(uid) => { setPublicProfileUserId(null); openMessages(uid); }}
       />
 
-      {/* Patch feed sheet — opened by tapping a post's Patch tag */}
-      <VillageFeedSheet
-        village={feedVillage}
-        visible={feedVillage !== null}
-        onClose={() => setFeedVillage(null)}
-        joined={feedVillage !== null && myVillageIdsSet.has(feedVillage.id)}
-        onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
-      />
+      {/* Patch feed sheet — opened by tapping a post's Patch tag. Desktop
+          opens via pushSecondary({type:'villageFeed'}) into DesktopSecondaryHost. */}
+      {!isDesktop && (
+        <VillageFeedSheet
+          village={feedVillage}
+          visible={feedVillage !== null}
+          onClose={() => setFeedVillage(null)}
+          joined={feedVillage !== null && myVillageIdsSet.has(feedVillage.id)}
+          onToggleJoin={() => feedVillage && toggleVillageMembership(feedVillage.id)}
+        />
+      )}
 
       {/* Messages — mobile only; desktop opens via pushSecondary({type:'messages'}) into DesktopSecondaryHost */}
       <Modal visible={showMessages} animationType="slide" presentationStyle="fullScreen">

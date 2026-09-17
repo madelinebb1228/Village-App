@@ -22,6 +22,11 @@ interface Props {
   headerRight?: React.ReactNode;
   /** Opens the Patch this post belongs to — omit to hide the tag entirely. */
   onPressVillage?: (villageId: string) => void;
+  /** 'default' (unchanged): rounded card with a type-colored left rail, as
+   * used by Discover. 'profile': flat list-row chrome matching Home's own
+   * post card (no rounding/rail) so Profile's posts read as the same social
+   * network as Home — the post-type indicator still shows via PostTypeBadge. */
+  variant?: 'default' | 'profile';
 }
 
 // A read-only, lightweight rendering of the same "social post" visual
@@ -29,7 +34,7 @@ interface Props {
 // — intentionally not the fully-interactive HomeTab post card (like/comment
 // state lives there), since this only needs to preview and route to PostDetail.
 // Reused by Discover's search/landing results and by Profile's Posts/Saved tabs.
-export default function PostPreviewCard({ post, onPress, width, pinned, headerRight, onPressVillage }: Props) {
+export default function PostPreviewCard({ post, onPress, width, pinned, headerRight, onPressVillage, variant = 'default' }: Props) {
   const c = useColors();
   const s = makeStyles(c);
   const [revealed, setRevealed] = useState(false);
@@ -39,10 +44,15 @@ export default function PostPreviewCard({ post, onPress, width, pinned, headerRi
     : post.post_type === 'question' ? c.postQuestion
     : c.postText;
   const isSensitiveHidden = !!post.is_sensitive && !revealed;
+  const isProfile = variant === 'profile';
 
   return (
     <TouchableOpacity
-      style={[s.card, { borderLeftColor: borderColor }, width ? { width } : null]}
+      style={[
+        s.card,
+        isProfile ? s.cardProfile : { borderLeftColor: borderColor },
+        width ? { width } : null,
+      ]}
       onPress={onPress}
       activeOpacity={0.8}
       // 'link' (not 'button') — this card opens the post, and can contain
@@ -130,6 +140,15 @@ function makeStyles(c: Colors) {
       borderWidth: 1,
       borderColor: c.separator,
       gap: 8,
+    },
+    // Flat list-row chrome matching Home's own post card — see `variant` prop.
+    cardProfile: {
+      backgroundColor: c.bg,
+      borderRadius: 0,
+      borderWidth: 0,
+      borderLeftWidth: 0,
+      borderBottomWidth: 1,
+      borderBottomColor: c.separator,
     },
     pinnedRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     pinnedText: { fontSize: 11.5, fontWeight: '700', color: c.textMuted },

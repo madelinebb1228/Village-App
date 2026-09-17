@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput, Modal,
   ActivityIndicator, StyleSheet, Alert, KeyboardAvoidingView, Platform,
@@ -11,6 +11,12 @@ import { hitSlopFor } from '../lib/accessibility';
 import { useResponsive, maxWidthFor } from '../lib/responsive';
 import { Village, VILLAGES } from '../lib/villageData';
 import { fetchJoinedPatchIds } from '../lib/discoverData';
+import { AppContext } from '../lib/AppContext';
+import PatchRequestSafetyNotice from '../components/PatchRequestSafetyNotice';
+import { mentionsChildcare } from '../lib/childcareKeywords';
+import UserAvatar from '../components/UserAvatar';
+import PublicProfileSheet from './PublicProfileSheet';
+import MessagesInbox from './MessagesInbox';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -88,7 +94,7 @@ interface PatchTask {
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, myId, volunteered, volunteerCount, onVolunteer, onWithdraw, onComplete, s, c,
+  task, myId, volunteered, volunteerCount, onVolunteer, onWithdraw, onComplete, onOpenProfile, onMessage, s, c,
 }: {
   task: PatchTask
   myId: string
@@ -97,6 +103,8 @@ function TaskCard({
   onVolunteer: (id: string) => void
   onWithdraw:  (id: string) => void
   onComplete:  (id: string) => void
+  onOpenProfile: (userId: string) => void
+  onMessage:  (userId: string) => void
   s: ReturnType<typeof makeStyles>
   c: Colors
 }) {
@@ -131,42 +139,64 @@ function TaskCard({
         <Text style={s.taskDesc} numberOfLines={3}>{task.description}</Text>
       ) : null}
 
-      {/* Footer */}
-      <View style={s.taskFooter}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.taskAuthor}>
-            from {name}{patchInfo ? ` · ${patchInfo.emoji} ${patchInfo.name}` : ''}
-          </Text>
-          {volunteerCount > 0 && (
-            <View style={s.volunteerCountRow}>
-              <Ionicons name="people-outline" size={12} color={c.textMuted} />
-              <Text style={s.volunteerCount}>{volunteerCount} {volunteerCount === 1 ? 'parent' : 'parents'} helping</Text>
-            </View>
-          )}
+      {/* Author — tappable, opens their profile like a real social post */}
+      <TouchableOpacity
+        style={s.authorRow}
+        onPress={() => onOpenProfile(task.creator_id)}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${name}'s profile`}
+        disabled={isOwn}
+      >
+        <UserAvatar userId={task.creator_id} name={name} size={28} />
+        <Text style={s.taskAuthor}>
+          {name}{patchInfo ? ` · ${patchInfo.emoji} ${patchInfo.name}` : ''}
+        </Text>
+      </TouchableOpacity>
+      {volunteerCount > 0 && (
+        <View style={s.volunteerCountRow}>
+          <Ionicons name="people-outline" size={12} color={c.textMuted} />
+          <Text style={s.volunteerCount}>{volunteerCount} {volunteerCount === 1 ? 'parent' : 'parents'} helping</Text>
         </View>
+      )}
 
+      {/* Footer actions */}
+      <View style={s.taskFooter}>
         {task.status === 'completed' ? (
           <View style={s.completedBadge}>
             <Ionicons name="checkmark" size={13} color={c.sage} />
             <Text style={s.completedBadgeText}>Done</Text>
           </View>
         ) : isOwn ? (
-          <TouchableOpacity style={[s.markDoneBtn, { borderColor: colors.border }]} onPress={() => onComplete(task.id)}>
-            <Text style={[s.markDoneBtnText, { color: colors.border }]}>Mark Done</Text>
-          </TouchableOpacity>
-        ) : volunteered ? (
-          <TouchableOpacity style={s.helpingBtn} onPress={() => onWithdraw(task.id)}>
-            <Ionicons name="checkmark-circle" size={14} color={c.honey} />
-            <Text style={s.helpingBtnText}>Helping</Text>
+          // Owner management — visually secondary to the community actions below,
+          // never a colored pill, so it doesn't compete with "I Can Help!"/"Message".
+          <TouchableOpacity onPress={() => onComplete(task.id)} hitSlop={hitSlopFor(8)}>
+            <Text style={s.markDoneLink}>Mark Done</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity
-            style={[s.helpBtn, { backgroundColor: colors.border }]}
-            onPress={() => onVolunteer(task.id)}
-          >
-            <Ionicons name="hand-left-outline" size={14} color="#fff" />
-            <Text style={s.helpBtnText}>I Can Help!</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <TouchableOpacity
+              style={s.messageBtn}
+              onPress={() => onMessage(task.creator_id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Message ${name}`}
+            >
+              <Ionicons name="chatbubble-outline" size={14} color={c.textSecondary} />
+            </TouchableOpacity>
+            {volunteered ? (
+              <TouchableOpacity style={s.helpingBtn} onPress={() => onWithdraw(task.id)}>
+                <Ionicons name="checkmark-circle" size={14} color={c.honey} />
+                <Text style={s.helpingBtnText}>Helping</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[s.helpBtn, { backgroundColor: colors.border }]}
+                onPress={() => onVolunteer(task.id)}
+              >
+                <Ionicons name="hand-left-outline" size={14} color="#fff" />
+                <Text style={s.helpBtnText}>I Can Help!</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
       </View>
     </View>
@@ -186,9 +216,24 @@ interface Props {
 export default function PatchTasksSheet({ visible, onClose, presentation = 'modal' }: Props) {
   const c = useColors()
   const s = useMemo(() => makeStyles(c), [c])
-  const { width: windowWidth } = useResponsive()
+  const { width: windowWidth, isDesktop } = useResponsive()
+  const { pushSecondary } = useContext(AppContext)
   const feedColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'inbox'), alignSelf: 'center' as const }
   const formColumnStyle = { width: '100%' as const, maxWidth: maxWidthFor(windowWidth, 'form'), alignSelf: 'center' as const }
+
+  // Mobile-only fallback targets for the dual-branch openProfile/openMessage
+  // below — desktop pushes onto the shared secondary stack instead (see
+  // DesktopSecondaryHost).
+  const [profileUserId, setProfileUserId] = useState<string | null>(null)
+  const [messageUserId, setMessageUserId] = useState<string | null>(null)
+  function openProfile(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'profile', userId })
+    else setProfileUserId(userId)
+  }
+  function openMessage(userId: string) {
+    if (isDesktop) pushSecondary({ type: 'messages', openWithUserId: userId })
+    else setMessageUserId(userId)
+  }
 
   // Canonical Patch-membership source (same fetchJoinedPatchIds() +
   // VILLAGES-catalog filter VillageTab.tsx uses) — fetched here directly so
@@ -225,6 +270,10 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
   const [formDescription, setFormDescription] = useState('')
   const [formUrgency,     setFormUrgency]     = useState('normal')
   const [formVillageId,   setFormVillageId]   = useState<Destination>(myVillages.length === 1 ? myVillages[0].id : null)
+  const showChildcareNudge = useMemo(
+    () => mentionsChildcare(`${formTitle} ${formDescription}`),
+    [formTitle, formDescription]
+  )
 
   // Feed filter
   const [filterVillageId, setFilterVillageId] = useState<string | null>(null)
@@ -359,6 +408,7 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
     : {}
 
   return (
+    <>
     <Wrapper {...wrapperProps}>
       <SafeAreaView style={s.safe}>
         {/* ── Header ── */}
@@ -398,6 +448,10 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                   </View>
                 )}
               </View>
+            </View>
+
+            <View style={feedColumnStyle}>
+              <PatchRequestSafetyNotice />
             </View>
 
             {/* Patch filter pills */}
@@ -457,6 +511,8 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                     onVolunteer={handleVolunteer}
                     onWithdraw={handleWithdraw}
                     onComplete={handleComplete}
+                    onOpenProfile={openProfile}
+                    onMessage={openMessage}
                     s={s}
                     c={c}
                   />
@@ -489,6 +545,8 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <ScrollView contentContainerStyle={[s.createContent, formColumnStyle]} showsVerticalScrollIndicator={false}>
+
+              <PatchRequestSafetyNotice style={{ marginHorizontal: 0, marginBottom: 20 }} />
 
               {/* Post to (patch selector) — required */}
               <Text style={s.formLabel}>What Patch should see this?</Text>
@@ -587,6 +645,17 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
                 maxLength={500}
               />
 
+              {showChildcareNudge && (
+                <View style={s.childcareNudge}>
+                  <Ionicons name="people-outline" size={16} color={c.blue} style={{ marginTop: 1 }} />
+                  <Text style={s.childcareNudgeText}>
+                    Planning to have someone watch your child? Choose someone you personally know
+                    and trust, or a screened professional — not someone you've only connected with
+                    through the app.
+                  </Text>
+                </View>
+              )}
+
               {/* Urgency */}
               <Text style={s.formLabel}>How urgent?</Text>
               <View style={s.urgencyRow}>
@@ -638,6 +707,23 @@ export default function PatchTasksSheet({ visible, onClose, presentation = 'moda
         )}
       </SafeAreaView>
     </Wrapper>
+
+    {/* Mobile-only fallbacks — desktop opens both via pushSecondary into
+        DesktopSecondaryHost instead (see openProfile/openMessage above). */}
+    <PublicProfileSheet
+      userId={profileUserId}
+      visible={profileUserId !== null}
+      onClose={() => setProfileUserId(null)}
+    />
+    <Modal
+      visible={messageUserId !== null}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={() => setMessageUserId(null)}
+    >
+      <MessagesInbox onBack={() => setMessageUserId(null)} openWithUserId={messageUserId} />
+    </Modal>
+    </>
   )
 }
 
@@ -696,9 +782,10 @@ function makeStyles(c: Colors) {
     timeAgo:           { fontSize: 11, color: c.textMuted, marginLeft: 'auto' },
     taskTitle:         { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 5, lineHeight: 21 },
     taskDesc:          { fontSize: 13, color: c.textSecondary, lineHeight: 19, marginBottom: 10 },
-    taskFooter:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-    taskAuthor:        { fontSize: 12, color: c.textMuted },
-    volunteerCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    authorRow:         { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
+    taskAuthor:        { fontSize: 12.5, fontWeight: '600', color: c.textSecondary },
+    taskFooter:        { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+    volunteerCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
     volunteerCount:    { fontSize: 12, color: c.textMuted },
 
     // Action buttons
@@ -713,11 +800,12 @@ function makeStyles(c: Colors) {
       backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey,
     },
     helpingBtnText: { fontSize: 13, fontWeight: '700', color: c.honey },
-    markDoneBtn: {
-      borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
-      borderWidth: 1.5,
+    messageBtn: {
+      width: 32, height: 32, borderRadius: 16,
+      justifyContent: 'center', alignItems: 'center',
+      backgroundColor: c.card, borderWidth: 1, borderColor: c.separator,
     },
-    markDoneBtnText: { fontSize: 12, fontWeight: '700' },
+    markDoneLink: { fontSize: 12.5, fontWeight: '700', color: c.textMuted },
     completedBadge: {
       flexDirection: 'row', alignItems: 'center', gap: 4,
       backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5,
@@ -761,6 +849,12 @@ function makeStyles(c: Colors) {
       padding: 14, fontSize: 14, color: c.textPrimary,
       minHeight: 100,
     },
+    childcareNudge: {
+      flexDirection: 'row', gap: 8,
+      backgroundColor: c.cardBlue, borderWidth: 1, borderColor: c.blue,
+      borderRadius: 12, padding: 12, marginTop: 10,
+    },
+    childcareNudgeText: { flex: 1, fontSize: 12.5, lineHeight: 17, color: c.textSecondary },
 
     urgencyRow: { flexDirection: 'row', gap: 8 },
     urgencyBtn: {
