@@ -1907,7 +1907,7 @@ export default function Track({ route, navigation }: any) {
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${entry.label}`}
               >
-                <Text style={styles.trackerGridEmoji}>{entry.emoji}</Text>
+                <Ionicons name={entry.icon} size={24} color={c.primary} />
                 <Text style={styles.trackerGridLabel} numberOfLines={2}>{entry.label}</Text>
               </TouchableOpacity>
             ))}
@@ -1922,7 +1922,7 @@ export default function Track({ route, navigation }: any) {
           accessibilityRole="button"
           accessibilityLabel="Browse more trackers"
         >
-          <Text style={styles.moreTrackersEmoji}>➕</Text>
+          <Ionicons name="add-circle-outline" size={24} color={c.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.moreTrackersTitle}>More Trackers</Text>
             <Text style={styles.moreTrackersBody}>
@@ -2769,7 +2769,6 @@ function makeStyles(c: Colors) {
       alignItems: 'center',
       gap: 6,
     },
-    trackerGridEmoji: { fontSize: 24 },
     trackerGridLabel: { fontSize: 12, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
     moreTrackersCard: {
       flexDirection: 'row',
@@ -2784,7 +2783,6 @@ function makeStyles(c: Colors) {
       borderRadius: 16,
       padding: 16,
     },
-    moreTrackersEmoji: { fontSize: 24 },
     moreTrackersTitle: { fontSize: 16, fontWeight: '800', color: c.textPrimary },
     moreTrackersBody: { fontSize: 13, color: c.textSecondary, fontWeight: '500', marginTop: 2 },
     moreTrackersChevron: { fontSize: 24, color: c.textMuted, fontWeight: '300' },

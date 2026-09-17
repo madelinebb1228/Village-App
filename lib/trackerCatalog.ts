@@ -9,32 +9,57 @@
 // useSubscription().freeTrackerPicks). Free entries get a stable id of their
 // own since they were never gated and never had one.
 
+import { Ionicons } from '@expo/vector-icons';
 import { PREMIUM_TRACKERS } from './premiumTrackers';
 
 export type TrackerSection = 'Baby' | 'You';
+export type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export interface TrackerCatalogEntry {
   id: string;
   label: string;
   description: string;
+  /** @deprecated UI chrome now renders `icon` (an Ionicon) instead — kept only for any remaining non-UI/data uses. */
   emoji: string;
+  icon: IoniconName;
   access: 'free' | 'premium';
   section: TrackerSection;
   category: string;
 }
 
 const ALWAYS_FREE_TRACKERS: TrackerCatalogEntry[] = [
-  { id: 'baby_food_tracker', label: 'Baby Food Tracker', description: 'Log foods tried and how your baby reacted to each one.', emoji: '🥣', access: 'free', section: 'Baby', category: 'Feeding' },
-  { id: 'baby_food_chart', label: "What Can My Baby Eat?", description: 'Age-by-age reference guide for introducing new foods safely.', emoji: '📖', access: 'free', section: 'Baby', category: 'Feeding' },
-  { id: 'milestone_tracker', label: 'Development Tracker', description: 'Track motor, language, and social milestones by age.', emoji: '🌱', access: 'free', section: 'Baby', category: 'Sleep & Development' },
-  { id: 'activity_tracker', label: 'Activities & Play', description: 'Age-appropriate activity ideas and a log of what you tried.', emoji: '🧩', access: 'free', section: 'Baby', category: 'Sleep & Development' },
-  { id: 'baby_med_tracker', label: 'Baby Medications', description: "Log your baby's medications and dosages.", emoji: '💊', access: 'free', section: 'Baby', category: 'Health' },
-  { id: 'allergen_tracker', label: 'Allergen Tracker', description: 'Track common allergens tried and any reactions.', emoji: '🥜', access: 'free', section: 'Baby', category: 'Health' },
-  { id: 'kick_counter', label: 'Kick Counter', description: "Time your baby's movements during pregnancy.", emoji: '👣', access: 'free', section: 'You', category: 'Pregnancy' },
-  { id: 'contraction_timer', label: 'Contraction Timer', description: 'Time contractions and their frequency.', emoji: '⏱️', access: 'free', section: 'You', category: 'Pregnancy' },
-  { id: 'postpartum_mental_health', label: 'Mental Health Check-in', description: 'A quick, private postpartum mood check-in.', emoji: '💭', access: 'free', section: 'You', category: 'Wellness Check-ins' },
-  { id: 'postpartum_recovery', label: 'Postpartum Recovery', description: 'Track physical recovery milestones after birth.', emoji: '🌸', access: 'free', section: 'You', category: 'Body & Recovery' },
+  { id: 'baby_food_tracker', label: 'Baby Food Tracker', description: 'Log foods tried and how your baby reacted to each one.', emoji: '🥣', icon: 'restaurant-outline', access: 'free', section: 'Baby', category: 'Feeding' },
+  { id: 'baby_food_chart', label: "What Can My Baby Eat?", description: 'Age-by-age reference guide for introducing new foods safely.', emoji: '📖', icon: 'book-outline', access: 'free', section: 'Baby', category: 'Feeding' },
+  { id: 'milestone_tracker', label: 'Development Tracker', description: 'Track motor, language, and social milestones by age.', emoji: '🌱', icon: 'trending-up-outline', access: 'free', section: 'Baby', category: 'Sleep & Development' },
+  { id: 'activity_tracker', label: 'Activities & Play', description: 'Age-appropriate activity ideas and a log of what you tried.', emoji: '🧩', icon: 'game-controller-outline', access: 'free', section: 'Baby', category: 'Sleep & Development' },
+  { id: 'baby_med_tracker', label: 'Baby Medications', description: "Log your baby's medications and dosages.", emoji: '💊', icon: 'medical-outline', access: 'free', section: 'Baby', category: 'Health' },
+  { id: 'allergen_tracker', label: 'Allergen Tracker', description: 'Track common allergens tried and any reactions.', emoji: '🥜', icon: 'warning-outline', access: 'free', section: 'Baby', category: 'Health' },
+  { id: 'kick_counter', label: 'Kick Counter', description: "Time your baby's movements during pregnancy.", emoji: '👣', icon: 'footsteps-outline', access: 'free', section: 'You', category: 'Pregnancy' },
+  { id: 'contraction_timer', label: 'Contraction Timer', description: 'Time contractions and their frequency.', emoji: '⏱️', icon: 'timer-outline', access: 'free', section: 'You', category: 'Pregnancy' },
+  { id: 'postpartum_mental_health', label: 'Mental Health Check-in', description: 'A quick, private postpartum mood check-in.', emoji: '💭', icon: 'happy-outline', access: 'free', section: 'You', category: 'Wellness Check-ins' },
+  { id: 'postpartum_recovery', label: 'Postpartum Recovery', description: 'Track physical recovery milestones after birth.', emoji: '🌸', icon: 'bandage-outline', access: 'free', section: 'You', category: 'Body & Recovery' },
 ];
+
+// Icon for each PREMIUM_TRACKERS entry — kept alongside (not inside)
+// premiumTrackers.ts so that file's `emoji` field can stay as-is for any
+// other consumers while all UI chrome here reads from this map.
+const PREMIUM_ICON: Record<string, IoniconName> = {
+  sleep_tracker:        'moon-outline',
+  growth_tracker:        'stats-chart-outline',
+  health_tracker:        'pulse-outline',
+  vaccines:              'shield-checkmark-outline',
+  baby_journal:          'journal-outline',
+  nutrition_tracker:     'water-outline',
+  meds_tracker:          'medical-outline',
+  mood_energy_tracker:   'flash-outline',
+  mom_sleep_tracker:     'bed-outline',
+  period_tracker:        'calendar-outline',
+  movement_tracker:      'walk-outline',
+  pregnancy_log:         'body-outline',
+  expense_tracker:       'wallet-outline',
+  kudos_tracker:         'heart-outline',
+  us_time_tracker:       'people-outline',
+};
 
 // Maps each PREMIUM_TRACKERS key to where it lives in Track.tsx's existing
 // category structure — same groups, not new ones.
@@ -61,6 +86,7 @@ const PREMIUM_ENTRIES: TrackerCatalogEntry[] = PREMIUM_TRACKERS.map(t => ({
   label: t.label,
   description: t.description,
   emoji: t.emoji,
+  icon: PREMIUM_ICON[t.key] ?? 'sparkles-outline',
   access: 'premium' as const,
   section: PREMIUM_CATEGORY[t.key]?.section ?? 'Baby',
   category: PREMIUM_CATEGORY[t.key]?.category ?? 'Health',
@@ -77,16 +103,16 @@ export function trackerById(id: string): TrackerCatalogEntry | undefined {
 export const BABY_CATEGORY_ORDER = ['Feeding', 'Sleep & Development', 'Health', 'Expenses'];
 export const YOU_CATEGORY_ORDER = ['Pregnancy', 'Daily Care', 'Wellness Check-ins', 'Body & Recovery', 'Relationship'];
 
-export const CATEGORY_EMOJI: Record<string, string> = {
-  'Feeding': '🍽️',
-  'Sleep & Development': '🌙',
-  'Health': '🏥',
-  'Expenses': '💰',
-  'Pregnancy': '🤰',
-  'Daily Care': '💧',
-  'Wellness Check-ins': '🌈',
-  'Body & Recovery': '🌸',
-  'Relationship': '💞',
+export const CATEGORY_ICON: Record<string, IoniconName> = {
+  'Feeding': 'restaurant-outline',
+  'Sleep & Development': 'moon-outline',
+  'Health': 'medical-outline',
+  'Expenses': 'wallet-outline',
+  'Pregnancy': 'body-outline',
+  'Daily Care': 'water-outline',
+  'Wellness Check-ins': 'happy-outline',
+  'Body & Recovery': 'bandage-outline',
+  'Relationship': 'heart-outline',
 };
 
 // A sensible, fixed "most useful first" default order for the compact "Your

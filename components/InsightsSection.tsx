@@ -10,6 +10,43 @@ type Period = 14 | 30
 const DISMISS_KEY  = '@insights_dismissed_v1'
 const DISMISS_TTL  = 48 * 60 * 60 * 1000  // 48 hours
 
+// insightsEngine.ts picks a decorative emoji per insight (data-driven choice
+// of *which* icon, not user content) — this maps each one to the Ionicon
+// vocabulary used everywhere else in the app, without touching the engine.
+const INSIGHT_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  '💤': 'moon-outline',
+  '🌙': 'moon-outline',
+  '⏰': 'alarm-outline',
+  '🍼': 'restaurant-outline',
+  '📊': 'bar-chart-outline',
+  '⏱️': 'timer-outline',
+  '😣': 'sad-outline',
+  '🩲': 'body-outline',
+  '💧': 'water-outline',
+  '🌱': 'leaf-outline',
+  '🌀': 'sync-outline',
+  '🎉': 'trophy-outline',
+  '🚨': 'alert-circle-outline',
+  '🌈': 'happy-outline',
+  '⚠️': 'warning-outline',
+  '🔄': 'repeat-outline',
+  '😴': 'moon-outline',
+  '💊': 'medical-outline',
+  '🩸': 'water-outline',
+  '💭': 'chatbubble-ellipses-outline',
+  '💚': 'heart-outline',
+  '📈': 'trending-up-outline',
+  '📉': 'trending-down-outline',
+  '😊': 'happy-outline',
+  '😐': 'remove-circle-outline',
+  '🍽️': 'restaurant-outline',
+  '🔗': 'link-outline',
+}
+
+function iconForInsight(emoji: string): keyof typeof Ionicons.glyphMap {
+  return INSIGHT_ICON[emoji] ?? 'sparkles-outline'
+}
+
 const TYPE_META: Record<InsightType, { label: string; getColors: (c: Colors) => { bg: string; border: string; text: string } }> = {
   positive: { label: 'Great',    getColors: c => ({ bg: c.cardSage,     border: c.sage,     text: c.sage     }) },
   info:     { label: 'Info',     getColors: c => ({ bg: c.cardLavender, border: c.lavender, text: c.lavender }) },
@@ -158,7 +195,7 @@ export default function InsightsSection({
             ]}
           >
             <View style={[s.iconBox, { backgroundColor: col.bg }]}>
-              <Text style={s.iconText}>{insight.icon}</Text>
+              <Ionicons name={iconForInsight(insight.icon)} size={17} color={col.text} />
             </View>
             <View style={s.insightBody}>
               <View style={s.titleRow}>
@@ -296,9 +333,6 @@ function makeStyles(c: Colors) {
       justifyContent: 'center',
       alignItems: 'center',
       flexShrink: 0,
-    },
-    iconText: {
-      fontSize: 16,
     },
     insightBody: {
       flex: 1,

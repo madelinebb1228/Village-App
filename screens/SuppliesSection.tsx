@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Modal,
   TextInput, Alert, Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { safeInsert, safeUpdate, safeDelete, safeUpsert } from '../lib/syncService';
 import SupplyInsights from './SupplyInsights';
@@ -419,10 +420,12 @@ export default function SuppliesSection({
   function daysLeftChip(days: number | null, isDue: boolean) {
     if (days === null) return null;
     const color = isDue || days <= 3 ? c.supplyLowText : days <= 7 ? '#CA8A04' : c.textMuted;
+    const outSoon = days <= 0;
     return (
-      <Text style={[s.daysChip, { color }]}>
-        {days <= 0 ? '⚠️ Out soon' : `~${days}d left`}
-      </Text>
+      <View style={s.daysChipRow}>
+        {outSoon && <Ionicons name="warning-outline" size={11} color={color} />}
+        <Text style={[s.daysChip, { color }]}>{outSoon ? 'Out soon' : `~${days}d left`}</Text>
+      </View>
     );
   }
 
@@ -431,91 +434,106 @@ export default function SuppliesSection({
       <Text style={s.heading}>Smart Supplies</Text>
 
       {/* Formula */}
-      <View style={[s.supplyRow, { backgroundColor: c.cardHoney, borderColor: c.honey }, formula.low && s.rowLow]}>
-        <Text style={s.emoji}>🍼</Text>
+      <View style={[s.supplyRow, formula.low && s.rowLow]}>
+        <View style={[s.iconBadge, { backgroundColor: c.cardHoney }]}>
+          <Ionicons name="water-outline" size={18} color={c.honey} />
+        </View>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Formula</Text>
           <Text style={[s.supplyQty, formula.low && s.qtyLow]}>
             {formula.display === '–' ? 'Not tracked' : formula.display}
           </Text>
           {formula.display !== '–' && daysLeftChip(formulaDaysLeft, formula.low)}
-          {formula.low && <Text style={s.lowAlert}>⚠️ Running low — time to restock!</Text>}
+          {formula.low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to restock!</Text></View>}
         </View>
         <TouchableOpacity
           style={s.actionBtn}
           onPress={() => { setPurchaseModal({ type: 'formula', unit: 'oz' }); setPurchaseAlert(String(formula.item?.low_threshold || '')); }}>
-          <Text style={s.actionBtnText}>+ Restock</Text>
+          <Ionicons name="add" size={13} color={c.lavender} />
+          <Text style={s.actionBtnText}>Restock</Text>
         </TouchableOpacity>
       </View>
 
       {/* Diapers */}
-      <View style={[s.supplyRow, { backgroundColor: c.cardSage, borderColor: c.sage }, diapers.low && s.rowLow]}>
-        <Text style={s.emoji}>👶</Text>
+      <View style={[s.supplyRow, diapers.low && s.rowLow]}>
+        <View style={[s.iconBadge, { backgroundColor: c.cardSage }]}>
+          <Ionicons name="shirt-outline" size={18} color={c.sage} />
+        </View>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Diapers</Text>
           <Text style={[s.supplyQty, diapers.low && s.qtyLow]}>
             {diapers.display === '–' ? 'Not tracked' : `${diapers.display} left`}
           </Text>
           {diapers.display !== '–' && daysLeftChip(diaperDaysLeft, diapers.low)}
-          {diapers.low && <Text style={s.lowAlert}>⚠️ Running low — time to restock!</Text>}
+          {diapers.low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to restock!</Text></View>}
         </View>
         <TouchableOpacity
           style={s.actionBtn}
           onPress={() => { setPurchaseModal({ type: 'diapers', unit: 'count' }); setPurchaseAlert(String(diapers.item?.low_threshold || '')); }}>
-          <Text style={s.actionBtnText}>+ Restock</Text>
+          <Ionicons name="add" size={13} color={c.lavender} />
+          <Text style={s.actionBtnText}>Restock</Text>
         </TouchableOpacity>
       </View>
 
       {/* Wipes */}
-      <View style={[s.supplyRow, { backgroundColor: c.cardBlue, borderColor: c.blue }, wipes.low && s.rowLow]}>
-        <Text style={s.emoji}>🌿</Text>
+      <View style={[s.supplyRow, wipes.low && s.rowLow]}>
+        <View style={[s.iconBadge, { backgroundColor: c.cardBlue }]}>
+          <Ionicons name="sparkles-outline" size={18} color={c.blue} />
+        </View>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Wipes</Text>
           <Text style={[s.supplyQty, wipes.low && s.qtyLow]}>
             {wipes.display === '–' ? 'Not tracked' : `${wipes.display} left`}
           </Text>
-          {wipes.low && <Text style={s.lowAlert}>⚠️ Running low — time to restock!</Text>}
+          {wipes.low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to restock!</Text></View>}
         </View>
         <TouchableOpacity
           style={s.actionBtn}
           onPress={() => { setPurchaseModal({ type: 'wipes', unit: 'count' }); setPurchaseAlert(String(wipes.item?.low_threshold || '')); }}>
-          <Text style={s.actionBtnText}>+ Restock</Text>
+          <Ionicons name="add" size={13} color={c.lavender} />
+          <Text style={s.actionBtnText}>Restock</Text>
         </TouchableOpacity>
       </View>
 
       {/* Baby Food */}
       <Text style={s.subHeading}>Baby Food & Snacks</Text>
 
-      <View style={[s.supplyRow, { backgroundColor: c.cardHoney, borderColor: c.honey }, foodPouches.low && s.rowLow]}>
-        <Text style={s.emoji}>🥣</Text>
+      <View style={[s.supplyRow, foodPouches.low && s.rowLow]}>
+        <View style={[s.iconBadge, { backgroundColor: c.cardHoney }]}>
+          <Ionicons name="restaurant-outline" size={18} color={c.honey} />
+        </View>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Pouches & Jars</Text>
           <Text style={[s.supplyQty, foodPouches.low && s.qtyLow]}>
             {foodPouches.display === '–' ? 'Not tracked' : `${foodPouches.display} left`}
           </Text>
           {foodPouches.display !== '–' && daysLeftChip(pouchesDaysLeft, foodPouches.low)}
-          {foodPouches.low && <Text style={s.lowAlert}>⚠️ Running low — time to restock!</Text>}
+          {foodPouches.low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to restock!</Text></View>}
         </View>
         <TouchableOpacity
           style={s.actionBtn}
           onPress={() => { setPurchaseModal({ type: 'food_pouches', unit: 'count' }); setPurchaseAlert(String(foodPouches.item?.low_threshold || '')); }}>
-          <Text style={s.actionBtnText}>+ Restock</Text>
+          <Ionicons name="add" size={13} color={c.lavender} />
+          <Text style={s.actionBtnText}>Restock</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={[s.supplyRow, { backgroundColor: c.cardSage, borderColor: c.sage }, babySnacks.low && s.rowLow]}>
-        <Text style={s.emoji}>🫐</Text>
+      <View style={[s.supplyRow, babySnacks.low && s.rowLow]}>
+        <View style={[s.iconBadge, { backgroundColor: c.cardSage }]}>
+          <Ionicons name="fast-food-outline" size={18} color={c.sage} />
+        </View>
         <View style={s.supplyInfo}>
           <Text style={s.supplyLabel}>Snacks</Text>
           <Text style={[s.supplyQty, babySnacks.low && s.qtyLow]}>
             {babySnacks.display === '–' ? 'Not tracked' : `${babySnacks.display} left`}
           </Text>
-          {babySnacks.low && <Text style={s.lowAlert}>⚠️ Running low — time to restock!</Text>}
+          {babySnacks.low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to restock!</Text></View>}
         </View>
         <TouchableOpacity
           style={s.actionBtn}
           onPress={() => { setPurchaseModal({ type: 'baby_snacks', unit: 'count' }); setPurchaseAlert(String(babySnacks.item?.low_threshold || '')); }}>
-          <Text style={s.actionBtnText}>+ Restock</Text>
+          <Ionicons name="add" size={13} color={c.lavender} />
+          <Text style={s.actionBtnText}>Restock</Text>
         </TouchableOpacity>
       </View>
 
@@ -523,16 +541,24 @@ export default function SuppliesSection({
       <View style={[s.milkSection, hasUrgentMilk && s.milkSectionUrgent]}>
         <View style={s.milkHeader}>
           <View style={s.milkHeaderLeft}>
-            <Text style={s.emoji}>🤱</Text>
+            <View style={[s.iconBadge, { backgroundColor: c.cardLavender }]}>
+              <Ionicons name="flask-outline" size={18} color={c.lavender} />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={s.supplyLabel}>Milk Stash</Text>
               {milkBatches.length > 0 ? (
                 <View style={s.milkTotals}>
                   {fridgeBatches.length > 0 && (
-                    <Text style={s.milkTotalChip}>🧊 {fridgeOz.toFixed(1)} oz fridge</Text>
+                    <View style={s.milkTotalChipRow}>
+                      <Ionicons name="water-outline" size={12} color={c.textSecondary} />
+                      <Text style={s.milkTotalChip}>{fridgeOz.toFixed(1)} oz fridge</Text>
+                    </View>
                   )}
                   {freezerBatches.length > 0 && (
-                    <Text style={s.milkTotalChip}>❄️ {freezerOz.toFixed(1)} oz freezer</Text>
+                    <View style={s.milkTotalChipRow}>
+                      <Ionicons name="snow-outline" size={12} color={c.textSecondary} />
+                      <Text style={s.milkTotalChip}>{freezerOz.toFixed(1)} oz freezer</Text>
+                    </View>
                   )}
                 </View>
               ) : (
@@ -541,12 +567,16 @@ export default function SuppliesSection({
             </View>
           </View>
           <TouchableOpacity style={s.actionBtn} onPress={() => setMilkModal(true)}>
-            <Text style={s.actionBtnText}>+ Add</Text>
+            <Ionicons name="add" size={13} color={c.lavender} />
+            <Text style={s.actionBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
 
         {sortedBatches.length > 1 && (
-          <Text style={s.fifoHint}>Use oldest batches first ↑</Text>
+          <View style={s.fifoHintRow}>
+            <Ionicons name="arrow-up-outline" size={11} color={c.textMuted} />
+            <Text style={s.fifoHint}>Use oldest batches first</Text>
+          </View>
         )}
 
         {sortedBatches.map(batch => {
@@ -563,29 +593,27 @@ export default function SuppliesSection({
               ]}
             >
               <View style={s.batchInfo}>
-                <Text style={s.batchLocation}>
-                  {batch.location === 'fridge' ? '🧊' : '❄️'}
-                </Text>
+                <Ionicons name={batch.location === 'fridge' ? 'water-outline' : 'snow-outline'} size={16} color={c.textSecondary} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.batchAmount}>{mlToOz(batch.amount_ml)} oz</Text>
                   <Text style={s.batchDate}>Stored {formatStoredDate(batch.stored_date)}</Text>
                 </View>
-                <Text style={[
-                  s.batchDaysLeft,
-                  urgency === 'alert'   && s.batchDaysAlert,
-                  urgency === 'warning' && s.batchDaysWarning,
-                ]}>
-                  {daysLeft <= 0
-                    ? '⚠️ Expired'
-                    : daysLeft === 1
-                    ? '⚠️ Use today!'
-                    : `${daysLeft}d left`}
-                </Text>
+                <View style={s.batchDaysLeftRow}>
+                  {daysLeft <= 1 && <Ionicons name="warning-outline" size={11} color={urgency === 'alert' ? '#DC2626' : c.supplyLowText} />}
+                  <Text style={[
+                    s.batchDaysLeft,
+                    urgency === 'alert'   && s.batchDaysAlert,
+                    urgency === 'warning' && s.batchDaysWarning,
+                  ]}>
+                    {daysLeft <= 0 ? 'Expired' : daysLeft === 1 ? 'Use today!' : `${daysLeft}d left`}
+                  </Text>
+                </View>
               </View>
               <View style={s.batchActions}>
                 {batch.location === 'fridge' && (
                   <TouchableOpacity style={s.freezeBtn} onPress={() => confirmMoveToFreezer(batch)}>
-                    <Text style={s.freezeBtnText}>→ Freeze</Text>
+                    <Ionicons name="snow-outline" size={12} color={c.lavender} />
+                    <Text style={s.freezeBtnText}>Freeze</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={s.useBtn} onPress={() => confirmUseBatch(batch)}>
@@ -627,11 +655,18 @@ export default function SuppliesSection({
                       ]}
                     />
                   </View>
-                  <Text style={[s.partStatus, due && s.partStatusDue]}>
-                    {due
-                      ? `⚠️ Replace soon — ${progress.sessions}/${progress.maxSessions} sessions, ${progress.days}d`
-                      : `${progress.sessions}/${progress.maxSessions} sessions · ${progress.days}/${progress.maxDays}d`}
-                  </Text>
+                  {due ? (
+                    <View style={s.partStatusDueRow}>
+                      <Ionicons name="warning-outline" size={11} color="#DC2626" />
+                      <Text style={[s.partStatus, s.partStatusDue]}>
+                        Replace soon — {progress.sessions}/{progress.maxSessions} sessions, {progress.days}d
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={s.partStatus}>
+                      {progress.sessions}/{progress.maxSessions} sessions · {progress.days}/{progress.maxDays}d
+                    </Text>
+                  )}
                 </View>
               ) : (
                 <Text style={s.partStatus}>{statusLabel}</Text>
@@ -640,7 +675,8 @@ export default function SuppliesSection({
             <TouchableOpacity
               style={[s.replaceBtn, due && s.replaceBtnDue]}
               onPress={() => confirmMarkReplaced(partName)}>
-              <Text style={s.replaceBtnText}>✓ Replaced</Text>
+              <Ionicons name="checkmark" size={13} color={due ? '#DC2626' : c.lavender} />
+              <Text style={[s.replaceBtnText, due && { color: '#DC2626' }]}>Replaced</Text>
             </TouchableOpacity>
           </View>
         );
@@ -667,7 +703,7 @@ export default function SuppliesSection({
                         {Math.round(dosesLeft!)} doses left
                       </Text>
                       {daysLeft !== null && daysLeftChip(daysLeft, low)}
-                      {low && <Text style={s.lowAlert}>⚠️ Running low — time to refill!</Text>}
+                      {low && <View style={s.lowAlertRow}><Ionicons name="warning-outline" size={12} color={c.supplyLowText} /><Text style={s.lowAlert}>Running low — time to refill!</Text></View>}
                     </>
                   ) : (
                     <Text style={s.hint}>Tap + Set qty to track supply</Text>
@@ -678,7 +714,8 @@ export default function SuppliesSection({
                     <TouchableOpacity
                       style={s.medUsedBtn}
                       onPress={() => logMedDose(med)}>
-                      <Text style={s.medUsedBtnText}>− Dose</Text>
+                      <Ionicons name="remove" size={13} color={c.textSecondary} />
+                      <Text style={s.medUsedBtnText}>Dose</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
@@ -687,7 +724,8 @@ export default function SuppliesSection({
                       setMedRestockModal(med);
                       setMedRestockAlert(String(supply?.low_threshold || ''));
                     }}>
-                    <Text style={s.actionBtnText}>{supply ? '+ Restock' : '+ Set qty'}</Text>
+                    <Ionicons name="add" size={13} color={c.lavender} />
+                    <Text style={s.actionBtnText}>{supply ? 'Restock' : 'Set qty'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -792,7 +830,7 @@ export default function SuppliesSection({
                 style={[s.locationOption, milkLocation === 'fridge' && s.locationOptionActive]}
                 onPress={() => setMilkLocation('fridge')}
               >
-                <Text style={s.locationEmoji}>🧊</Text>
+                <Ionicons name="water-outline" size={22} color={milkLocation === 'fridge' ? c.blue : c.textMuted} style={s.locationIcon} />
                 <Text style={[s.locationOptionText, milkLocation === 'fridge' && s.locationOptionTextActive]}>Fridge</Text>
                 <Text style={s.locationSub}>Up to 4 days</Text>
               </TouchableOpacity>
@@ -800,7 +838,7 @@ export default function SuppliesSection({
                 style={[s.locationOption, milkLocation === 'freezer' && s.locationOptionActive]}
                 onPress={() => setMilkLocation('freezer')}
               >
-                <Text style={s.locationEmoji}>❄️</Text>
+                <Ionicons name="snow-outline" size={22} color={milkLocation === 'freezer' ? c.blue : c.textMuted} style={s.locationIcon} />
                 <Text style={[s.locationOptionText, milkLocation === 'freezer' && s.locationOptionTextActive]}>Freezer</Text>
                 <Text style={s.locationSub}>Up to 1 year</Text>
               </TouchableOpacity>
@@ -953,18 +991,21 @@ function makeStyles(c: Colors) {
                       letterSpacing: 0.6, marginTop: 18, marginBottom: 10 },
 
     supplyRow:      { flexDirection: 'row', alignItems: 'center', borderRadius: 14,
-                      padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: c.cardBorder },
+                      padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: c.cardBorder,
+                      backgroundColor: c.card },
     rowLow:         { borderColor: c.supplyLowBorder, backgroundColor: c.supplyLowBg },
-    emoji:          { fontSize: 26, marginRight: 12 },
+    iconBadge:      { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
     supplyInfo:     { flex: 1 },
     supplyLabel:    { fontSize: 11, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase',
                       letterSpacing: 0.5, marginBottom: 2 },
     supplyQty:      { fontSize: 22, fontWeight: '800', color: c.textPrimary },
     qtyLow:         { color: c.supplyLowText },
-    lowAlert:       { fontSize: 11, color: c.supplyLowText, fontWeight: '700', marginTop: 3 },
-    daysChip:       { fontSize: 11, fontWeight: '600', marginTop: 2 },
+    lowAlertRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+    lowAlert:       { fontSize: 11, color: c.supplyLowText, fontWeight: '700' },
+    daysChipRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    daysChip:       { fontSize: 11, fontWeight: '600' },
     hint:           { fontSize: 11, color: c.textMuted, marginTop: 2 },
-    actionBtn:      { backgroundColor: c.cardLavender, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1.5, borderColor: c.lavender },
+    actionBtn:      { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: c.cardLavender, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1.5, borderColor: c.lavender },
     actionBtnText:  { color: c.lavender, fontWeight: '700', fontSize: 12 },
 
     // Milk stash section
@@ -973,33 +1014,39 @@ function makeStyles(c: Colors) {
     milkSectionUrgent:   { borderColor: c.blush, borderWidth: 2 },
     milkHeader:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
     milkHeaderLeft:      { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
-    milkTotals:          { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 3 },
+    milkTotals:          { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 3 },
+    milkTotalChipRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
     milkTotalChip:       { fontSize: 12, fontWeight: '700', color: c.textSecondary },
     milkEmpty:           { fontSize: 12, color: c.textMuted, textAlign: 'center', paddingVertical: 6 },
-    fifoHint:            { fontSize: 11, color: c.textMuted, fontStyle: 'italic', marginBottom: 6, marginLeft: 2 },
+    fifoHintRow:         { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6, marginLeft: 2 },
+    fifoHint:            { fontSize: 11, color: c.textMuted, fontStyle: 'italic' },
 
+    // Default batch state is a neutral row — only genuinely expiring batches
+    // (alert/warning) escalate to a colored surface, per the "don't make
+    // every row a colored card" design direction.
     batchRow:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                           borderRadius: 10, padding: 10, marginBottom: 6 },
-    batchFridge:         { backgroundColor: c.cardSage },
-    batchFreezer:        { backgroundColor: c.cardBlue },
-    batchAlert:          { backgroundColor: c.cardBlush },
-    batchWarning:        { backgroundColor: c.cardHoney },
+                           borderRadius: 10, padding: 10, marginBottom: 6,
+                           backgroundColor: c.bg, borderWidth: 1, borderColor: c.cardBorder },
+    batchFridge:         {},
+    batchFreezer:        {},
+    batchAlert:          { backgroundColor: c.cardBlush, borderColor: c.blush },
+    batchWarning:        { backgroundColor: c.cardHoney, borderColor: c.honey },
     batchInfo:           { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, marginRight: 8 },
-    batchLocation:       { fontSize: 18 },
     batchAmount:         { fontSize: 15, fontWeight: '800', color: c.textPrimary },
     batchDate:           { fontSize: 11, color: c.textMuted, marginTop: 1 },
-    batchDaysLeft:       { fontSize: 12, fontWeight: '700', color: c.textMuted, marginLeft: 'auto' },
+    batchDaysLeftRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
+    batchDaysLeft:       { fontSize: 12, fontWeight: '700', color: c.textMuted },
     batchDaysAlert:      { color: '#DC2626' },
     batchDaysWarning:    { color: c.supplyLowText },
     batchActions:        { flexDirection: 'row', gap: 6, flexShrink: 0 },
-    freezeBtn:           { backgroundColor: c.cardLavender, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
+    freezeBtn:           { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: c.cardLavender, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
     freezeBtnText:       { fontSize: 11, fontWeight: '700', color: c.lavender },
     useBtn:              { backgroundColor: c.cardSage, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
     useBtnText:          { fontSize: 11, fontWeight: '700', color: c.sage },
 
     // Pump parts
-    partRow:             { flexDirection: 'row', alignItems: 'center', backgroundColor: c.cardBlush, borderRadius: 12,
-                           padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: c.blush },
+    partRow:             { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 12,
+                           padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: c.cardBorder },
     partRowDue:          { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
     partInfo:            { flex: 1, marginRight: 8 },
     partLabel:           { fontSize: 13, fontWeight: '700', color: c.textPrimary, marginBottom: 4 },
@@ -1010,9 +1057,10 @@ function makeStyles(c: Colors) {
     progressFillWarn:    { backgroundColor: '#EAB308' },
     progressFillDue:     { backgroundColor: '#EF4444' },
     partStatus:          { fontSize: 11, color: c.textMuted, marginTop: 2 },
-    partStatusDue:       { color: '#DC2626', fontWeight: '600' },
-    replaceBtn:          { backgroundColor: c.cardLavender, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-    replaceBtnDue:       { borderColor: '#EF4444', borderWidth: 1.5 },
+    partStatusDueRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    partStatusDue:       { color: '#DC2626', fontWeight: '600', marginTop: 0 },
+    replaceBtn:          { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: c.cardLavender, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
+    replaceBtnDue:       { borderColor: '#EF4444', borderWidth: 1.5, backgroundColor: '#FEE2E2' },
     replaceBtnText:      { color: c.lavender, fontWeight: '700', fontSize: 11 },
 
     // Medication rows
@@ -1026,7 +1074,7 @@ function makeStyles(c: Colors) {
     medQty:              { fontSize: 18, fontWeight: '800', color: c.textPrimary },
     medQtyLow:           { color: c.supplyLowText },
     medActions:          { flexDirection: 'row', gap: 6, flexShrink: 0 },
-    medUsedBtn:          { backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7,
+    medUsedBtn:          { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7,
                            borderWidth: 1.5, borderColor: c.inputBorder },
     medUsedBtnText:      { color: c.textSecondary, fontWeight: '700', fontSize: 11 },
 
@@ -1049,7 +1097,7 @@ function makeStyles(c: Colors) {
     locationOption:           { flex: 1, borderWidth: 2, borderColor: c.inputBorder, borderRadius: 12,
                                 padding: 14, alignItems: 'center' },
     locationOptionActive:     { borderColor: c.primary, backgroundColor: c.cardBlue },
-    locationEmoji:            { fontSize: 24, marginBottom: 4 },
+    locationIcon:             { marginBottom: 4 },
     locationOptionText:       { fontSize: 14, fontWeight: '700', color: c.textMuted },
     locationOptionTextActive: { color: c.blue },
     locationSub:              { fontSize: 10, color: c.textMuted, marginTop: 3 },

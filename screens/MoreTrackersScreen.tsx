@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 import { useBaby } from '../lib/babyContext';
 import { useSubscription, MAX_FREE_TRACKER_PICKS } from '../lib/subscriptionContext';
 import {
-  TRACKER_CATALOG, TrackerCatalogEntry, BABY_CATEGORY_ORDER, YOU_CATEGORY_ORDER, CATEGORY_EMOJI,
+  TRACKER_CATALOG, TrackerCatalogEntry, BABY_CATEGORY_ORDER, YOU_CATEGORY_ORDER, CATEGORY_ICON,
 } from '../lib/trackerCatalog';
 
 import MilestoneTracker from './MilestoneTracker';
@@ -274,7 +274,10 @@ function CategoryGroup({
   if (entries.length === 0) return null;
   return (
     <View style={{ marginBottom: 18 }}>
-      <Text style={s.categoryHeading}>{CATEGORY_EMOJI[category] ?? '📋'} {category}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <Ionicons name={CATEGORY_ICON[category] ?? 'list-outline'} size={15} color={c.textSecondary} />
+        <Text style={[s.categoryHeading, { marginBottom: 0 }]}>{category}</Text>
+      </View>
       <View style={{ gap: 10 }}>
         {entries.map(entry => (
           <TrackerRow key={entry.id} entry={entry} accessible={isAccessible(entry)} isSubscribed={isSubscribed}
@@ -317,7 +320,9 @@ function TrackerRow({
       accessibilityRole="button"
       accessibilityLabel={`${entry.label}${accessible ? '' : ', Premium'}. ${entry.description}`}
     >
-      <Text style={s.trackerEmoji}>{entry.emoji}</Text>
+      <View style={s.trackerIconWrap}>
+        <Ionicons name={entry.icon} size={22} color={c.primary} />
+      </View>
       <View style={{ flex: 1 }}>
         <Text style={s.trackerLabel}>{entry.label}</Text>
         <Text style={s.trackerDesc} numberOfLines={2}>{entry.description}</Text>
@@ -414,7 +419,7 @@ const makeStyles = (c: Colors) =>
       backgroundColor: c.card, borderRadius: 14, borderWidth: 1, borderColor: c.separator, padding: 14,
     },
     trackerRowLocked: { opacity: 0.85 },
-    trackerEmoji: { fontSize: 26 },
+    trackerIconWrap: { width: 30, alignItems: 'center' },
     trackerLabel: { fontSize: 14.5, fontWeight: '700', color: c.textPrimary },
     trackerDesc: { fontSize: 12.5, color: c.textMuted, marginTop: 2, lineHeight: 17 },
 

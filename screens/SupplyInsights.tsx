@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useColors, Colors } from '../lib/theme';
 
@@ -26,6 +27,21 @@ interface Suggestion {
   title: string;
   body:  string;
 }
+
+// Decorative icon per suggestion — chosen by the app, not the user, so it
+// maps to the Ionicon vocabulary rather than staying an emoji.
+const SUGGESTION_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  '🧘': 'body-outline',
+  '💧': 'water-outline',
+  '⏰': 'alarm-outline',
+  '💼': 'briefcase-outline',
+  '🌙': 'moon-outline',
+  '🍼': 'water-outline',
+  '📅': 'calendar-outline',
+  '🤒': 'thermometer-outline',
+  '🔧': 'build-outline',
+  '💪': 'fitness-outline',
+};
 
 // ─── Suggestion engine ────────────────────────────────────────────────────────
 
@@ -261,22 +277,23 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
       {trend && !dismissed && (
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Text style={s.cardIcon}>📉</Text>
+            <Ionicons name="trending-down-outline" size={20} color={c.honey} />
             <View style={{ flex: 1 }}>
               <Text style={s.cardTitle}>Supply may be decreasing</Text>
               <Text style={s.cardSub}>
                 ~{Math.round(trend.declinePct)}% lower this week vs last week
               </Text>
             </View>
-            <TouchableOpacity onPress={() => setDismissed(true)} style={s.dismissBtn}>
-              <Text style={s.dismissText}>✕</Text>
+            <TouchableOpacity onPress={() => setDismissed(true)} style={s.dismissBtn} accessibilityRole="button" accessibilityLabel="Dismiss">
+              <Ionicons name="close" size={16} color={c.honey} />
             </TouchableOpacity>
           </View>
           <Text style={s.cardBody}>
             Recent sessions averaged {trend.recentAvg.toFixed(0)} ml, down from {trend.prevAvg.toFixed(0)} ml the week before.
           </Text>
           <TouchableOpacity style={s.insightBtn} onPress={() => setShowModal(true)}>
-            <Text style={s.insightBtnText}>Understand why →</Text>
+            <Text style={s.insightBtnText}>Understand why</Text>
+            <Ionicons name="chevron-forward" size={14} color={c.textPrimary} />
           </TouchableOpacity>
         </View>
       )}
@@ -284,7 +301,9 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
       {/* ── Always-visible tips entry point ───────────────────────────────── */}
       {!(trend && !dismissed) && (
         <TouchableOpacity style={s.tipsBtn} onPress={() => setShowModal(true)}>
-          <Text style={s.tipsBtnText}>✨ Get personalized supply tips →</Text>
+          <Ionicons name="sparkles-outline" size={15} color={c.textSecondary} />
+          <Text style={s.tipsBtnText}>Get personalized supply tips</Text>
+          <Ionicons name="chevron-forward" size={14} color={c.textSecondary} />
         </TouchableOpacity>
       )}
 
@@ -299,8 +318,8 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.resultsContent}>
                 <View style={s.resultsHeader}>
                   <Text style={s.resultsTitle}>Your insights</Text>
-                  <TouchableOpacity onPress={reset}>
-                    <Text style={s.closeBtn}>✕</Text>
+                  <TouchableOpacity onPress={reset} accessibilityRole="button" accessibilityLabel="Close">
+                    <Ionicons name="close" size={18} color={c.textMuted} />
                   </TouchableOpacity>
                 </View>
                 <Text style={s.resultsIntro}>
@@ -308,7 +327,9 @@ export default function SupplyInsights({ userId }: { userId: string | null }) {
                 </Text>
                 {suggestions.map((sug, i) => (
                   <View key={i} style={s.suggCard}>
-                    <Text style={s.suggEmoji}>{sug.emoji}</Text>
+                    <View style={s.suggIconWrap}>
+                      <Ionicons name={SUGGESTION_ICON[sug.emoji] ?? 'bulb-outline'} size={18} color={c.blush} />
+                    </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.suggTitle}>{sug.title}</Text>
                       <Text style={s.suggBody}>{sug.body}</Text>
@@ -394,18 +415,16 @@ function makeStyles(c: Colors) {
     // Detection card
     card:         { backgroundColor: c.cardHoney, borderWidth: 1.5, borderColor: c.honey,
                     borderRadius: 14, padding: 14, marginBottom: 14 },
-    cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10 },
-    cardIcon:     { fontSize: 22 },
+    cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10, paddingTop: 2 },
     cardTitle:    { fontSize: 14, fontWeight: '800', color: c.textPrimary },
     cardSub:      { fontSize: 12, color: c.textPrimary, marginTop: 2, fontWeight: '600' },
     cardBody:     { fontSize: 13, color: c.textPrimary, lineHeight: 19, marginBottom: 12 },
     dismissBtn:   { padding: 4 },
-    dismissText:  { fontSize: 15, color: c.honey },
-    insightBtn:   { backgroundColor: c.honey, borderRadius: 20, paddingVertical: 10,
+    insightBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.honey, borderRadius: 20, paddingVertical: 10,
                     paddingHorizontal: 18, alignSelf: 'flex-start' },
     insightBtnText:{ fontSize: 13, fontWeight: '700', color: c.textPrimary },
 
-    tipsBtn:        { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
+    tipsBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
                       backgroundColor: c.card, borderWidth: 1.5, borderColor: c.inputBorder,
                       alignSelf: 'stretch', marginBottom: 14 },
     tipsBtnText:    { fontSize: 13, fontWeight: '700', color: c.textSecondary },
@@ -448,14 +467,13 @@ function makeStyles(c: Colors) {
     resultsContent:{ paddingHorizontal: 24, paddingBottom: 44 },
     resultsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
     resultsTitle:  { fontSize: 22, fontWeight: '800', color: c.textPrimary },
-    closeBtn:      { fontSize: 18, color: c.textMuted, padding: 4 },
     resultsIntro:  { fontSize: 14, color: c.textMuted, marginBottom: 18, lineHeight: 20 },
 
     suggCard:     { flexDirection: 'row', gap: 14, backgroundColor: c.card, borderRadius: 14,
                     padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: c.inputBorder,
                     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
                     shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
-    suggEmoji:    { fontSize: 28 },
+    suggIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: c.cardBlush, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
     suggTitle:    { fontSize: 15, fontWeight: '800', color: c.textPrimary, marginBottom: 6 },
     suggBody:     { fontSize: 13, color: c.textSecondary, lineHeight: 19 },
 
