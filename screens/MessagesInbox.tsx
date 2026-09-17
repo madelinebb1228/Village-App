@@ -116,6 +116,7 @@ export default function MessagesInbox({
   const [reportConvSubmitting, setReportConvSubmitting] = useState(false);
   const [reportConvDone, setReportConvDone] = useState(false);
   const [showReportConv, setShowReportConv] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   // ── Load current user + inbox ──────────────────────────────────────────────
 
@@ -325,26 +326,32 @@ export default function MessagesInbox({
     setSending(false);
   };
 
-  async function blockConvUser() {
+  async function doBlockConvUser() {
     if (!myId || !openConv) return;
     const otherId = openConv.otherUserId;
-    const name = openConv.otherName;
-    const doBlock = async () => {
-      await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: otherId });
-      setBlockedUserIds(prev => new Set([...prev, otherId]));
-      setShowBlockMenu(false);
-      setOpenConv(null);
-      loadInbox(myId);
-    };
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Block ${name}? They won't be able to message you.`)) doBlock();
-    } else {
-      Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to send you messages.`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Block', style: 'destructive', onPress: doBlock },
-      ]);
-    }
+    await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: otherId });
+    setBlockedUserIds(prev => new Set([...prev, otherId]));
+    setShowBlockConfirm(false);
+    setOpenConv(null);
+    loadInbox(myId);
+  }
+
+  // On web this opens a ConfinedOverlay confirm (see `showBlockConfirm`
+  // below) instead of window.confirm — see the matching note in
+  // PublicProfileSheet.tsx's handleBlock for why a native confirm() isn't
+  // used here.
+  function blockConvUser() {
+    if (!myId || !openConv) return;
     setShowBlockMenu(false);
+    if (Platform.OS === 'web') {
+      setShowBlockConfirm(true);
+      return;
+    }
+    const name = openConv.otherName;
+    Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to send you messages.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Block', style: 'destructive', onPress: doBlockConvUser },
+    ]);
   }
 
   async function submitConvReport() {
@@ -626,6 +633,34 @@ export default function MessagesInbox({
                 </TouchableOpacity>
               </ScrollView>
             )}
+          </SafeAreaView>
+        </ConfinedOverlay>
+
+        {/* Block confirm — web only (native uses Alert.alert in blockConvUser) */}
+        <ConfinedOverlay visible={showBlockConfirm} presentation={presentation} onRequestClose={() => setShowBlockConfirm(false)} maxWidth={380}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+            <View style={{ padding: 22, gap: 6 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: c.textPrimary, textAlign: 'center' }}>Block User</Text>
+              <Text style={{ fontSize: 14, color: c.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 12 }}>
+                Block {conv.otherName}? They won't be able to message you.
+              </Text>
+              <View style={{ gap: 8 }}>
+                <TouchableOpacity
+                  onPress={doBlockConvUser}
+                  style={{ paddingVertical: 13, borderRadius: 14, alignItems: 'center', backgroundColor: c.signOut }}
+                  accessibilityRole="button" accessibilityLabel="Confirm block"
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Block</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowBlockConfirm(false)}
+                  style={{ paddingVertical: 13, borderRadius: 14, alignItems: 'center', backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator }}
+                  accessibilityRole="button" accessibilityLabel="Cancel"
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </SafeAreaView>
         </ConfinedOverlay>
 

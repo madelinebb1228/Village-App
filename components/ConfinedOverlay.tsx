@@ -1,5 +1,8 @@
-import React from 'react';
-import { Modal, View, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Modal, View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // A secondary-action dialog (Report/Block/etc.) that renders as a real
 // full-screen RN Modal on mobile, but as an overlay CONFINED to its nearest
@@ -19,6 +22,49 @@ interface Props {
 }
 
 export default function ConfinedOverlay({ visible, onRequestClose, presentation, maxWidth = 640, children }: Props) {
+  const panelRef = useRef<View>(null);
+
+  // Web only: a plain absolutely-positioned View (the inline branch below)
+  // isn't a native <dialog>, so the browser never traps Tab focus inside it
+  // the way it would a real Modal — without this, Tab walks straight out
+  // into the dimmed, still-in-DOM background screen. Move focus in on open,
+  // and wrap Tab/Shift+Tab at the panel's edges so it can't escape.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || presentation !== 'inline' || !visible) return;
+    const panel = (panelRef.current as unknown as HTMLElement | null);
+    if (!panel) return;
+    const focusables = () => Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    const toFocus = focusables()[0] ?? panel;
+    toFocus.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onRequestClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const items = focusables();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!panel.contains(active)) {
+        // Focus somehow ended up outside the panel — pull it back in.
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [visible, presentation, onRequestClose]);
+
   if (presentation === 'modal') {
     return (
       <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onRequestClose}>
@@ -39,7 +85,7 @@ export default function ConfinedOverlay({ visible, onRequestClose, presentation,
         accessibilityLabel="Close"
       />
       <View style={styles.centerWrap} pointerEvents="box-none">
-        <View style={[styles.panel, { maxWidth }]}>
+        <View ref={panelRef} style={[styles.panel, { maxWidth }]} accessibilityViewIsModal>
           {children}
         </View>
       </View>

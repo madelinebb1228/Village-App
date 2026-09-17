@@ -285,6 +285,7 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
   const [reportUserReason, setReportUserReason] = useState('');
   const [reportUserSubmitting, setReportUserSubmitting] = useState(false);
   const [reportUserDone, setReportUserDone] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   useEffect(() => {
     if (!visible || !userId) return;
@@ -422,40 +423,46 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
     setMuteLoading(false);
   }
 
-  async function handleBlock() {
+  async function doUnblock() {
+    if (!myId || !userId) return;
+    setBlockLoading(true);
+    await supabase.from('user_blocks').delete().eq('blocker_id', myId).eq('blocked_id', userId);
+    setIsBlocked(false);
+    setBlockLoading(false);
+  }
+
+  async function doBlock() {
+    if (!myId || !userId) return;
+    setBlockLoading(true);
+    await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: userId });
+    setIsBlocked(true);
+    setBlockLoading(false);
+    onClose();
+  }
+
+  // On web this opens the same ConfinedOverlay-based confirm the Report
+  // dialog uses (see `showBlockConfirm` below) instead of a native
+  // window.confirm — a blocking browser dialog would freeze the whole tab
+  // and, on the desktop shell, cover the sidebar the same way the Modal bug
+  // this pass fixed did. Native still uses the platform's own Alert, which
+  // has no such issue.
+  function handleBlock() {
     if (!myId || !userId || blockLoading) return;
     const name = profile?.display_name || profile?.username || 'this user';
+    if (Platform.OS === 'web') {
+      setShowBlockConfirm(true);
+      return;
+    }
     if (isBlocked) {
-      const doUnblock = async () => {
-        setBlockLoading(true);
-        await supabase.from('user_blocks').delete().eq('blocker_id', myId).eq('blocked_id', userId);
-        setIsBlocked(false);
-        setBlockLoading(false);
-      };
-      if (Platform.OS === 'web') {
-        if (window.confirm(`Unblock ${name}?`)) doUnblock();
-      } else {
-        Alert.alert('Unblock', `Unblock ${name}?`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Unblock', onPress: doUnblock },
-        ]);
-      }
+      Alert.alert('Unblock', `Unblock ${name}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Unblock', onPress: doUnblock },
+      ]);
     } else {
-      const doBlock = async () => {
-        setBlockLoading(true);
-        await supabase.from('user_blocks').insert({ blocker_id: myId, blocked_id: userId });
-        setIsBlocked(true);
-        setBlockLoading(false);
-        onClose();
-      };
-      if (Platform.OS === 'web') {
-        if (window.confirm(`Block ${name}? They won't be able to see your profile or message you.`)) doBlock();
-      } else {
-        Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to see your profile or send you messages.`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Block', style: 'destructive', onPress: doBlock },
-        ]);
-      }
+      Alert.alert('Block User', `Block ${name}?\n\nThey won't be able to see your profile or send you messages.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: doBlock },
+      ]);
     }
   }
 
@@ -894,6 +901,51 @@ export default function PublicProfileSheet({ userId, visible, onClose, onMessage
               </TouchableOpacity>
             </ScrollView>
           )}
+        </SafeAreaView>
+      </ConfinedOverlay>
+
+      {/* Block/unblock confirm — web only (native uses Alert.alert above) */}
+      <ConfinedOverlay
+        visible={showBlockConfirm}
+        presentation={presentation}
+        onRequestClose={() => setShowBlockConfirm(false)}
+        maxWidth={380}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+          <View style={{ padding: 22, gap: 6 }}>
+            <Text style={{ fontSize: 17, fontWeight: '800', color: c.textPrimary, textAlign: 'center' }}>
+              {isBlocked ? 'Unblock' : 'Block User'}
+            </Text>
+            <Text style={{ fontSize: 14, color: c.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 12 }}>
+              {isBlocked
+                ? `Unblock ${profile?.display_name || profile?.username || 'this user'}?`
+                : `Block ${profile?.display_name || profile?.username || 'this user'}? They won't be able to see your profile or send you messages.`}
+            </Text>
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => { setShowBlockConfirm(false); isBlocked ? doUnblock() : doBlock(); }}
+                style={{
+                  paddingVertical: 13, borderRadius: 14, alignItems: 'center',
+                  backgroundColor: isBlocked ? c.primary : c.signOut,
+                }}
+                accessibilityRole="button" accessibilityLabel={isBlocked ? 'Confirm unblock' : 'Confirm block'}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>
+                  {isBlocked ? 'Unblock' : 'Block'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowBlockConfirm(false)}
+                style={{
+                  paddingVertical: 13, borderRadius: 14, alignItems: 'center',
+                  backgroundColor: c.card, borderWidth: 1.5, borderColor: c.separator,
+                }}
+                accessibilityRole="button" accessibilityLabel="Cancel"
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: c.textPrimary }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </SafeAreaView>
       </ConfinedOverlay>
 
